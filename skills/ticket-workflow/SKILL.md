@@ -16,6 +16,20 @@ The lifecycle, in one line:
 
 Every change goes through every phase, no exceptions for "small" or "ad-hoc" work. Transitions happen at the natural moment, not batched — the board must reflect reality in real time. **NEVER transition to `accepted` or `rejected`** — only the stakeholder decides.
 
+## Phase 0: Prerequisites — the `jus` CLI must be installed and authenticated
+
+This SOP drives the Juscribe board through the **`jus` CLI**. The plugin ships the **skills and hooks only — not the CLI binary**, so before any phase below will work the user needs:
+
+1. **The CLI** — `brew install juscribe/tap/jus` (or the curl installer at `app.juscribe.ai/install.sh`).
+2. **Auth + workspace** — `jus login` (API token) or `jus init` (token + workspace + `bin/jus` symlink). `jus init` also sets the `{ws}` used throughout this skill.
+
+**Preflight.** If you're about to run `jus` and aren't sure it's configured, run `jus whoami` first and read the failure:
+
+- `jus: command not found` → the CLI isn't installed. Tell the user to `brew install juscribe/tap/jus`, then stop.
+- `Error: No token available. Run 'jus login'…` → installed but unauthenticated. Tell the user to run `jus login` or `jus init`, then stop.
+
+**Do not loop `jus` commands against an unconfigured CLI.** Surface the single setup step the error points to and stop — one clear instruction beats a wall of repeated errors. Everything below assumes this preflight passed.
+
 ## Phase 1: Session Start
 
 Orient with the agent state endpoint — never fetch full ticket lists at session start.

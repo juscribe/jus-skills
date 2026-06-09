@@ -28,6 +28,17 @@ Juscribe ticket (`#N`) that introduced it.
 
 - `LICENSE` (MIT, © Juscribe) and a `license` field on `plugin.json` — the bundle
   is published to a public repo, so it needs an explicit license. (#1705)
+- `ticket-workflow` Phase 0 (Prerequisites) + a `hard-rules` preflight line: the
+  plugin ships skills + hooks but **not** the `jus` CLI, so the skills now state
+  the install/auth prerequisites up front and tell the agent to surface the
+  one-line setup step (and stop, not loop) when `jus` is missing/unauthenticated.
+  (#1879)
+
+### Docs
+
+- README Option H now warns against _also_ marketplace-installing the plugin in
+  monumental — the committed copy already loads it, so doing both duplicates the
+  skills and double-fires the hooks. (#1705)
 
 ## [1.0.1] — 2026-06-06
 

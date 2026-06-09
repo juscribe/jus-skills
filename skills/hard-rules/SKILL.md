@@ -8,6 +8,8 @@ allowed-tools: Bash(jus *), Bash(git *), Bash(bin/rspec*), Bash(bin/rubocop*), B
 
 > Read this first, every session. These rules are always on. They have been flagged repeatedly because violating them wastes time, ships broken work, or destroys the stakeholder's intent. The companion `ticket-workflow` skill covers the _how_ (the full lifecycle plus estimation, labels, testing gates, and the `jus` API reference); this skill covers the **must / must-not** that overrides it.
 
+> **Prerequisite:** this SOP runs on the `jus` CLI, which the plugin does **not** install (`brew install juscribe/tap/jus` + `jus login`/`jus init`). If a `jus` command reports `command not found` or `No token available`, the CLI is missing or unauthenticated — **surface the one-line setup step and stop; do not loop `jus` commands against an unconfigured CLI.** See `ticket-workflow` → Phase 0.
+
 ## Two-Layer Enforcement: Skill + Claude Code Hooks
 
 Some of these rules are also enforced **deterministically** by Claude Code hooks shipped in this plugin (under `hooks/`). The hooks are a backstop — they fire even if a model "forgot" the rule — but the skill remains the source of truth and the only layer that explains the _why_.
