@@ -22,7 +22,7 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
-## [Unreleased]
+## [1.1.0] — 2026-07-16
 
 ### Added
 
@@ -33,12 +33,27 @@ Juscribe ticket (`#N`) that introduced it.
   the install/auth prerequisites up front and tell the agent to surface the
   one-line setup step (and stop, not loop) when `jus` is missing/unauthenticated.
   (#1879)
+- `ticket-workflow` "Formatting descriptions and comments": descriptions and
+  comments render as markdown on the board, so the skill now prescribes the
+  form, not just the content — bold section labels (**Root cause:** / **Plan:**
+  / **To verify:**), bullets/numbered steps, fenced code blocks, `#N`/`pN`
+  refs — with a worked start-comment example. Previously this was an uncaptured
+  convention, so public-plugin agents produced unformatted walls of text.
+  (#1917)
+- `ticket-workflow` "Fleshing out a sparse user-created ticket" + a sharpened
+  `hard-rules` bullet: picking up a bare title / one-line ticket now carries an
+  explicit duty to add substance — root cause or approach, acceptance criteria,
+  test notes — via the append-only description protocol at pickup. The pre-start
+  gate alone could previously be satisfied with a token one-liner. (#1921)
 
 ### Docs
 
 - README Option H now warns against _also_ marketplace-installing the plugin in
   monumental — the committed copy already loads it, so doing both duplicates the
   skills and double-fires the hooks. (#1705)
+- `ticket-workflow` test-command reference: backend coverage is gated on
+  `COVERAGE=1 bin/rspec` — a plain run leaves the lcov data stale and
+  diff-cover then reports phantom uncovered lines. (#1920)
 
 ## [1.0.1] — 2026-06-06
 

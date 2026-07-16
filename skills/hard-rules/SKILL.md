@@ -54,7 +54,7 @@ See `hooks/hooks.json` and the plugin README for installation.
 
 - **The Juscribe workspace is the single source of truth** for all project scope, tasks, and progress. There is no separate scope document, scratchpad, or planning file.
 - **Every piece of work MUST have a ticket** — create it BEFORE writing code. No exceptions, even for ad-hoc requests ("tweak X", "make Y visible"). The full lifecycle applies to every change, no matter how small. Never write code without a ticket. The only exception is revising an already-existing ticket that has not yet been accepted — keep adding commits under the existing ticket number.
-- **Every project or ticket must have a description and effort estimate.** A title alone is not sufficient. Include acceptance criteria or implementation notes.
+- **Every project or ticket must have a description and effort estimate.** A title alone is not sufficient. Include acceptance criteria or implementation notes. When you pick up a sparse user-created ticket, **flesh it out** — root cause / approach, acceptance criteria — appended via the description protocol below, at pickup; a token one-liner does not satisfy this.
 - **Transition at the natural moment, not batched.** The board must reflect reality in real time.
 - **NEVER transition to `accepted` or `rejected`** — only the stakeholder decides those states. Touching them is a process violation.
 

@@ -62,6 +62,16 @@ Before transitioning to `started`, verify:
 
 If any are missing, PATCH them first. Never start a ticket that fails this gate.
 
+### Fleshing out a sparse user-created ticket
+
+Stakeholders often file tickets as a bare title or a one-line description. The gate above is not satisfied by a token one-liner — **flesh the ticket out with substance the stakeholder can react to**:
+
+- **What to add:** your read of the problem (root cause for bugs, approach for features), **acceptance criteria**, and any implementation/test notes. Format it per [Formatting](#formatting-descriptions-and-comments).
+- **When:** at pickup — a blank description is filled as part of the pre-start gate; deeper findings discovered during investigation are appended as you learn them.
+- **How:** always via the append protocol (see [Description conventions](#description-conventions)) — fetch first; if `description` is non-null, prepend the stakeholder's existing text + `\n\n---\n\n` before your additions. Their words survive verbatim, always.
+
+The fleshed-out description is what makes the estimate defensible and the delivery verifiable — a title-only ticket has no acceptance criteria to deliver against.
+
 ### CRITICAL: Transition to `started` BEFORE investigating
 
 The moment you decide to work the ticket, transition and assign yourself **before** reading any source files. This is a concurrency lock — it signals to other sessions that the ticket is taken.
@@ -187,6 +197,7 @@ Post comments as you work — at minimum a start comment (see [above](#post-the-
 
 - **Capture user interjections** — if the user sends scope-affecting messages mid-ticket, mirror those notes into the ticket's comment thread.
 - **Use `#N` for tickets, `pN` for projects** — autolinks on the board. Never write "ticket 123" or "project 66" in prose.
+- **Format for the board, not a terminal** — see [Formatting](#formatting-descriptions-and-comments) below. Descriptions and comments render as markdown; unformatted walls of text are hard for the stakeholder to scan.
 - **Use References for prerequisites** — when a ticket mentions "requires #752 complete", create formal References via the API so dependencies are tracked, not just described.
 - **Pay attention to comment reactions** — `include_comments=true` returns a `reactions` array per comment. Interpret as stakeholder signals:
   - 👍 agreement / "good direction"
@@ -200,6 +211,34 @@ Post comments as you work — at minimum a start comment (see [above](#post-the-
   ```sh
   jus api POST /workspaces/{ws}/tickets/{ticket_id}/comments/{id}/reactions/toggle '{"emoji":"👍"}'
   ```
+
+### Formatting descriptions and comments
+
+Ticket descriptions and comments render as **markdown on the board**. Write them for a human scanning a card, not for a terminal log. Structure beats prose:
+
+- **Bold section labels** open each part of the story: `**Root cause:**`, `**Plan:**`, `**What shipped:**`, `**To verify:**`, `**Acceptance criteria:**`. The stakeholder should locate any section at a glance.
+- **Bullets and numbered lists** over paragraph runs — one idea per bullet; numbered steps for anything the stakeholder will follow in order (verification steps especially).
+- **Fenced code blocks** for every command, path list, or output the stakeholder might copy (`sh`-fenced for commands); **inline backticks** for file paths, method names, flags, and states in prose.
+- **`#N` / `pN` references** wherever you mention tickets or projects — they autolink (see above).
+- **Bold the verdict, not everything** — emphasize the load-bearing words (`**no mount**`, `does **not** retry`), not entire sentences. Over-bolding reads as noise.
+
+A start comment shaped this way:
+
+```markdown
+Starting.
+
+**Root cause:** `RejectionAutoDispatchJob#dispatchable?` checks policy and
+marker type but never station reachability, so every rejection creates a
+dispatch that immediately fails when no station is running.
+
+**Plan:** guard with `workspace.online_agents_for(user).any?` — the same
+reachability check the dispatch button uses.
+
+**TDD:** failing job specs first (no station → no dispatch; station registered
+elsewhere → no dispatch; reachable → dispatch as before).
+```
+
+And a delivery comment: `**Commit:**` line, a short `**What shipped:**` block, then a numbered `**To verify:**` list — see [Post finished comment](#post-finished-comment-before-transitioning). The same conventions apply to description flesh-outs (root cause, acceptance criteria) and dependency/blocker comments.
 
 ### Commit conventions — THE MOST IMPORTANT STEP
 
@@ -228,8 +267,10 @@ After committing, review your diff (`git show`). Go beyond the diff:
 Use the `bin/` wrappers — Bash sessions don't inherit rbenv, so raw `bundle exec` will fail. The wrappers initialize rbenv automatically.
 
 ```sh
-# Backend (Rails / RSpec) — SimpleCov runs automatically, no flag needed
-bin/rspec                                          # full suite
+# Backend (Rails / RSpec) — SimpleCov is gated on COVERAGE=1; a plain run
+# does NOT refresh coverage/backend/lcov.info (diff-cover then reads stale data)
+COVERAGE=1 bin/rspec                               # full suite with coverage
+bin/rspec                                          # full suite (no coverage)
 bin/rspec spec/requests/api/v1/tickets_spec.rb     # single file
 bin/rspec spec/requests/api/v1/tickets_spec.rb:42  # single example by line
 
@@ -308,7 +349,7 @@ Always state in the delivery comment whether the mobile change requires a native
 
 Re-read the ticket's comments (`?include_comments=true`) before writing the delivery comment. Don't re-answer questions or repeat content from earlier comments (including your own start comment).
 
-The "To verify" section with concrete acceptance/rejection steps is **mandatory, not optional — even during batch work.** Every ticket gets its own delivery comment with verification steps. Do not batch or skip.
+The "To verify" section with concrete acceptance/rejection steps is **mandatory, not optional — even during batch work.** Every ticket gets its own delivery comment with verification steps. Do not batch or skip. Shape the comment per [Formatting](#formatting-descriptions-and-comments): bold section labels, a numbered To-verify list, fenced code for commands.
 
 **Every delivery comment MUST include git information:**
 
