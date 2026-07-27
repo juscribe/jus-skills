@@ -22,6 +22,45 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.1.1] — 2026-07-27
+
+First published release since 1.0.1 — this tag also carries the previously
+unpublished 1.1.0 content below.
+
+### Changed
+
+- Skill bodies no longer assume a Claude Code plugin host: enforcement is
+  framed **harness-conditionally** (deterministic where the jus hooks run —
+  Claude Code today, with Codex/Kimi Code adapters tracked under #1818 —
+  explicitly prompt-level-only everywhere else), skill cross-references use
+  plain names (the `jus:` prefix exists only under a Claude Code plugin
+  install), and the document-discoveries rule targets "your agent's context
+  file" rather than CLAUDE.md. `AGENTS.md` is retitled as shared baseline
+  context for every AGENTS.md-reading tool (Codex, Kimi Code, Antigravity, …)
+  instead of Codex-branded. (#1975)
+- One canonical non-Claude install — a shared clone at `~/.jus-skills` plus
+  per-skill symlinks producing the standard `.agents/skills/<name>/SKILL.md`
+  layout — replaces the three contradictory recipes in the README, including
+  the retired `git clone … .codex/skills/jus` nested-clone instruction that
+  only loaded on tools with recursive skill discovery. (#1972)
+
+### Docs
+
+- README support matrix gains **Kimi Code** (native Agent Skills via
+  `.agents/skills/` + `.kimi-code/skills/`; does not read `.claude/skills/`;
+  hook adapter tracked by #1977). (#1978)
+
+### Fixed
+
+- `hooks/tests.sh` no longer pins a literal plugin version (the hardcoded
+  `1.0.1` assertion broke on the 1.1.0 bump and nothing ran the harness to
+  notice): the version is asserted as strict semver, `gemini-extension.json`
+  gets shape checks plus a warn-only drift note, and new portability guards
+  assert the skill bodies stay free of plugin-namespaced references. (#1973,
+  #1975)
+- `gemini-extension.json` version synced to `plugin.json` (was stuck at
+  0.1.0 since the manifest was introduced). (#1885)
+
 ## [1.1.0] — 2026-07-16
 
 ### Added

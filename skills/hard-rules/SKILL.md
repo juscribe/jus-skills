@@ -8,13 +8,13 @@ allowed-tools: Bash(jus *), Bash(git *), Bash(bin/rspec*), Bash(bin/rubocop*), B
 
 > Read this first, every session. These rules are always on. They have been flagged repeatedly because violating them wastes time, ships broken work, or destroys the stakeholder's intent. The companion `ticket-workflow` skill covers the _how_ (the full lifecycle plus estimation, labels, testing gates, and the `jus` API reference); this skill covers the **must / must-not** that overrides it.
 
-> **Prerequisite:** this SOP runs on the `jus` CLI, which the plugin does **not** install (`brew install juscribe/tap/jus` + `jus login`/`jus init`). If a `jus` command reports `command not found` or `No token available`, the CLI is missing or unauthenticated — **surface the one-line setup step and stop; do not loop `jus` commands against an unconfigured CLI.** See `ticket-workflow` → Phase 0.
+> **Prerequisite:** this SOP runs on the `jus` CLI, which the bundle does **not** install (`brew install juscribe/tap/jus` + `jus login`/`jus init`). If a `jus` command reports `command not found` or `No token available`, the CLI is missing or unauthenticated — **surface the one-line setup step and stop; do not loop `jus` commands against an unconfigured CLI.** See `ticket-workflow` → Phase 0.
 
-## Two-Layer Enforcement: Skill + Claude Code Hooks
+## Two-Layer Enforcement: Skill + Hooks
 
-Some of these rules are also enforced **deterministically** by Claude Code hooks shipped in this plugin (under `hooks/`). The hooks are a backstop — they fire even if a model "forgot" the rule — but the skill remains the source of truth and the only layer that explains the _why_.
+Some of these rules are also enforced **deterministically** by the jus enforcement hooks (under `hooks/`) — **when your harness runs them**. Today that is Claude Code (plugin or project-committed install); Codex and Kimi Code ship compatible hook systems and their adapters are tracked under #1818 (#1976, #1977). **On a harness without the hooks — Codex, Kimi Code, Cursor, and every other tool today — every rule below is prompt-level only: nothing blocks you mechanically, which makes following this skill MORE important, not less.** Where they do run, the hooks are a backstop — they fire even if a model "forgot" the rule — but the skill remains the source of truth and the only layer that explains the _why_.
 
-| Rule                                                      | Skill (prompt) | Hook (deterministic)                        |
+| Rule                                                      | Skill (prompt) | Hook (where hooks run)                      |
 | --------------------------------------------------------- | :------------: | ------------------------------------------- |
 | Every piece of work has a ticket                          |       ✅       | —                                           |
 | Description and effort estimate required                  |       ✅       | —                                           |
@@ -43,11 +43,11 @@ Some of these rules are also enforced **deterministically** by Claude Code hooks
 
 ### What hooks can and can't do
 
-- Hooks are Claude Code-only. Other agents (Cursor, Codex CLI, Aider) get the skill layer only.
+- The shipped hooks run on Claude Code today. Codex and Kimi Code expose compatible hook systems (JSON on stdin, exit-2 blocks) — per-tool adapters are tracked under #1818. Tools with no hook surface (Cursor, Copilot, Aider) get the skill layer only.
 - Hooks fail open: if `jq` or another required tool is missing on the host, the hook exits 0 rather than wedging the tool call. The skill remains the primary teaching mechanism.
-- Hooks block deterministically (exit 2) but a determined model can disable them via `disableAllHooks` or by editing `settings.json`. The hooks are a guardrail, not a sandbox.
+- Hooks block deterministically (exit 2) but a determined model can disable them through its harness configuration (in Claude Code: `disableAllHooks` or a settings edit). The hooks are a guardrail, not a sandbox.
 
-See `hooks/hooks.json` and the plugin README for installation.
+See `hooks/` and the bundle README for installation and the per-harness coverage.
 
 
 ## Core Principles
@@ -74,7 +74,7 @@ See `hooks/hooks.json` and the plugin README for installation.
 - **NEVER suppress or skip linters.** All pre-commit checks (reek, rubocop, eslint, prettier, tsc) must pass cleanly. Do NOT use `:reek:` suppression comments, `# rubocop:disable`, `// eslint-disable`, `prettier-ignore`, or any inline suppression. Fix the underlying code smell. The only acceptable annotations are structural ones already established in the codebase.
 - **Fix ALL lint warnings in modified files** — every warning, regardless of whether it's from your changes or pre-existing. Don't check `git blame` to assign blame; just fix it.
 - **Lint changed files BEFORE committing.** Ruby: `bin/rubocop` + `bin/reek` on modified `.rb` files. Frontend: `pnpm exec eslint`, `pnpm exec prettier --check`, `pnpm exec tsc --noEmit` (tsc is always project-wide). Agent (`station/`): `bin/ci --station` (the canonical lint + test + race + coverage flow — never raw `go test` / `golangci-lint` for the gate). Do not commit until all pass cleanly.
-- **NEVER skip the pre-commit verification gates.** Before EVERY commit, run ALL applicable linters and tests. **If you skip these steps, breakage compounds silently across tickets until someone catches it in bulk — that is unacceptable.** See `jus:ticket-workflow` → Phase 5 for the full per-area gate matrix and commands.
+- **NEVER skip the pre-commit verification gates.** Before EVERY commit, run ALL applicable linters and tests. **If you skip these steps, breakage compounds silently across tickets until someone catches it in bulk — that is unacceptable.** See `ticket-workflow` → Phase 5 for the full per-area gate matrix and commands.
 - **Genuine false positives go to the stakeholder, not to a suppression comment.** If a lint warning seems incorrect, discuss it — never silence it silently.
 - **100% diff coverage is a hard gate.** Every new/changed line must be exercised by tests. `bin/diff-cover` failure means write more tests, not "good enough."
 
@@ -101,7 +101,7 @@ jus api PATCH /workspaces/{ws}/tickets/{id} "{\"ticket\":{\"description\":$(jq -
 
 - **NEVER deliver work that defers, skips, or deviates from what the ticket prescribes.** If the ticket says to do X and you didn't do X (or did a partial version of X), do **NOT** mark the ticket finished/delivered. Delivering incomplete or deviated work forces a rejection cycle that wastes everyone's time. When in doubt, ask — don't deliver.
 - **Re-read the ticket description before finishing.** Did you implement what was prescribed? If you deferred something, skipped a requirement, chose not to do something the ticket specifies, or deviated from the described scope — leave the ticket in `started` and post a comment.
-- **"Comprehensive" / "100%" / "thorough" mean exactly that.** No "good enough" exits. Code + passing tests is NOT sufficient for mobile work — see the mobile pre-delivery checklist in `jus:ticket-workflow` → Phase 5.
+- **"Comprehensive" / "100%" / "thorough" mean exactly that.** No "good enough" exits. Code + passing tests is NOT sufficient for mobile work — see the mobile pre-delivery checklist in `ticket-workflow` → Phase 5.
 - **Every delivery comment includes verification steps** (the "To verify" section) AND git information (commit SHA + `git show` for direct commits on main; nothing for dispatched work — the dispatch UI appends branch info; explicit "no code changes" for research/docs tickets). Even in batch work — never skip or batch delivery comments to save time.
 
 ## External Blocker Rule — Always Track What Needs User Input
@@ -127,7 +127,7 @@ Where to write it (use all that apply):
 - **In ticket comments** — capture troubleshooting steps, errors, and fixes in the ticket thread AS THEY HAPPEN. Don't accumulate; document each problem and its solution as you go.
 - **In `.jus/docs/`** — for patterns, errors, and fixes that will recur across tickets. If a relevant doc exists, update it. If not, create a new one and add it to `.jus/docs/INDEX.md`.
 - **In code comments** — when you decode how a system works (animation flow, state pattern, WebSocket dance), leave explanatory comments in the source. Focus on "why" and "how the pieces connect", not obvious "what". The code is the best place for institutional knowledge.
-- **In CLAUDE.md** — for patterns that span multiple files or sessions and inform future agent behavior.
+- **In your agent's context file** (`CLAUDE.md`, `AGENTS.md`, or your tool's equivalent) — for patterns that span multiple files or sessions and inform future agent behavior.
 
 A discovery missed once is a learning lost; a discovery missed across a session is a recurring failure.
 
@@ -150,4 +150,4 @@ If any of these are true at the moment you're about to act, stop and reset:
 
 ## Related Skills
 
-- `jus:ticket-workflow` — the single load-bearing SOP skill: full lifecycle phases, transitions, comments, delivery format, dependency handling, plus estimation, ticket types, labels, metadata, the testing gates, and the `jus` CLI / API reference.
+- `ticket-workflow` — the single load-bearing SOP skill: full lifecycle phases, transitions, comments, delivery format, dependency handling, plus estimation, ticket types, labels, metadata, the testing gates, and the `jus` CLI / API reference. (Claude Code plugin installs show skill names prefixed with `jus:` — invoke the prefixed form there.)

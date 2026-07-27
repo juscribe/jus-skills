@@ -510,7 +510,10 @@ assert_jq() {
 }
 
 assert_jq "plugin.json is valid JSON named \"jus\"" "$PLUGIN_JSON" '.name == "jus"'
-assert_jq "plugin.json version is 1.0.1" "$PLUGIN_JSON" '.version == "1.0.1"'
+# The version is asserted by shape, not value: plugin.json is the single source
+# of truth (bin/publish-skills reads it), so pinning a literal here just breaks
+# the harness on every release bump (that exact drift shipped once: 1.0.1→1.1.0).
+assert_jq "plugin.json version is strict semver" "$PLUGIN_JSON" '.version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$")'
 assert_jq "plugin.json has a non-empty description" "$PLUGIN_JSON" '.description | type == "string" and length > 0'
 assert_jq "plugin.json has an author name" "$PLUGIN_JSON" '.author.name | type == "string" and length > 0'
 
@@ -543,6 +546,55 @@ if [[ -f "$LICENSE_FILE" ]] && grep -q "MIT License" "$LICENSE_FILE" && grep -q 
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
   printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+
+# gemini-extension.json ships at the bundle root for Gemini/Antigravity installs.
+# Its version is synced to plugin.json's only at release time (a bin/publish-skills
+# step — see #1885), so between releases the two may legitimately differ: the
+# mismatch is a warning, not a failure — a hard assert would re-create the exact
+# "version bump breaks the harness" drift this section guards against.
+GEMINI_JSON="$PLUGIN_ROOT/gemini-extension.json"
+assert_jq "gemini-extension.json is valid JSON named \"jus\"" "$GEMINI_JSON" '.name == "jus"'
+assert_jq "gemini-extension.json version is strict semver" "$GEMINI_JSON" '.version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$")'
+PLUGIN_VERSION="$(jq -r '.version' "$PLUGIN_JSON")"
+GEMINI_VERSION="$(jq -r '.version' "$GEMINI_JSON")"
+if [[ "$GEMINI_VERSION" != "$PLUGIN_VERSION" ]]; then
+  printf '  \033[33m⚠\033[0m gemini-extension.json version (%s) differs from plugin.json (%s) — synced at release time (#1885)\n' "$GEMINI_VERSION" "$PLUGIN_VERSION"
+fi
+
+# ---- skill-body portability (#1975) ---------------------------------------
+
+section "skill-body portability"
+
+# The skill bodies are read verbatim by Codex, Kimi Code, Cursor, etc., where
+# the Claude Code plugin namespace does not exist and the hooks may not run.
+# Namespaced skill refs would point agents at names that only exist under a
+# Claude Code plugin install, and a Codex-branded AGENTS.md under-serves the
+# other AGENTS.md-reading tools — guard both against regression.
+assert_no_match() {
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local name="$1" file="$2" pattern="$3"
+  if grep -qF "$pattern" "$file"; then
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$name")
+    printf '  \033[31m✗\033[0m %s\n' "$name"
+  else
+    printf '  \033[32m✓\033[0m %s\n' "$name"
+  fi
+}
+
+for skill_file in "$PLUGIN_ROOT/skills/ticket-workflow/SKILL.md" "$PLUGIN_ROOT/skills/hard-rules/SKILL.md"; do
+  skill_name="$(basename "$(dirname "$skill_file")")"
+  assert_no_match "$skill_name: no plugin-namespaced ticket-workflow refs" "$skill_file" "jus:ticket-workflow"
+  assert_no_match "$skill_name: no plugin-namespaced hard-rules refs" "$skill_file" "jus:hard-rules"
+done
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="AGENTS.md title is tool-neutral (Codex, Kimi Code, Antigravity all read it)"
+if head -1 "$PLUGIN_ROOT/AGENTS.md" | grep -q "OpenAI Codex"; then
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+else
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
 fi
 
 # ---- summary --------------------------------------------------------------

@@ -62,6 +62,24 @@ Hooks track timestamps and counters in `${CLAUDE_PLUGIN_DATA}/sessions/<session_
 
 ## Installing
 
+> **Non-Claude tools all install the same way** — the canonical `.agents/skills/` recipe below. Options D–G add per-tool notes only; none has its own install path.
+
+### The canonical `.agents/skills/` install (all non-Claude tools)
+
+`.agents/skills/` is the open-standard directory read by Codex, Cursor 2.4+, Kimi Code, Windsurf, Zed, Antigravity, and Claude Code. Install with one shared clone plus per-skill symlinks in the **standard layout** (`.agents/skills/<name>/SKILL.md`):
+
+```sh
+git clone https://github.com/juscribe/jus-skills.git ~/.jus-skills             # once per machine
+mkdir -p .agents/skills && ln -sfn ~/.jus-skills/skills/* .agents/skills/      # this project
+mkdir -p ~/.agents/skills && ln -sfn ~/.jus-skills/skills/* ~/.agents/skills/  # or: every project
+```
+
+Update with `git -C ~/.jus-skills pull` (re-run the `ln` line if a release adds a new skill). `jus init` runs this recipe for you on skills-capable tools.
+
+- **Standard layout only — never clone the repo into a skills directory.** A nested clone (`.agents/skills/jus/skills/<name>/…`) loads only on tools whose discovery happens to recurse (Codex today, and [openai/codex#22275](https://github.com/openai/codex/issues/22275) asks for that to be restricted). `jus init` offers a migration when it finds one.
+- **Symlink caveat** — if a tool doesn't list the skills (Antigravity's IDE ignores symlinks for global skills, issue #633), replace the symlinks with copies: `cp -r ~/.jus-skills/skills/* .agents/skills/`.
+- **Baseline context is optional** — the skills are self-sufficient; auto-invocation runs on their `description` frontmatter. The bundle's `AGENTS.md`/`GEMINI.md` stay in `~/.jus-skills/` for tools that want them; `jus init`'s legacy append embeds the SOP into a context file instead (never do both).
+
 ### Option A — local development (recommended for monumental)
 
 Already part of the monumental repo. Load it with:
@@ -101,11 +119,7 @@ Hooks must be installed via Option A or B — they require `${CLAUDE_PLUGIN_ROOT
 
 > ⚠️ **Gemini CLI is being sunset on 2026-06-18** in favor of [Google Antigravity](https://antigravity.google) and its CLI (`agy`). Skills, hooks, subagents, and extensions ("now Antigravity plugins") carry forward. ([Google announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)) The old `gemini extensions install` path stops serving requests after that date — target Antigravity instead.
 
-Antigravity discovers **project skills** from `<workspace-root>/.agents/skills/<name>/SKILL.md` — the same cross-tool path Claude Code, Codex, Cursor, Windsurf, and Zed use. (Antigravity's current default is the plural `.agents/skills/`, with the singular `.agent/skills/` kept for backward compatibility; the official [skills codelab](https://codelabs.developers.google.com/getting-started-with-antigravity-skills) still shows the singular form.) So the portable alias already covers Antigravity:
-
-```sh
-ln -s jus/skills .agents/skills        # per-skill symlinks or copies also work — see the symlink caveat
-```
+Antigravity discovers **project skills** from `<workspace-root>/.agents/skills/<name>/SKILL.md` — the same cross-tool path Claude Code, Codex, Cursor, Windsurf, and Zed use. (Antigravity's current default is the plural `.agents/skills/`, with the singular `.agent/skills/` kept for backward compatibility; the official [skills codelab](https://codelabs.developers.google.com/getting-started-with-antigravity-skills) still shows the singular form.) **Install via the canonical `.agents/skills/` recipe above.**
 
 Global (user-level) skills live at `~/.gemini/antigravity/skills/<name>/SKILL.md`.
 
@@ -128,27 +142,19 @@ Smoke-test (requires the Antigravity editor): open a workspace whose `.agents/sk
 
 OpenAI Codex adopted the [Agent Skills standard](https://agentskills.io) in Dec 2025 across all three surfaces — CLI, the VS Code / JetBrains IDE plugins, and the Codex app. They all read the same `SKILL.md` files this bundle ships; no per-surface variants are needed. (Codex's older "custom prompts" mechanism is deprecated upstream in favor of skills.)
 
-Pick whichever placement fits your scope:
+Codex's **documented** skill roots are exactly the canonical ones — project `.agents/skills/` (scanned in every directory from the CWD up to the repo root) and user `~/.agents/skills/` — so **install via the canonical `.agents/skills/` recipe above**; Codex needs nothing else.
 
-```sh
-# Project-level (single repo): clone or symlink into a Codex-watched location
-git clone <git-repo-or-path-to-jus> .codex/skills/jus
+Two Codex-specific locations exist but should **not** be used:
 
-# User-level (every project on the machine):
-git clone <git-repo-or-path-to-jus> ~/.codex/skills/jus
+- `~/.codex/skills/` still loads, but as a deprecated backward-compat location.
+- A project `.codex/skills/` works only through an undocumented config layer, and the previously documented `git clone … .codex/skills/jus` layout survives only because discovery currently recurses six levels deep — behavior [openai/codex#22275](https://github.com/openai/codex/issues/22275) asks OpenAI to restrict. If you installed that way, re-install with the canonical recipe and delete the old clone.
 
-# Universal alias (also picked up by Claude Code and Gemini Code Assist):
-git clone <git-repo-or-path-to-jus> .agents/skills/jus
-```
+Notes:
 
-Codex then:
+- Codex does **not** read the bundle's `AGENTS.md` out of a skills directory — instruction files are composed from the project root down to the CWD only. Use `jus init`'s append if you want the SOP in a context file (never alongside the skills install).
+- Auto-invocation uses the `description` frontmatter — the same matching heuristic as Claude Code and Gemini. `allowed-tools` is ignored.
 
-- Reads `AGENTS.md` (this bundle ships one) as baseline context whenever the bundle is in scope. `AGENTS.md` is hierarchical — Codex merges every `AGENTS.md` it finds from the repo root up.
-- Indexes every `skills/<name>/SKILL.md` and exposes them as on-demand skills in CLI sessions, IDE chat panels, and the app. Auto-invocation uses the `description` frontmatter — the same matching heuristic as Claude Code and Gemini.
-
-Verify after install: open a Codex session (CLI, IDE chat panel, or app) and ask something like *"what's the ticket workflow?"* — the `ticket-workflow` skill should auto-activate. You can also prefix `/` or `$` inside the input field to mention a skill by name explicitly.
-
-**Universal alias (recommended for multi-tool setups).** Rather than the per-tool manifests (`.claude-plugin/`, `gemini-extension.json`), the `.agents/skills/` directory is a portable convention recognized by Claude Code, Codex, Cursor 2.4+, Windsurf, Zed, and Antigravity. Symlink or copy `jus/skills/` into `.agents/skills/` at your project root **once** and every supported tool discovers the SKILL.md files — one install instead of per-tool steps. You forgo the auto-loaded baseline context (`CLAUDE.md` / `GEMINI.md` / `AGENTS.md`) and the Claude Code hooks this way, but skill auto-invocation works everywhere.
+Verify after install: open a Codex session (CLI, IDE chat panel, or app) and ask something like *"what's the ticket workflow?"* — the `ticket-workflow` skill should auto-activate. `/skills` lists loaded skills; a `$ticket-workflow` mention invokes one explicitly.
 
 ### Option G — Cursor 2.4+
 
@@ -161,24 +167,7 @@ Cursor 2.4 added an Agent Skills surface that reads `SKILL.md` files directly �
 | `~/.cursor/skills/`              | Global, all projects               |
 | `~/.agents/skills/`              | Global, portable across tools      |
 
-For monumental, the simplest install is a project-root symlink:
-
-```sh
-ln -s jus/skills .cursor/skills
-```
-
-If you also use Claude Code, Gemini Code Assist, or Codex on the same checkout, prefer the portable alias so every tool shares one location:
-
-```sh
-ln -s jus/skills .agents/skills
-```
-
-For other Juscribe-powered projects, clone the bundle once and symlink globally:
-
-```sh
-git clone <git-repo-or-path-to-jus> ~/code/jus
-ln -s ~/code/jus/skills ~/.cursor/skills
-```
+Cursor reads the canonical `.agents/skills/` path natively — **install via the canonical recipe above**. (`.cursor/skills/` also works as a Cursor-only location, but prefer the shared path so one install serves every tool.)
 
 Verify after install (or after `Reload Window`) by opening Cursor's agent panel and asking *"how do I deliver this ticket?"* — the `ticket-workflow` skill should auto-activate based on its `description` frontmatter, the same way Claude Code, Gemini, and Codex do.
 
@@ -210,12 +199,13 @@ Relative targets mean the symlinks resolve inside any `git worktree` checkout (w
 | Tool | Skills supported | Hooks bundled | Install path |
 |------|------------------|---------------|--------------|
 | Claude Code | ✅ via `.claude-plugin/plugin.json` | ✅ | `claude --plugin-dir ./jus` or `/plugin marketplace add juscribe/jus-skills` → `/plugin install jus@jus-skills` |
-| Google Antigravity CLI (`agy`) | ✅ via `.agents/skills/` (Gemini CLI sunset 2026-06-18) | ❌ | symlink/copy into `.agents/skills/`; `agy plugin import gemini` for the legacy ext |
-| Antigravity IDE (desktop) | ✅ via `.agents/skills/` (Gemini Code Assist IDE sunset 2026-06-18) | ❌ | same project path as the CLI |
-| OpenAI Codex (CLI / IDE / app) | ✅ via Agent Skills standard (uses same `SKILL.md`) | ❌ | `git clone <repo> .codex/skills/jus` (project) or `~/.codex/skills/jus` (user) |
-| Cursor 2.4+ | ✅ via Skills surface (uses same `SKILL.md`) | ❌ | `ln -s jus/skills .cursor/skills` (project) or `~/.cursor/skills` (user) |
-| Windsurf | ✅ via `.agents/skills/` (native skills) | ❌ | `ln -s jus/skills .agents/skills` |
-| Zed | ✅ via `.agents/skills/` (native skills) | ❌ | `ln -s jus/skills .agents/skills` |
+| Google Antigravity CLI (`agy`) | ✅ via `.agents/skills/` (Gemini CLI sunset 2026-06-18) | ❌ | canonical `.agents/skills/` install; `agy plugin import gemini` for the legacy ext |
+| Antigravity IDE (desktop) | ✅ via `.agents/skills/` (Gemini Code Assist IDE sunset 2026-06-18) | ❌ | canonical `.agents/skills/` install (same project path as the CLI) |
+| OpenAI Codex (CLI / IDE / app) | ✅ via `.agents/skills/` (documented roots; same `SKILL.md`) | ❌ | canonical `.agents/skills/` install |
+| Cursor 2.4+ | ✅ via Skills surface (uses same `SKILL.md`) | ❌ | canonical `.agents/skills/` install (`.cursor/skills/` also read) |
+| Kimi Code (CLI / VS Code / ACP) | ✅ via `.agents/skills/` (also `.kimi-code/skills/`; does **not** read `.claude/skills/`) | ❌ (native hook system exists — adapter tracked by #1977) | canonical `.agents/skills/` install |
+| Windsurf | ✅ via `.agents/skills/` (native skills) | ❌ | canonical `.agents/skills/` install |
+| Zed | ✅ via `.agents/skills/` (native skills) | ❌ | canonical `.agents/skills/` install |
 
 **Frontmatter portability.** The `SKILL.md` files use `name`, `description`, and `allowed-tools`. The first two are required by every tool above; `allowed-tools` is a Claude Code-only allowlist hint that other tools ignore. One set of skill files works for every supported tool — no per-tool variants needed.
 

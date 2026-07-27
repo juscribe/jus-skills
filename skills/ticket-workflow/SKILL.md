@@ -6,7 +6,7 @@ allowed-tools: Bash(jus *), Bash(git *), Bash(bin/rspec*), Bash(bin/rubocop*), B
 
 # Ticket Workflow — Juscribe Lifecycle SOP
 
-> Read this when working any ticket. This is the **single load-bearing skill** for Juscribe work: it defines the full lifecycle (session start → pickup → investigate → label → code → commit → self-review → finish → deliver), the batch-work rules, the dependency-blocker protocol, **and** the operational reference an agent needs along the way — estimation, ticket types, labels, metadata, the testing gates, and the `jus` CLI / API. The companion [`hard-rules`](#related-skills) skill carries the non-negotiable must/must-not; the plugin hooks enforce the most painful of those deterministically.
+> Read this when working any ticket. This is the **single load-bearing skill** for Juscribe work: it defines the full lifecycle (session start → pickup → investigate → label → code → commit → self-review → finish → deliver), the batch-work rules, the dependency-blocker protocol, **and** the operational reference an agent needs along the way — estimation, ticket types, labels, metadata, the testing gates, and the `jus` CLI / API. The companion [`hard-rules`](#related-skills) skill carries the non-negotiable must/must-not; on harnesses that run the jus enforcement hooks (Claude Code today — Codex/Kimi adapters tracked under #1818) the most painful of those are enforced deterministically, and everywhere else they are prompt-level only.
 
 The lifecycle, in one line:
 
@@ -18,7 +18,7 @@ Every change goes through every phase, no exceptions for "small" or "ad-hoc" wor
 
 ## Phase 0: Prerequisites — the `jus` CLI must be installed and authenticated
 
-This SOP drives the Juscribe board through the **`jus` CLI**. The plugin ships the **skills and hooks only — not the CLI binary**, so before any phase below will work the user needs:
+This SOP drives the Juscribe board through the **`jus` CLI**. The bundle ships the **skills and hooks only — not the CLI binary**, so before any phase below will work the user needs:
 
 1. **The CLI** — `brew install juscribe/tap/jus` (or the curl installer at `app.juscribe.ai/install.sh`).
 2. **Auth + workspace** — `jus login` (API token) or `jus init` (token + workspace + `bin/jus` symlink). `jus init` also sets the `{ws}` used throughout this skill.
@@ -142,7 +142,7 @@ Guidelines:
 | 4 | `database` | Schema, migrations, indexes, query performance |
 | 5 | `css` | Styling-only changes (Tailwind, `application.css`) |
 | 6 | `real-time` | Action Cable channels, broadcasts, Zustand sync |
-| 7 | `docs` | Documentation-only — `.jus/docs/`, README, CLAUDE.md |
+| 7 | `docs` | Documentation-only — `.jus/docs/`, README, agent context files |
 | 8 | `refactor` | Behavior-preserving restructuring |
 | 9 | `regression` | Bug that fixes previously-working behavior |
 | 10 | `responsive` | Responsive / breakpoint / mobile-web layout work |
@@ -157,7 +157,7 @@ To confirm IDs in another workspace, list them: `jus api GET '/workspaces/{ws}/l
 
 ### Post the start comment BEFORE the first code edit
 
-The very first thing in Phase 4 — before you edit a single source file — **post a "Starting" comment on the ticket**: the root cause / your read of the problem, the plan, and your TDD intent. This is the earliest stakeholder-facing signal that work began and the record of your plan *before* implementation. It is prompt-only (a soft `jus-start-comment-nudge.sh` nudge reminds you on the first source edit, but nothing hard-blocks it), so it rests on you remembering. Do not skip it; do not fold it into the delivery comment.
+The very first thing in Phase 4 — before you edit a single source file — **post a "Starting" comment on the ticket**: the root cause / your read of the problem, the plan, and your TDD intent. This is the earliest stakeholder-facing signal that work began and the record of your plan *before* implementation. It is prompt-only (on harnesses running the jus hooks, a soft nudge fires on the first source edit — nothing hard-blocks it anywhere), so it rests on you remembering. Do not skip it; do not fold it into the delivery comment.
 
 ```sh
 jus api POST /workspaces/{ws}/tickets/{id}/comments '{"comment":{"body":"Starting. <root cause + plan + TDD intent>"}}'
@@ -603,6 +603,6 @@ jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"cancelled","re
 
 ## Related Skills
 
-- `jus:hard-rules` — the non-negotiable must/must-not that overrides everything here (commit immediately, no lint suppression, append-only descriptions, never deliver incomplete work, no `git push`, document discoveries) and the map of which rules the plugin hooks enforce deterministically.
+- `hard-rules` — the non-negotiable must/must-not that overrides everything here (commit immediately, no lint suppression, append-only descriptions, never deliver incomplete work, no `git push`, document discoveries) and the map of which rules the enforcement hooks back deterministically on harnesses that run them. (Claude Code plugin installs show skill names prefixed with `jus:` — invoke the prefixed form there.)
 
 > **Note:** `ticket-workflow` is the single load-bearing SOP skill — it inlines the estimation, labeling, testing-gate, and `jus` API material that earlier lived in the separate `testing-gates`, `juscribe-api`, and `estimation-labels` skills (retired in #1856 because they never auto-invoked; their content was already resident here). For monumental, the deeper extracted reference also lives in `.jus/sop/` (`api-reference.md`, `workflows.md`, `commands.md`) and `.jus/docs/`.
