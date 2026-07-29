@@ -18,14 +18,26 @@ tool_name=$(jq -r '.tool_name // ""' <<<"$input")
 
 command=$(jq -r '.tool_input.command // ""' <<<"$input")
 
-# Only inspect commands that include `git push`.
-if ! [[ "$command" =~ (^|[[:space:]])git[[:space:]]+push([[:space:]]|$) ]]; then
-  exit 0
-fi
+# Block --force, -f, and --force-with-lease — but only as argument words of a
+# segment that itself invokes `git push`. Substring matching over the raw
+# command string blocked greps of this script, docs text quoting the rule, and
+# jus comment bodies, and let a `-f` belonging to another chained command block
+# a plain push (#1985). Splitting/quote-stripping lives in lib/state.sh. Out of
+# scope (guardrail, not sandbox): invocations smuggled through quoting
+# (`bash -c "…"`) and the `+refspec` force form.
+force_re='(^|[[:space:]])(--force-with-lease(=[^[:space:]]*)?|--force|-f)([[:space:]]|$)'
+force_push_found=0
+while IFS= read -r segment; do
+  if juscribe_sop_segment_invokes_git "$segment" push \
+      && [[ "$segment" =~ $force_re ]]; then
+    force_push_found=1
+    break
+  fi
+done < <(juscribe_sop_command_segments "$command")
 
-# Block --force, -f, and --force-with-lease. The SOP is "never force-push", and
-# --force-with-lease is still a force-push (just a safer one).
-if [[ "$command" =~ (--force-with-lease|--force([^[:alnum:]_-]|$)|[[:space:]]-f([[:space:]]|$)) ]]; then
+# The SOP is "never force-push", and --force-with-lease is still a force-push
+# (just a safer one).
+if (( force_push_found )); then
   cat >&2 <<'EOF'
 [jus:hard-rules] BLOCKED: `git push --force` (and variants) is forbidden.
 

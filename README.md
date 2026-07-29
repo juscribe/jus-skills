@@ -201,15 +201,15 @@ Relative targets mean the symlinks resolve inside any `git worktree` checkout (w
 | Claude Code | ✅ via `.claude-plugin/plugin.json` | ✅ | `claude --plugin-dir ./jus` or `/plugin marketplace add juscribe/jus-skills` → `/plugin install jus@jus-skills` |
 | Google Antigravity CLI (`agy`) | ✅ via `.agents/skills/` (Gemini CLI sunset 2026-06-18) | ❌ | canonical `.agents/skills/` install; `agy plugin import gemini` for the legacy ext |
 | Antigravity IDE (desktop) | ✅ via `.agents/skills/` (Gemini Code Assist IDE sunset 2026-06-18) | ❌ | canonical `.agents/skills/` install (same project path as the CLI) |
-| OpenAI Codex (CLI / IDE / app) | ✅ via `.agents/skills/` (documented roots; same `SKILL.md`) | ❌ | canonical `.agents/skills/` install |
+| OpenAI Codex (CLI / IDE / app) | ✅ via `.agents/skills/` (documented roots; same `SKILL.md`) | ✅ via `hooks/codex/` adapter (same scripts, Codex-native manifest + trust flow) | canonical `.agents/skills/` install + `hooks/codex/README.md` |
 | Cursor 2.4+ | ✅ via Skills surface (uses same `SKILL.md`) | ❌ | canonical `.agents/skills/` install (`.cursor/skills/` also read) |
-| Kimi Code (CLI / VS Code / ACP) | ✅ via `.agents/skills/` (also `.kimi-code/skills/`; does **not** read `.claude/skills/`) | ❌ (native hook system exists — adapter tracked by #1977) | canonical `.agents/skills/` install |
+| Kimi Code (CLI / VS Code / ACP) | ✅ via `.agents/skills/` (also `.kimi-code/skills/`; does **not** read `.claude/skills/`) | ✅ via `hooks/kimi-code/` adapter or the `kimi.plugin.json` plugin (PostToolUse nudges degrade — see its README) | Kimi plugin (`kimi.plugin.json` — skills + hooks + session-start hard-rules) or canonical `.agents/skills/` install |
 | Windsurf | ✅ via `.agents/skills/` (native skills) | ❌ | canonical `.agents/skills/` install |
 | Zed | ✅ via `.agents/skills/` (native skills) | ❌ | canonical `.agents/skills/` install |
 
 **Frontmatter portability.** The `SKILL.md` files use `name`, `description`, and `allowed-tools`. The first two are required by every tool above; `allowed-tools` is a Claude Code-only allowlist hint that other tools ignore. One set of skill files works for every supported tool — no per-tool variants needed.
 
-**Hooks are Claude Code-only.** Gemini CLI, Gemini Code Assist, Cursor, and Codex have no equivalent deterministic enforcement mechanism today; the `hard-rules` skill is the prompt-level fallback in those environments.
+**Hooks run on Claude Code, OpenAI Codex, and Kimi Code** — the `hooks/codex/` and `hooks/kimi-code/` adapters reuse the same scripts under each tool's native hooks system (Kimi additionally installs as a plugin via `kimi.plugin.json`; its PostToolUse nudges degrade to a prompt-time reminder — see the adapter READMEs). Cursor, Copilot, Windsurf, Zed, and Antigravity have no hook mechanism; the `hard-rules` skill is the prompt-level fallback there.
 
 ## Prerequisites
 
@@ -230,7 +230,7 @@ Synthetic Claude Code hook inputs are piped to each script; exit codes and outpu
 
 ## Limitations
 
-- **Hooks are Claude Code-only.** Other agents (Gemini CLI, Cursor, Codex CLI, Aider) get the skill layer only — there is no equivalent harness-level enforcement in those tools.
+- **Hooks cover Claude Code and Codex today.** Other agents (Cursor, Copilot, Windsurf, Zed, Antigravity, Aider) get the skill layer only — no harness-level enforcement exists there. Codex additionally gates project hooks behind its per-hash trust flow (`/hooks` to approve).
 - **Hooks are advisory, not a sandbox.** A determined model can `disableAllHooks` or edit `settings.json`. The hooks raise the cost of skipping a rule, not the impossibility.
 - **The pre-commit gate detects linters by command shape.** If your project uses unusual lint invocations (custom shell wrappers, `make lint`, etc.), add them to `juscribe_sop_is_lint_command` in `hooks/scripts/lib/state.sh`.
 - **Chained commands are heuristic.** `bin/rubocop && git commit` is allowed because the gate sees the lint invocation in the command string. Truly novel chaining patterns may need additional patterns.

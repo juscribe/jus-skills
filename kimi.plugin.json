@@ -1,0 +1,63 @@
+{
+  "name": "jus",
+  "version": "1.1.1",
+  "description": "Juscribe Workflow SOP as two on-demand Agent Skills (ticket-workflow + hard-rules) plus deterministic enforcement hooks, packaged for Kimi Code.",
+  "homepage": "https://github.com/juscribe/jus-skills",
+  "license": "MIT",
+  "skills": "./skills/",
+  "sessionStart": {
+    "skill": "hard-rules"
+  },
+  "interface": {
+    "displayName": "jus — Juscribe Workflow SOP",
+    "shortDescription": "Ticket lifecycle skills + hard-rule enforcement hooks for Juscribe boards"
+  },
+  "hooks": [
+    {
+      "event": "PreToolUse",
+      "matcher": "^Bash$",
+      "command": "./hooks/scripts/jus-block-force-push.sh",
+      "timeout": 10
+    },
+    {
+      "event": "PreToolUse",
+      "matcher": "^Bash$",
+      "command": "./hooks/scripts/jus-block-no-verify.sh",
+      "timeout": 10
+    },
+    {
+      "event": "PreToolUse",
+      "matcher": "^Bash$",
+      "command": "./hooks/scripts/jus-pre-commit-gate.sh",
+      "timeout": 10
+    },
+    {
+      "event": "PreToolUse",
+      "matcher": "^(Edit|Write)$",
+      "command": "./hooks/kimi-code/scripts/jus-kimi-adapt.sh ./hooks/scripts/jus-block-lint-suppression.sh",
+      "timeout": 10
+    },
+    {
+      "event": "PostToolUse",
+      "matcher": "^Bash$",
+      "command": "./hooks/scripts/jus-post-bash-tracker.sh",
+      "timeout": 10
+    },
+    {
+      "event": "PostToolUse",
+      "matcher": "^(Edit|Write)$",
+      "command": "./hooks/kimi-code/scripts/jus-kimi-adapt.sh ./hooks/scripts/jus-track-edits.sh",
+      "timeout": 10
+    },
+    {
+      "event": "UserPromptSubmit",
+      "command": "./hooks/kimi-code/scripts/jus-kimi-prompt-nudge.sh",
+      "timeout": 10
+    },
+    {
+      "event": "Stop",
+      "command": "./hooks/scripts/jus-stop-uncommitted.sh",
+      "timeout": 15
+    }
+  ]
+}

@@ -101,6 +101,53 @@ t "ignores rebase --force-rebase (different command)"
 assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
   '{"tool_name":"Bash","tool_input":{"command":"git rebase main"}}'
 
+# #1985 — referencing the blocker or quoting the rule must not block. The force
+# tokens must be argument words of an actual `git push` segment, not substrings
+# anywhere in the command string (quoted JSON/prose, other commands' flags).
+
+t "allows referencing the script + quoting the rule in a jus comment (#1985 incident)"
+cmd="grep -n force jus/hooks/scripts/jus-block-force-push.sh && jus api POST /workspaces/1/tickets/1976/comments '{\"comment\":{\"body\":\"Port the git push --force blocker\"}}'"
+assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
+  "$(jq -nc --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}')"
+
+t "allows quoted-docs echo about the force-push rule (#1985)"
+assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"echo \"The SOP forbids git push --force; the stakeholder pushes manually\""}}'
+
+t "allows cat of the blocker script (#1985)"
+assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"cat jus/hooks/scripts/jus-block-force-push.sh"}}'
+
+t "allows plain push chained after rm -f (#1985 — flag belongs to another command)"
+assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"rm -f tmp.txt && git push origin main"}}'
+
+t "allows a multiline quoted body that quotes the rule (#1985)"
+cmd=$'jus api POST /workspaces/1/tickets/1985/comments \'{"comment":{"body":"Rule:\ngit push --force is forbidden"}}\''
+assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
+  "$(jq -nc --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}')"
+
+t "still blocks chained git push --force"
+assert_exit 2 "$SCRIPTS/jus-block-force-push.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git add . && git push --force"}}' \
+  "force-push"
+
+t "still blocks env-prefixed force push"
+assert_exit 2 "$SCRIPTS/jus-block-force-push.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"GIT_TRACE=1 git push -f"}}' \
+  "force-push"
+
+t "blocks git -C <path> push --force (global options before the subcommand)"
+assert_exit 2 "$SCRIPTS/jus-block-force-push.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git -C /tmp/repo push --force"}}' \
+  "force-push"
+
+t "still blocks force push on a later line of a multiline command"
+cmd=$'echo preparing\ngit push --force'
+assert_exit 2 "$SCRIPTS/jus-block-force-push.sh" \
+  "$(jq -nc --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}')" \
+  "force-push"
+
 # ---- jus-block-no-verify.sh ----------------------------------------------------
 
 section "jus-block-no-verify.sh"
@@ -122,6 +169,31 @@ assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
 t "doesn't trip on --no-verify-something else"
 assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
   '{"tool_name":"Bash","tool_input":{"command":"echo --no-verify-tags"}}'
+
+# #1985 — same anchoring as the force-push blocker: `--no-verify` must be an
+# argument word of an actual git segment, not a substring anywhere.
+
+t "allows a jus comment body that quotes the --no-verify rule (#1985)"
+cmd="jus api POST /workspaces/1/tickets/1985/comments '{\"comment\":{\"body\":\"never use --no-verify when committing\"}}'"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  "$(jq -nc --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}')"
+
+t "allows echo quoting the --no-verify rule (#1985)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"echo \"the SOP forbids --no-verify everywhere\""}}'
+
+t "allows grep for --no-verify in the hook source (#1985)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"grep -n -- --no-verify jus/hooks/scripts/jus-block-no-verify.sh"}}'
+
+t "allows a commit message that mentions --no-verify (#1985)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"forbid --no-verify in hooks\""}}'
+
+t "still blocks chained commit --no-verify"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git add . && git commit -m x --no-verify"}}' \
+  "no-verify"
 
 # ---- jus-block-lint-suppression.sh --------------------------------------------
 
@@ -167,6 +239,38 @@ assert_exit 0 "$SCRIPTS/jus-block-lint-suppression.sh" \
 t "ignores non-Edit tool"
 assert_exit 0 "$SCRIPTS/jus-block-lint-suppression.sh" \
   '{"tool_name":"Bash","tool_input":{"command":"echo // eslint-disable"}}'
+
+# #1985 — a suppression token is only a suppression in a file its linter reads.
+# Quoting one in docs or a shell test fixture suppresses nothing and must not
+# block. (Writing THESE fixtures via the editor was itself blocked by the
+# pre-#1985 hook — the bug demonstrated on its own test harness.)
+
+t "allows a docs (.md) edit that quotes a suppression token (#1985)"
+assert_exit 0 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"/repo/.jus/docs/linting.md","old_string":"## Lint rules","new_string":"## Lint rules\nNever add # rubocop:disable comments."}}'
+
+t "allows a shell test-harness edit that quotes a suppression token (#1985)"
+assert_exit 0 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"/repo/jus/hooks/tests.sh","old_string":"x","new_string":"x // eslint-disable-next-line"}}'
+
+t "allows a ruby suppression token quoted in a TypeScript string (#1985)"
+assert_exit 0 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  '{"tool_name":"Write","tool_input":{"file_path":"/repo/app/frontend/lib/rules.ts","content":"export const RULE = \"no # rubocop:disable\";"}}'
+
+t "blocks a suppression added to an extensionless ruby file (Gemfile)"
+assert_exit 2 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"/repo/Gemfile","old_string":"gem \"pg\"","new_string":"gem \"pg\" # rubocop:disable Bundler/OrderedGems"}}' \
+  "rubocop:disable"
+
+t "blocks a suppression when file_path is missing (fail closed)"
+assert_exit 2 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  '{"tool_name":"Write","tool_input":{"content":"// eslint-disable-next-line\nfoo()"}}' \
+  "eslint-disable"
+
+t "still blocks @ts-nocheck in a .tsx file"
+assert_exit 2 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  '{"tool_name":"Write","tool_input":{"file_path":"/repo/app/frontend/components/X.tsx","content":"// @ts-nocheck\nexport {}"}}' \
+  "@ts-nocheck"
 
 # ---- jus-pre-commit-gate.sh + tracking ----------------------------------------
 
@@ -561,6 +665,235 @@ GEMINI_VERSION="$(jq -r '.version' "$GEMINI_JSON")"
 if [[ "$GEMINI_VERSION" != "$PLUGIN_VERSION" ]]; then
   printf '  \033[33m⚠\033[0m gemini-extension.json version (%s) differs from plugin.json (%s) — synced at release time (#1885)\n' "$GEMINI_VERSION" "$PLUGIN_VERSION"
 fi
+
+# ---- codex adapter (#1976) -------------------------------------------------
+
+section "codex adapter"
+
+# The Codex payloads for Bash and Stop match the shared scripts' contract
+# byte-for-byte (tool_name "Bash" + tool_input.command string; Stop carries
+# stop_hook_active + cwd). The one divergence is file edits: Codex sends
+# tool_name "apply_patch" with tool_input.command holding raw patch text —
+# jus-codex-adapt.sh normalizes that to the Edit shape before delegating.
+CODEX_DIR="$PLUGIN_ROOT/hooks/codex"
+CODEX_ADAPT="$CODEX_DIR/scripts/jus-codex-adapt.sh"
+SCRIPTS_DIR="$HOOKS_DIR/scripts"
+# Built by concatenation so the suppression blocker (rightly) doesn't see a
+# contiguous pattern literal in this file's own text.
+SUPP_MARK="eslint""-disable"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="codex hooks.json is valid JSON with the Codex nesting"
+if jq -e '.hooks.PreToolUse[0].matcher and .hooks.Stop[0].hooks[0].command' "$CODEX_DIR/hooks.json" >/dev/null 2>&1; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="codex hooks.json references only scripts that exist in the bundle"
+missing=0
+[[ -f "$CODEX_DIR/hooks.json" ]] || missing=1
+while IFS= read -r cmd; do
+  for word in $cmd; do
+    case "$word" in
+      "~/.jus-skills/"*)
+        resolved="$PLUGIN_ROOT/${word#\~/.jus-skills/}"
+        [[ -x "$resolved" ]] || missing=$((missing + 1))
+        ;;
+    esac
+  done
+done < <(jq -r '.hooks[][].hooks[].command' "$CODEX_DIR/hooks.json" 2>/dev/null)
+if [[ "$missing" -eq 0 ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (%d missing)\n' "$TEST_NAME" "$missing"
+fi
+
+# codex_hook <expected_exit> <name> <payload> <script...>
+codex_hook() {
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local expected="$1" name="$2" payload="$3"; shift 3
+  local ec=0
+  "$@" <<<"$payload" >/dev/null 2>&1 || ec=$?
+  if [[ "$ec" -eq "$expected" ]]; then
+    printf '  \033[32m✓\033[0m %s\n' "$name"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$name")
+    printf '  \033[31m✗\033[0m %s (exit=%d, want %d)\n' "$name" "$ec" "$expected"
+  fi
+}
+
+CODEX_ENV_EXTRA='"transcript_path":"/tmp/t.jsonl","model":"gpt-5.2-codex","permission_mode":"default","turn_id":"turn_1","tool_use_id":"tooluse_1"'
+
+codex_hook 2 "codex: apply_patch adding a lint suppression is blocked through the shim" \
+  "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"cx1\",\"cwd\":\"/tmp\",${CODEX_ENV_EXTRA},\"tool_name\":\"apply_patch\",\"tool_input\":{\"command\":\"*** Begin Patch\\n*** Update File: app/a.ts\\n@@\\n-const x = 1\\n+// ${SUPP_MARK}-next-line\\n+const x: any = 1\\n*** End Patch\"}}" \
+  "$CODEX_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
+codex_hook 0 "codex: apply_patch REMOVING a suppression passes through the shim" \
+  "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"cx1\",\"cwd\":\"/tmp\",${CODEX_ENV_EXTRA},\"tool_name\":\"apply_patch\",\"tool_input\":{\"command\":\"*** Begin Patch\\n*** Update File: app/a.ts\\n@@\\n-// ${SUPP_MARK}-next-line\\n-const x: any = 1\\n+const x = 1\\n*** End Patch\"}}" \
+  "$CODEX_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
+codex_hook 2 "codex: Bash blocker payload blocks via the shim passthrough" \
+  "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"cx1\",\"cwd\":\"/tmp\",${CODEX_ENV_EXTRA},\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push ${FORCE_FLAG:---force} origin main\"}}" \
+  "$CODEX_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh"
+
+CODEX_STOP_REPO="$(mktemp -d)"
+git -C "$CODEX_STOP_REPO" init -q
+echo dirty > "$CODEX_STOP_REPO/file.txt"
+codex_hook 2 "codex: Stop payload with a dirty tree blocks (field-compatible)" \
+  "{\"hook_event_name\":\"Stop\",\"session_id\":\"cx1\",\"cwd\":\"$CODEX_STOP_REPO\",\"stop_hook_active\":false,\"last_assistant_message\":null,${CODEX_ENV_EXTRA}}" \
+  "$SCRIPTS_DIR/jus-stop-uncommitted.sh"
+codex_hook 0 "codex: Stop payload with stop_hook_active=true passes (loop guard)" \
+  "{\"hook_event_name\":\"Stop\",\"session_id\":\"cx1\",\"cwd\":\"$CODEX_STOP_REPO\",\"stop_hook_active\":true,\"last_assistant_message\":null,${CODEX_ENV_EXTRA}}" \
+  "$SCRIPTS_DIR/jus-stop-uncommitted.sh"
+rm -rf "$CODEX_STOP_REPO"
+
+# ---- kimi-code adapter (#1977) ----------------------------------------------
+
+section "kimi-code adapter"
+
+# Kimi Code payloads use Claude's tool names with one renamed key — the
+# empirically captured shapes (kimi-code 0.29.2) are Bash {command},
+# Edit {new_string, old_string, path}, Write {content, path}. The suppression
+# blocker's keys all match; jus-kimi-adapt.sh maps path → file_path for the
+# trackers. Stop carries stop_hook_active + cwd, same as Claude/Codex.
+KIMI_DIR="$PLUGIN_ROOT/hooks/kimi-code"
+KIMI_ADAPT="$KIMI_DIR/scripts/jus-kimi-adapt.sh"
+KIMI_NUDGE="$KIMI_DIR/scripts/jus-kimi-prompt-nudge.sh"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="kimi config snippet exists, uses only blockable/observe events, bare-matcher Stop"
+kimi_cfg_ok=1
+if [[ ! -f "$KIMI_DIR/config-hooks.toml" ]]; then
+  kimi_cfg_ok=0
+else
+  grep -qE '^event = "(PreToolUse|PostToolUse|UserPromptSubmit|Stop)"$' "$KIMI_DIR/config-hooks.toml" || kimi_cfg_ok=0
+  # The Stop rule must not carry a matcher (Stop matches against an empty string).
+  if awk '/^event = "Stop"/{f=1;next} f&&/^matcher/{print "BAD"} /^\[\[hooks\]\]/{f=0}' "$KIMI_DIR/config-hooks.toml" | grep -q BAD; then
+    kimi_cfg_ok=0
+  fi
+fi
+if [[ "$kimi_cfg_ok" -eq 1 ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="kimi config snippet references only scripts that exist in the bundle"
+missing=0
+[[ -f "$KIMI_DIR/config-hooks.toml" ]] || missing=1
+while IFS= read -r cmd; do
+  for word in $cmd; do
+    case "$word" in
+      "~/.jus-skills/"*)
+        resolved="$PLUGIN_ROOT/${word#\~/.jus-skills/}"
+        [[ -x "$resolved" ]] || missing=$((missing + 1))
+        ;;
+    esac
+  done
+done < <(sed -n 's/^command = "\(.*\)"$/\1/p' "$KIMI_DIR/config-hooks.toml" 2>/dev/null)
+if [[ "$missing" -eq 0 ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (%d missing)\n' "$TEST_NAME" "$missing"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="kimi.plugin.json: name/skills/sessionStart/hooks shape + resolvable paths"
+kimi_plugin_ok=1
+KIMI_PLUGIN="$PLUGIN_ROOT/kimi.plugin.json"
+if ! jq -e '.name == "jus" and .skills == "./skills/" and (.sessionStart.skill | type == "string") and ([.hooks[] | keys[]] - ["event","matcher","command","timeout"] | length == 0)' "$KIMI_PLUGIN" >/dev/null 2>&1; then
+  kimi_plugin_ok=0
+else
+  ss_skill=$(jq -r '.sessionStart.skill' "$KIMI_PLUGIN")
+  [[ -f "$PLUGIN_ROOT/skills/$ss_skill/SKILL.md" ]] || kimi_plugin_ok=0
+  while IFS= read -r cmd; do
+    for word in $cmd; do
+      case "$word" in
+        "./"*) [[ -x "$PLUGIN_ROOT/${word#./}" ]] || kimi_plugin_ok=0 ;;
+      esac
+    done
+  done < <(jq -r '.hooks[].command' "$KIMI_PLUGIN" 2>/dev/null)
+fi
+if [[ "$kimi_plugin_ok" -eq 1 ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+
+# Version drift vs plugin.json: warn-only, synced at release time like
+# gemini-extension.json.
+KIMI_PLUGIN_VERSION="$(jq -r '.version // ""' "$KIMI_PLUGIN" 2>/dev/null)"
+if [[ -n "$KIMI_PLUGIN_VERSION" && "$KIMI_PLUGIN_VERSION" != "$PLUGIN_VERSION" ]]; then
+  printf '  \033[33m⚠\033[0m kimi.plugin.json version (%s) differs from plugin.json (%s) — synced at release time\n' "$KIMI_PLUGIN_VERSION" "$PLUGIN_VERSION"
+fi
+
+codex_hook 2 "kimi: Bash blocker payload blocks (native envelope, direct script)" \
+  "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"km1\",\"cwd\":\"/tmp\",\"tool_call_id\":\"call_1\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push ${FORCE_FLAG:---force} origin main\"}}" \
+  "$SCRIPTS_DIR/jus-block-force-push.sh"
+
+codex_hook 2 "kimi: Edit adding a suppression is blocked through the path shim" \
+  "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"km1\",\"cwd\":\"/tmp\",\"tool_call_id\":\"call_2\",\"tool_name\":\"Edit\",\"tool_input\":{\"path\":\"app/a.ts\",\"old_string\":\"const x = 1\",\"new_string\":\"// ${SUPP_MARK}-next-line\\nconst x: any = 1\"}}" \
+  "$KIMI_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
+codex_hook 0 "kimi: Edit REMOVING a suppression passes through the path shim" \
+  "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"km1\",\"cwd\":\"/tmp\",\"tool_call_id\":\"call_3\",\"tool_name\":\"Edit\",\"tool_input\":{\"path\":\"app/a.ts\",\"old_string\":\"// ${SUPP_MARK}-next-line\\nconst x: any = 1\",\"new_string\":\"const x = 1\"}}" \
+  "$KIMI_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
+codex_hook 2 "kimi: Write with a suppression in content is blocked through the shim" \
+  "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"km1\",\"cwd\":\"/tmp\",\"tool_call_id\":\"call_4\",\"tool_name\":\"Write\",\"tool_input\":{\"path\":\"app/b.ts\",\"content\":\"// ${SUPP_MARK}\\nconst y: any = 2\"}}" \
+  "$KIMI_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
+# track-edits through the shim records the path into edits.log
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="kimi: track-edits via the shim records path as file_path"
+KIMI_STATE="$(mktemp -d)"
+CLAUDE_PLUGIN_DATA="$KIMI_STATE" "$KIMI_ADAPT" "$SCRIPTS_DIR/jus-track-edits.sh" >/dev/null 2>&1 \
+  <<<'{"hook_event_name":"PostToolUse","session_id":"km2","cwd":"/tmp","tool_call_id":"call_5","tool_name":"Edit","tool_input":{"path":"lib/tracked.rb","old_string":"a","new_string":"b"}}' || true
+if grep -q "lib/tracked.rb" "$KIMI_STATE/sessions/km2/edits.log" 2>/dev/null; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+rm -rf "$KIMI_STATE"
+
+# Prompt-time nudge: injects a reminder when the tree is dirty, stays silent
+# when clean, and must NEVER exit 2 (UserPromptSubmit is blockable — a
+# nonzero-2 exit would block the user's own prompt).
+KIMI_NUDGE_REPO="$(mktemp -d)"
+git -C "$KIMI_NUDGE_REPO" init -q
+echo dirty > "$KIMI_NUDGE_REPO/w.txt"
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="kimi: prompt nudge injects a reminder on a dirty tree (exit 0)"
+out=$("$KIMI_NUDGE" <<<"{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"km3\",\"cwd\":\"$KIMI_NUDGE_REPO\",\"prompt\":\"continue\",\"is_steer\":false}" 2>/dev/null); ec=$?
+if [[ "$ec" -eq 0 && "$out" == *"uncommitted"* ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (exit=%d out=%s)\n' "$TEST_NAME" "$ec" "${out:0:60}"
+fi
+git -C "$KIMI_NUDGE_REPO" add -A >/dev/null 2>&1
+git -C "$KIMI_NUDGE_REPO" -c user.email=t@t -c user.name=t commit -qm init >/dev/null 2>&1
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="kimi: prompt nudge stays silent on a clean tree (exit 0)"
+out=$("$KIMI_NUDGE" <<<"{\"hook_event_name\":\"UserPromptSubmit\",\"session_id\":\"km3\",\"cwd\":\"$KIMI_NUDGE_REPO\",\"prompt\":\"continue\",\"is_steer\":false}" 2>/dev/null); ec=$?
+if [[ "$ec" -eq 0 && -z "$out" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (exit=%d out=%s)\n' "$TEST_NAME" "$ec" "${out:0:60}"
+fi
+codex_hook 0 "kimi: prompt nudge fails open on malformed input" \
+  "not json at all" "$KIMI_NUDGE"
+rm -rf "$KIMI_NUDGE_REPO"
 
 # ---- skill-body portability (#1975) ---------------------------------------
 

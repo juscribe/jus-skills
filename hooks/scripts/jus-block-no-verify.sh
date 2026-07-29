@@ -18,7 +18,21 @@ tool_name=$(jq -r '.tool_name // ""' <<<"$input")
 
 command=$(jq -r '.tool_input.command // ""' <<<"$input")
 
-if [[ "$command" =~ (^|[[:space:]])--no-verify([[:space:]]|$) ]]; then
+# Block `--no-verify` only as an argument word of a segment that invokes git
+# (commit, push, merge, …). Substring matching over the raw command string
+# blocked quoted comment bodies, docs echoes, and greps of this script (#1985).
+# Splitting/quote-stripping lives in lib/state.sh.
+noverify_re='(^|[[:space:]])--no-verify([[:space:]]|$)'
+noverify_found=0
+while IFS= read -r segment; do
+  if juscribe_sop_segment_invokes_git "$segment" \
+      && [[ "$segment" =~ $noverify_re ]]; then
+    noverify_found=1
+    break
+  fi
+done < <(juscribe_sop_command_segments "$command")
+
+if (( noverify_found )); then
   cat >&2 <<'EOF'
 [jus:hard-rules] BLOCKED: `--no-verify` is forbidden.
 

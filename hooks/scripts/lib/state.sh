@@ -106,6 +106,33 @@ juscribe_sop_started_ticket() {
   return 0
 }
 
+# Split a Bash command string into simple-command segments, one per output
+# line. Newlines become separators, quoted regions are removed, and the
+# remainder splits on ;, |, &, parens/braces, and backticks. A quoted string
+# can only ever be an ARGUMENT of a command — never the command being invoked —
+# so dropping quoted regions means prose or JSON that merely mentions a
+# forbidden invocation can't produce a matching segment (#1985). Known
+# limitation: an unmatched apostrophe in unquoted prose can mis-pair with a
+# later quote and hide a real invocation — these hooks are a guardrail, not a
+# sandbox.
+juscribe_sop_command_segments() {
+  local cmd="$1"
+  tr '\n' ';' <<<"$cmd" \
+    | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" \
+    | tr ';|&(){}`' '\n'
+}
+
+# Does a segment invoke git — optionally a specific subcommand ($2, a word or
+# ERE)? Tolerates leading whitespace, VAR=val env prefixes, and git global
+# options between `git` and the subcommand (-C <path>, -c <k>=<v>, --long[=v]).
+juscribe_sop_segment_invokes_git() {
+  local seg="$1" sub="${2:-[A-Za-z-]+}"
+  local assigns='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+  local gitopts='([[:space:]]+(-[Cc][[:space:]]*[^[:space:]]+|--[A-Za-z][A-Za-z-]*(=[^[:space:]]*)?))*'
+  local re='^[[:space:]]*'"$assigns"'git'"$gitopts"'[[:space:]]+'"$sub"'([[:space:]]|$)'
+  [[ "$seg" =~ $re ]]
+}
+
 # If the command POSTs a comment to a ticket, echo that ticket id. Matches
 # `tickets/<id>/comments` only when `comments` is NOT followed by `/` — so a
 # comment-reaction toggle (`.../comments/<cid>/reactions/...`) does NOT count as

@@ -22,6 +22,43 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [Unreleased]
+
+### Added
+
+- **OpenAI Codex hooks adapter** (`hooks/codex/`): the shared enforcement
+  scripts under Codex's native hooks system — Bash and Stop hooks register
+  unchanged (the wire contracts match field-for-field); file edits run behind
+  `jus-codex-adapt.sh`, which converts raw `apply_patch` text into the Edit
+  shape the suppression blocker's delta logic expects. Ships a merge-ready
+  `hooks.json`, trust-flow docs, and a tests.sh section. (#1976)
+- **Kimi Code hooks adapter + plugin packaging**: `hooks/kimi-code/` carries
+  a `config-hooks.toml` for `~/.kimi-code/config.toml` plus a `path` →
+  `file_path` shim (Kimi's one payload divergence, pinned empirically on
+  0.29.2), and the bundle root gains **`kimi.plugin.json`** — skills, hooks,
+  and a session-start `hard-rules` load in a single Kimi plugin install.
+  Kimi's observe-only PostToolUse means the dirty-tree nudge rides a new
+  prompt-time reminder (`jus-kimi-prompt-nudge.sh`) instead. Live-verified:
+  a prompted force-push and a suppression edit were both denied in real
+  kimi-k2.7-code sessions. (#1977)
+
+### Fixed
+
+- The force-push and `--no-verify` blockers anchor to an **actual git
+  invocation**: the command splits into segments (quoted regions dropped —
+  a quoted string can only ever be an argument), and a force flag /
+  `--no-verify` blocks only as an argument word of a `git push` / git
+  segment. Previously the tokens matched anywhere in the raw command string,
+  so a grep of the hook source, docs text quoting the rule, a `jus api`
+  comment body, or a `-f` belonging to another chained command
+  (`rm -f x && git push origin main`) all blocked spuriously. Also fixes a
+  false negative: `git -C <path> push --force` was missed. (#1985)
+- The lint-suppression blocker maps each directive to the file types its
+  linter actually reads (rubocop/reek → ruby, eslint/ts directives → ts/js,
+  mypy/pyright → py, nolint/nosec → go); quoting a token in docs or shell
+  test fixtures no longer blocks an edit. A missing `file_path` stays
+  fail-closed — every pattern remains active. (#1985)
+
 ## [1.1.1] — 2026-07-27
 
 First published release since 1.0.1 — this tag also carries the previously

@@ -35,27 +35,41 @@ case "$tool_name" in
     ;;
 esac
 
-# Each entry: regex pattern + human-readable label.
+# Each entry: regex pattern + human-readable label + the file types whose
+# linter actually reads the directive. Outside those types the token is inert
+# text (docs quoting a rule, shell test fixtures) and must not block (#1985).
+# Extensionless entries (Gemfile, Rakefile) are matched by basename.
 patterns=(
-  '#[[:space:]]*rubocop:disable|rubocop:disable'
-  '#[[:space:]]*rubocop:todo|rubocop:todo'
-  ':reek:[A-Za-z]|:reek: comment'
-  '//[[:space:]]*eslint-disable|eslint-disable'
-  '/\*[[:space:]]*eslint-disable|eslint-disable (block)'
-  '//[[:space:]]*prettier-ignore|prettier-ignore'
-  '/\*[[:space:]]*prettier-ignore|prettier-ignore (block)'
-  '//[[:space:]]*@ts-ignore|@ts-ignore'
-  '//[[:space:]]*@ts-expect-error|@ts-expect-error'
-  '//[[:space:]]*@ts-nocheck|@ts-nocheck'
-  '#[[:space:]]*type:[[:space:]]*ignore|type: ignore (mypy)'
-  '#[[:space:]]*pyright:[[:space:]]*ignore|pyright: ignore'
-  '//[[:space:]]*nolint|nolint (Go)'
-  '#nosec|#nosec (gosec)'
+  '#[[:space:]]*rubocop:disable|rubocop:disable|rb rake gemspec ru Gemfile Rakefile'
+  '#[[:space:]]*rubocop:todo|rubocop:todo|rb rake gemspec ru Gemfile Rakefile'
+  ':reek:[A-Za-z]|:reek: comment|rb rake gemspec ru Gemfile Rakefile'
+  '//[[:space:]]*eslint-disable|eslint-disable|ts tsx js jsx mjs cjs'
+  '/\*[[:space:]]*eslint-disable|eslint-disable (block)|ts tsx js jsx mjs cjs'
+  '//[[:space:]]*prettier-ignore|prettier-ignore|ts tsx js jsx mjs cjs'
+  '/\*[[:space:]]*prettier-ignore|prettier-ignore (block)|ts tsx js jsx mjs cjs css scss'
+  '//[[:space:]]*@ts-ignore|@ts-ignore|ts tsx js jsx'
+  '//[[:space:]]*@ts-expect-error|@ts-expect-error|ts tsx js jsx'
+  '//[[:space:]]*@ts-nocheck|@ts-nocheck|ts tsx js jsx'
+  '#[[:space:]]*type:[[:space:]]*ignore|type: ignore (mypy)|py'
+  '#[[:space:]]*pyright:[[:space:]]*ignore|pyright: ignore|py'
+  '//[[:space:]]*nolint|nolint (Go)|go'
+  '#nosec|#nosec (gosec)|go'
 )
+
+file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input")
+base="${file_path##*/}"
+ext="${base##*.}" # extensionless files (Gemfile, Rakefile) yield the basename
 
 for entry in "${patterns[@]}"; do
   pattern="${entry%%|*}"
-  label="${entry#*|}"
+  rest="${entry#*|}"
+  label="${rest%%|*}"
+  exts="${rest#*|}"
+  # Skip patterns whose linter never reads this file type. An empty file_path
+  # stays fail-closed: every pattern remains active when the target is unknown.
+  if [[ -n "$file_path" && " $exts " != *" $ext "* ]]; then
+    continue
+  fi
   new_count=$(grep -cE "$pattern" <<<"$new_content" 2>/dev/null || true)
   old_count=$(grep -cE "$pattern" <<<"$old_content" 2>/dev/null || true)
   # grep -c may emit "0" or empty; coerce to integer

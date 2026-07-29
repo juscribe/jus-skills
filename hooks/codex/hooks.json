@@ -1,0 +1,84 @@
+{
+  "description": "Juscribe SOP enforcement hooks for OpenAI Codex — deterministic backstops to the prompt-level rules in the hard-rules skill. Command paths assume the canonical ~/.jus-skills install; see hooks/codex/README.md for setup, the trust flow, and path overrides.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.jus-skills/hooks/scripts/jus-block-force-push.sh",
+            "timeout": 10,
+            "statusMessage": "jus: force-push guard"
+          },
+          {
+            "type": "command",
+            "command": "~/.jus-skills/hooks/scripts/jus-block-no-verify.sh",
+            "timeout": 10,
+            "statusMessage": "jus: --no-verify guard"
+          },
+          {
+            "type": "command",
+            "command": "~/.jus-skills/hooks/scripts/jus-pre-commit-gate.sh",
+            "timeout": 10,
+            "statusMessage": "jus: pre-commit lint gate"
+          }
+        ]
+      },
+      {
+        "matcher": "^apply_patch$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.jus-skills/hooks/codex/scripts/jus-codex-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-lint-suppression.sh",
+            "timeout": 10,
+            "statusMessage": "jus: lint-suppression guard"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "^Bash$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.jus-skills/hooks/scripts/jus-post-bash-tracker.sh",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "^apply_patch$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.jus-skills/hooks/codex/scripts/jus-codex-adapt.sh ~/.jus-skills/hooks/scripts/jus-track-edits.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/.jus-skills/hooks/codex/scripts/jus-codex-adapt.sh ~/.jus-skills/hooks/scripts/jus-dirty-tree-nudge.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/.jus-skills/hooks/codex/scripts/jus-codex-adapt.sh ~/.jus-skills/hooks/scripts/jus-start-comment-nudge.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "~/.jus-skills/hooks/scripts/jus-stop-uncommitted.sh",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

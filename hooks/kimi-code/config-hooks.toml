@@ -1,0 +1,57 @@
+# Juscribe SOP enforcement hooks for Kimi Code (#1977).
+#
+# Kimi Code reads hooks ONLY from ~/.kimi-code/config.toml (no project-level
+# config) — append this file's rules there, or install the whole bundle as a
+# Kimi plugin instead (kimi.plugin.json at the bundle root carries the same
+# rules with plugin-relative paths; see hooks/kimi-code/README.md).
+#
+# Paths assume the canonical ~/.jus-skills install. [[hooks]] accepts ONLY
+# event / matcher / command / timeout — extra keys fail the whole config load.
+# The Stop rule deliberately has no matcher: Kimi matches Stop against an
+# empty string, so any non-empty matcher would never fire.
+
+[[hooks]]
+event = "PreToolUse"
+matcher = "^Bash$"
+command = "~/.jus-skills/hooks/scripts/jus-block-force-push.sh"
+timeout = 10
+
+[[hooks]]
+event = "PreToolUse"
+matcher = "^Bash$"
+command = "~/.jus-skills/hooks/scripts/jus-block-no-verify.sh"
+timeout = 10
+
+[[hooks]]
+event = "PreToolUse"
+matcher = "^Bash$"
+command = "~/.jus-skills/hooks/scripts/jus-pre-commit-gate.sh"
+timeout = 10
+
+[[hooks]]
+event = "PreToolUse"
+matcher = "^(Edit|Write)$"
+command = "~/.jus-skills/hooks/kimi-code/scripts/jus-kimi-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-lint-suppression.sh"
+timeout = 10
+
+[[hooks]]
+event = "PostToolUse"
+matcher = "^Bash$"
+command = "~/.jus-skills/hooks/scripts/jus-post-bash-tracker.sh"
+timeout = 10
+
+[[hooks]]
+event = "PostToolUse"
+matcher = "^(Edit|Write)$"
+command = "~/.jus-skills/hooks/kimi-code/scripts/jus-kimi-adapt.sh ~/.jus-skills/hooks/scripts/jus-track-edits.sh"
+timeout = 10
+
+[[hooks]]
+event = "UserPromptSubmit"
+command = "~/.jus-skills/hooks/kimi-code/scripts/jus-kimi-prompt-nudge.sh"
+timeout = 10
+
+[[hooks]]
+event = "Stop"
+command = "~/.jus-skills/hooks/scripts/jus-stop-uncommitted.sh"
+timeout = 15

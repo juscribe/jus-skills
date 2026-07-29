@@ -12,7 +12,7 @@ allowed-tools: Bash(jus *), Bash(git *), Bash(bin/rspec*), Bash(bin/rubocop*), B
 
 ## Two-Layer Enforcement: Skill + Hooks
 
-Some of these rules are also enforced **deterministically** by the jus enforcement hooks (under `hooks/`) — **when your harness runs them**. Today that is Claude Code (plugin or project-committed install); Codex and Kimi Code ship compatible hook systems and their adapters are tracked under #1818 (#1976, #1977). **On a harness without the hooks — Codex, Kimi Code, Cursor, and every other tool today — every rule below is prompt-level only: nothing blocks you mechanically, which makes following this skill MORE important, not less.** Where they do run, the hooks are a backstop — they fire even if a model "forgot" the rule — but the skill remains the source of truth and the only layer that explains the _why_.
+Some of these rules are also enforced **deterministically** by the jus enforcement hooks (under `hooks/`) — **when your harness runs them**. Today that is Claude Code (plugin or project-committed install), **OpenAI Codex** (via the `hooks/codex/` adapter), and **Kimi Code** (via the `hooks/kimi-code/` adapter or the bundle's Kimi plugin manifest). **On a harness without the hooks installed — including Codex/Kimi before their adapters are set up, Cursor, and every other tool — every rule below is prompt-level only: nothing blocks you mechanically, which makes following this skill MORE important, not less.** Where they do run, the hooks are a backstop — they fire even if a model "forgot" the rule — but the skill remains the source of truth and the only layer that explains the _why_.
 
 | Rule                                                      | Skill (prompt) | Hook (where hooks run)                      |
 | --------------------------------------------------------- | :------------: | ------------------------------------------- |
@@ -43,7 +43,7 @@ Some of these rules are also enforced **deterministically** by the jus enforceme
 
 ### What hooks can and can't do
 
-- The shipped hooks run on Claude Code today. Codex and Kimi Code expose compatible hook systems (JSON on stdin, exit-2 blocks) — per-tool adapters are tracked under #1818. Tools with no hook surface (Cursor, Copilot, Aider) get the skill layer only.
+- The shipped hooks run on Claude Code, on OpenAI Codex via the `hooks/codex/` adapter (mind Codex's per-hook trust flow — approve with `/hooks`), and on Kimi Code via the `hooks/kimi-code/` adapter or the bundle's Kimi plugin (blockable rules only — Kimi's PostToolUse is observe-only, so the nudges ride a prompt-time reminder instead). Tools with no hook surface (Cursor, Copilot, Aider) get the skill layer only.
 - Hooks fail open: if `jq` or another required tool is missing on the host, the hook exits 0 rather than wedging the tool call. The skill remains the primary teaching mechanism.
 - Hooks block deterministically (exit 2) but a determined model can disable them through its harness configuration (in Claude Code: `disableAllHooks` or a settings edit). The hooks are a guardrail, not a sandbox.
 
