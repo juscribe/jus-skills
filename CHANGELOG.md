@@ -22,7 +22,7 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
-## [Unreleased]
+## [1.2.0] — 2026-07-28
 
 ### Added
 
