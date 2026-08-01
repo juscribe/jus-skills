@@ -78,6 +78,7 @@ Update with `git -C ~/.jus-skills pull` (re-run the `ln` line if a release adds 
 
 - **Standard layout only — never clone the repo into a skills directory.** A nested clone (`.agents/skills/jus/skills/<name>/…`) loads only on tools whose discovery happens to recurse (Codex today, and [openai/codex#22275](https://github.com/openai/codex/issues/22275) asks for that to be restricted). `jus init` offers a migration when it finds one.
 - **Symlink caveat** — if a tool doesn't list the skills (Antigravity's IDE ignores symlinks for global skills, issue #633), replace the symlinks with copies: `cp -r ~/.jus-skills/skills/* .agents/skills/`.
+- **Legacy Continue (pre-acquisition v2.x)** — reads skills only from `.continue/skills/` or `.claude/skills/` (never `.agents/skills/`) and its released builds don't follow symlinks: residual Continue users should `cp -r ~/.jus-skills/skills/* .continue/skills/`. (Continue's hosted Hub shut down after Cursor's 2026-06 acquisition — there is no packaged Continue channel.)
 - **Baseline context is optional** — the skills are self-sufficient; auto-invocation runs on their `description` frontmatter. The bundle's `AGENTS.md`/`GEMINI.md` stay in `~/.jus-skills/` for tools that want them; `jus init`'s legacy append embeds the SOP into a context file instead (never do both).
 
 ### Option A — local development (recommended for monumental)
@@ -154,6 +155,15 @@ Notes:
 - Codex does **not** read the bundle's `AGENTS.md` out of a skills directory — instruction files are composed from the project root down to the CWD only. Use `jus init`'s append if you want the SOP in a context file (never alongside the skills install).
 - Auto-invocation uses the `description` frontmatter — the same matching heuristic as Claude Code and Gemini. `allowed-tools` is ignored.
 
+**No-clone alternative — `$skill-installer` (user scope):** Codex's bundled installer skill pulls straight from GitHub; in any Codex session:
+
+```text
+$skill-installer install https://github.com/juscribe/jus-skills/tree/main/skills/ticket-workflow
+$skill-installer install https://github.com/juscribe/jus-skills/tree/main/skills/hard-rules
+```
+
+One skill per invocation, installed to `~/.codex/skills/<name>`. Caveat: there is no upgrade path — updating means deleting the installed directory and re-running. Prefer the canonical recipe for anything long-lived. (There is no official third-party skills registry to submit to — the old `openai/skills` catalog is deprecated in favor of plugins, whose public directory has no self-serve publishing yet; Codex plugin packaging for this bundle is tracked separately.)
+
 Verify after install: open a Codex session (CLI, IDE chat panel, or app) and ask something like *"what's the ticket workflow?"* — the `ticket-workflow` skill should auto-activate. `/skills` lists loaded skills; a `$ticket-workflow` mention invokes one explicitly.
 
 ### Option G — Cursor 2.4+
@@ -168,6 +178,8 @@ Cursor 2.4 added an Agent Skills surface that reads `SKILL.md` files directly �
 | `~/.agents/skills/`              | Global, portable across tools      |
 
 Cursor reads the canonical `.agents/skills/` path natively — **install via the canonical recipe above**. (`.cursor/skills/` also works as a Cursor-only location, but prefer the shared path so one install serves every tool.)
+
+**Cursor Marketplace:** the bundle ships a `.cursor-plugin/plugin.json` manifest, making the repo a submittable Cursor plugin (skills auto-discover from the `skills/<name>/SKILL.md` layout; the manifest is metadata only — enforcement hooks are deliberately not wired into the Cursor plugin surface yet). Submission happens at cursor.com/marketplace/publish (open-source required — satisfied; manual security review, no fee). Until the listing is live, the canonical install above is the Cursor path.
 
 Verify after install (or after `Reload Window`) by opening Cursor's agent panel and asking *"how do I deliver this ticket?"* — the `ticket-workflow` skill should auto-activate based on its `description` frontmatter, the same way Claude Code, Gemini, and Codex do.
 
@@ -202,8 +214,9 @@ Relative targets mean the symlinks resolve inside any `git worktree` checkout (w
 | Google Antigravity CLI (`agy`) | ✅ via `.agents/skills/` (Gemini CLI sunset 2026-06-18) | ❌ | canonical `.agents/skills/` install; `agy plugin import gemini` for the legacy ext |
 | Antigravity IDE (desktop) | ✅ via `.agents/skills/` (Gemini Code Assist IDE sunset 2026-06-18) | ❌ | canonical `.agents/skills/` install (same project path as the CLI) |
 | OpenAI Codex (CLI / IDE / app) | ✅ via `.agents/skills/` (documented roots; same `SKILL.md`) | ✅ via `hooks/codex/` adapter (same scripts, Codex-native manifest + trust flow) | canonical `.agents/skills/` install + `hooks/codex/README.md` |
-| Cursor 2.4+ | ✅ via Skills surface (uses same `SKILL.md`) | ❌ | canonical `.agents/skills/` install (`.cursor/skills/` also read) |
+| Cursor | ✅ via Skills surface (uses same `SKILL.md`) | ❌ (plugin manifest ships hookless for now) | canonical `.agents/skills/` install (`.cursor/skills/` also read); Marketplace listing via `.cursor-plugin/plugin.json` pending submission |
 | Kimi Code (CLI / VS Code / ACP) | ✅ via `.agents/skills/` (also `.kimi-code/skills/`; does **not** read `.claude/skills/`) | ✅ via `hooks/kimi-code/` adapter or the `kimi.plugin.json` plugin (PostToolUse nudges degrade — see its README) | Kimi plugin (`kimi.plugin.json` — skills + hooks + session-start hard-rules) or canonical `.agents/skills/` install |
+| GitHub Copilot (coding agent / CLI / IDE agent mode) | ✅ via `.agents/skills/` (also `.github/skills/`, `.claude/skills/`; user scope `~/.copilot/skills/` + `~/.agents/skills/`) | ❌ | `gh skill install juscribe/jus-skills` (gh ≥ 2.90, preview) or canonical `.agents/skills/` install |
 | Windsurf | ✅ via `.agents/skills/` (native skills) | ❌ | canonical `.agents/skills/` install |
 | Zed | ✅ via `.agents/skills/` (native skills) | ❌ | canonical `.agents/skills/` install |
 

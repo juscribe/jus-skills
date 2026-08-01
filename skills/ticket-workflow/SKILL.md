@@ -2,6 +2,7 @@
 name: ticket-workflow
 description: The single load-bearing Juscribe SOP skill — the full ticket lifecycle from pickup to delivery PLUS estimation, ticket types, labels, metadata, testing gates, and the complete `jus` CLI / API reference. Use when working any ticket — picking one up, transitioning state, investigating, sizing, labeling, writing tests, running pre-commit gates, calling `jus api`, committing, self-reviewing, finishing, delivering, handling rejections, processing batches, or resolving dependency blockers. Auto-invoke whenever a ticket ID (`#N`) or "work on this ticket" / "pick up backlog" / "deliver" / "rejected" appears.
 allowed-tools: Bash(jus *), Bash(git *), Bash(bin/rspec*), Bash(bin/rubocop*), Bash(bin/reek*), Bash(bin/diff-cover*), Bash(bin/with-rbenv*), Bash(bin/ci*), Bash(pnpm *), Bash(go *), Bash(golangci-lint *), Bash(make *), Bash(cd *), Read, Grep, Glob, Edit, Write
+license: MIT
 ---
 
 # Ticket Workflow — Juscribe Lifecycle SOP

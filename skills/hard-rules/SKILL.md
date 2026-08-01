@@ -2,6 +2,7 @@
 name: hard-rules
 description: Non-negotiable behavioral guardrails for Juscribe work — every-ticket lifecycle, COMMIT-IMMEDIATELY rule, no lint/test suppression, append-only ticket descriptions, no false deliveries, external blockers when waiting on user input, no `git push`, and the document-discoveries protocol. Auto-invoke at the start of any session and whenever about to write code, run linters, edit a ticket description, transition state to finished/delivered, ask the stakeholder a blocking question, or hit an unfamiliar error or workaround.
 allowed-tools: Bash(jus *), Bash(git *), Bash(bin/rspec*), Bash(bin/rubocop*), Bash(bin/reek*), Bash(pnpm *), Read, Grep, Glob, Edit, Write
+license: MIT
 ---
 
 # Hard Rules — Non-Negotiable Behavioral Guardrails

@@ -835,6 +835,17 @@ if [[ -n "$KIMI_PLUGIN_VERSION" && "$KIMI_PLUGIN_VERSION" != "$PLUGIN_VERSION" ]
   printf '  \033[33m⚠\033[0m kimi.plugin.json version (%s) differs from plugin.json (%s) — synced at release time\n' "$KIMI_PLUGIN_VERSION" "$PLUGIN_VERSION"
 fi
 
+# Cursor Marketplace manifest (#1865): the submission unit is a plugin repo
+# with .cursor-plugin/plugin.json; skills auto-discover from the existing
+# skills/<name>/SKILL.md layout, so the manifest is metadata only.
+CURSOR_PLUGIN="$PLUGIN_ROOT/.cursor-plugin/plugin.json"
+assert_jq "cursor plugin manifest is valid JSON named \"jus\"" "$CURSOR_PLUGIN" '.name == "jus"'
+assert_jq "cursor plugin manifest version is strict semver" "$CURSOR_PLUGIN" '.version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$")'
+CURSOR_PLUGIN_VERSION="$(jq -r '.version // ""' "$CURSOR_PLUGIN" 2>/dev/null)"
+if [[ -n "$CURSOR_PLUGIN_VERSION" && "$CURSOR_PLUGIN_VERSION" != "$PLUGIN_VERSION" ]]; then
+  printf '  \033[33m⚠\033[0m .cursor-plugin/plugin.json version (%s) differs from plugin.json (%s) — synced at release time\n' "$CURSOR_PLUGIN_VERSION" "$PLUGIN_VERSION"
+fi
+
 codex_hook 2 "kimi: Bash blocker payload blocks (native envelope, direct script)" \
   "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"km1\",\"cwd\":\"/tmp\",\"tool_call_id\":\"call_1\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push ${FORCE_FLAG:---force} origin main\"}}" \
   "$SCRIPTS_DIR/jus-block-force-push.sh"
@@ -919,6 +930,17 @@ for skill_file in "$PLUGIN_ROOT/skills/ticket-workflow/SKILL.md" "$PLUGIN_ROOT/s
   skill_name="$(basename "$(dirname "$skill_file")")"
   assert_no_match "$skill_name: no plugin-namespaced ticket-workflow refs" "$skill_file" "jus:ticket-workflow"
   assert_no_match "$skill_name: no plugin-namespaced hard-rules refs" "$skill_file" "jus:hard-rules"
+
+  # gh skill publish (#1868) warns on a missing license field, and license is
+  # part of the agentskills.io optional schema — keep it declared.
+  TESTS_RUN=$((TESTS_RUN + 1))
+  TEST_NAME="$skill_name: frontmatter declares license: MIT"
+  if sed -n '2,/^---$/p' "$skill_file" | grep -q '^license: MIT$'; then
+    printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+  fi
 done
 
 TESTS_RUN=$((TESTS_RUN + 1))
