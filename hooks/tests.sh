@@ -13,6 +13,12 @@ set -uo pipefail
 HOOKS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPTS="$HOOKS_DIR/scripts"
 
+# The literal string hooks.json uses to reference bundled scripts. The tilde is
+# text to be matched, not a path to expand, so it is escaped rather than quoted:
+# escaping says "this character is literal", while quoting it reads as a home
+# directory someone forgot to expand (#2077).
+SKILLS_PREFIX=\~/.jus-skills/
+
 TESTS_RUN=0
 TESTS_FAILED=0
 FAILURES=()
@@ -698,8 +704,8 @@ missing=0
 while IFS= read -r cmd; do
   for word in $cmd; do
     case "$word" in
-      "~/.jus-skills/"*)
-        resolved="$PLUGIN_ROOT/${word#\~/.jus-skills/}"
+      "$SKILLS_PREFIX"*)
+        resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
         [[ -x "$resolved" ]] || missing=$((missing + 1))
         ;;
     esac
@@ -790,8 +796,8 @@ missing=0
 while IFS= read -r cmd; do
   for word in $cmd; do
     case "$word" in
-      "~/.jus-skills/"*)
-        resolved="$PLUGIN_ROOT/${word#\~/.jus-skills/}"
+      "$SKILLS_PREFIX"*)
+        resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
         [[ -x "$resolved" ]] || missing=$((missing + 1))
         ;;
     esac
