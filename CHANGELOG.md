@@ -22,6 +22,15 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.2.1] — 2026-08-03
+
+Release-wrapper tag only — content is identical to 1.2.0. `gh skill publish`
+needed a fresh semver tag to cut the GitHub release that makes the bundle
+discoverable and installable for GitHub Copilot (`gh skill install
+juscribe/jus-skills`), and the tag-protection ruleset added during the publish
+makes the existing `v1.2.0` immutable. This entry aligns the monorepo manifests
+with the published tag; the next SOP change ships as 1.2.2. (#1868)
+
 ## [1.2.0] — 2026-07-28
 
 ### Added
