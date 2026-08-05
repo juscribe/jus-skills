@@ -659,10 +659,15 @@ else
 fi
 
 # gemini-extension.json ships at the bundle root for Gemini/Antigravity installs.
-# Its version is synced to plugin.json's only at release time (a bin/publish-skills
-# step — see #1885), so between releases the two may legitimately differ: the
-# mismatch is a warning, not a failure — a hard assert would re-create the exact
+# Between releases this may legitimately differ from plugin.json, so the mismatch
+# is a warning here rather than a failure — a hard assert would re-create the
 # "version bump breaks the harness" drift this section guards against.
+#
+# ⚠️ This comment used to claim the versions were "synced at release time by a
+# bin/publish-skills step (#1885)". THAT STEP DID NOT EXIST, so the leniency was
+# traded for a guarantee nobody had built and the manifests drifted unchecked
+# (#2137). Enforcement now lives where it belongs — bin/publish-skills refuses to
+# publish when they disagree — and bin/jus-set-version sets them all at once.
 GEMINI_JSON="$PLUGIN_ROOT/gemini-extension.json"
 assert_jq "gemini-extension.json is valid JSON named \"jus\"" "$GEMINI_JSON" '.name == "jus"'
 assert_jq "gemini-extension.json version is strict semver" "$GEMINI_JSON" '.version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$")'
@@ -834,7 +839,8 @@ else
   printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
 fi
 
-# Version drift vs plugin.json: warn-only, synced at release time like
+# Version drift vs plugin.json: warn-only between releases, ENFORCED at publish
+# time by bin/publish-skills (#2137). Same treatment as
 # gemini-extension.json.
 KIMI_PLUGIN_VERSION="$(jq -r '.version // ""' "$KIMI_PLUGIN" 2>/dev/null)"
 if [[ -n "$KIMI_PLUGIN_VERSION" && "$KIMI_PLUGIN_VERSION" != "$PLUGIN_VERSION" ]]; then

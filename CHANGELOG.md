@@ -22,6 +22,22 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.2.2] — 2026-08-05
+
+### Fixed
+
+- **Request-shape gotchas for the `jus` API**, added to the `ticket-workflow`
+  skill. Each is listed by the *symptom you are looking at* rather than the
+  cause, because every one presents as a hang, a no-op, a bare 500, or a silent
+  success rather than an error:
+  - a body-less `PATCH` hanging forever on stdin instead of defaulting to `{}`;
+  - `position` silently ignored on create, so a new ticket lands at the end;
+  - a backwards `/transition` returning a body of nulls and changing nothing;
+  - `*_ids` writes succeeding while echoing back `null`, prompting a needless retry;
+  - an enum-case mismatch (`"Release"` for `release`) surfacing as an
+    unexplained **HTTP 500** that names no field.
+  (#2121, #2129)
+
 ## [1.2.1] — 2026-08-03
 
 Release-wrapper tag only — content is identical to 1.2.0. `gh skill publish`
