@@ -519,11 +519,12 @@ jus cleanup   # remove all files from .jus/tmp/
 
 ### Request-shape gotchas
 
-Four behaviours that present as a hang, a no-op, or a silent success rather than an error. Each is listed by the **symptom you will actually be looking at**.
+Five behaviours that present as a hang, a no-op, a bare 500, or a silent success rather than an error. Each is listed by the **symptom you will actually be looking at**.
 
 - **The command hangs and never returns** → you ran `jus api PATCH <path>` with **no body argument**. It does not error and does not default to `{}` — it waits on stdin forever. Body-less endpoints still need an explicit empty object: `jus api PATCH /workspaces/{ws}/dependencies/{id}/resolve '{}'`.
 - **A newly created ticket is at the wrong position** → `position` passed to `POST /tickets` is **silently ignored** and the server assigns its own. Create first, then `PATCH /workspaces/{ws}/tickets/{id}/reorder '{"position": <float>}'`. (`reorder` is also the only way to move an existing ticket — a plain update won't reposition or broadcast `ticket_reordered`.)
 - **A transition returns a body of nulls and nothing changes** → you tried to move a ticket **backwards**, e.g. `prioritized` → `unprioritized` when parking work back to the icebox. `/transition` only walks the state machine forwards. Use a direct field update instead: `PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"state":"unprioritized"}}'`. Forward moves keep using `/transition`.
+- **A create returns a bare `HTTP 500` with `"Internal Server Error"` and nothing else** → check the **case** of an enum value. `ticket_type` is lowercase (`feature`, `bug`, `chore`, `milestone`, `release`, `deadline`, `research`); passing `"Release"` raises `ArgumentError` inside the model and surfaces as a 500 that names no field. Any enum-backed attribute fails the same way, so a 500 on an otherwise well-formed create is a casing bug until proven otherwise — not a server fault to retry.
 - **You set `assignee_ids` / `label_ids` / `stakeholder_id` and the response shows `null`** → the write **succeeded**. `*_ids` fields do not echo back; the response carries the expanded `assignees` / `labels` / `stakeholder` objects instead. Verify against those, not the `*_ids` key, or you will retry a write that already landed.
 
 ### Efficiency toolkit
