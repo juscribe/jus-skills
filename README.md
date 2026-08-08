@@ -106,6 +106,14 @@ the repo name — they happen to match here by design. The version is pinned by
 `plugin.json`; see [`CHANGELOG.md`](CHANGELOG.md) for the versioning strategy.
 `/plugin marketplace update jus-skills` pulls later releases.
 
+> **Activation is not always immediate.** The install summary tells you where
+> you stand: `Plugin is now active.` means you're done, while
+> `Run /reload-plugins to activate.` means the skills wait for that command
+> (Claude Code before v2.1.221 always needs it). Hooks from a newly installed
+> plugin need `/reload-plugins` either way, and a plugin enabled declaratively
+> via a project's checked-in `.claude/settings.json` only takes effect on the
+> next trusted launch.
+
 ### Option C — manual skills copy (skills only, no hooks)
 
 > Prefer **Option B (marketplace)** — it's the recommended path for external Claude Code users and is the only one that also installs the enforcement hooks. This manual copy is a fallback for users who want *only* the skills in their personal config without enabling the full plugin.

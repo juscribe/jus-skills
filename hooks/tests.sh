@@ -457,6 +457,36 @@ t "allows stop in non-git directory"
 assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
   '{"cwd":"/tmp"}'
 
+# #2216: scope the block to files THIS session touched. With two agent
+# sessions in one repo, the hook used to fire on the other session's in-flight
+# edits. jus-track-edits records every Edit/Write path per session in
+# edits.log; the stop hook now blocks only on the dirty files that appear there.
+STOP_SID="stop-scope-2216"
+STOP_STATE="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID"
+mkdir -p "$STOP_STATE"
+STOP_TOP=$( cd "$DIRTY_REPO" && git rev-parse --show-toplevel )
+
+# The only tracked edit is an unrelated path — the dirty file `b` is another
+# session's, so the stop must NOT block.
+printf '%s\n' "/some/other/session/file.rb" > "$STOP_STATE/edits.log"
+t "does not block on a dirty file this session never touched (#2216)"
+assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID\"}"
+
+# Now the dirty file IS one this session edited — block exactly as before.
+printf '%s\n' "$STOP_TOP/b" >> "$STOP_STATE/edits.log"
+t "still blocks on a dirty file this session touched (#2216)"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID\"}" \
+  "STOP BLOCKED"
+
+# No edit log for the session (e.g. all edits went through Bash, which is not
+# tracked) — fall back to blocking on any dirty file, preserving the guard.
+t "falls back to blocking any dirty file when the session has no edit log (#2216)"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"stop-scope-nolog\"}" \
+  "STOP BLOCKED"
+
 rm -rf "$DIRTY_REPO" "$CLEAN_REPO"
 
 # ---- start-comment-nudge.sh + lifecycle tracking --------------------------
@@ -938,6 +968,17 @@ assert_no_match() {
   fi
 }
 
+assert_match() {
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local name="$1" file="$2" pattern="$3"
+  if grep -qF "$pattern" "$file"; then
+    printf '  \033[32m✓\033[0m %s\n' "$name"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$name")
+    printf '  \033[31m✗\033[0m %s\n' "$name"
+  fi
+}
+
 for skill_file in "$PLUGIN_ROOT/skills/ticket-workflow/SKILL.md" "$PLUGIN_ROOT/skills/hard-rules/SKILL.md"; do
   skill_name="$(basename "$(dirname "$skill_file")")"
   assert_no_match "$skill_name: no plugin-namespaced ticket-workflow refs" "$skill_file" "jus:ticket-workflow"
@@ -954,6 +995,15 @@ for skill_file in "$PLUGIN_ROOT/skills/ticket-workflow/SKILL.md" "$PLUGIN_ROOT/s
     printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
   fi
 done
+
+# #2183: an agent with another tracker's skills loaded can route generic
+# ticket language ("#123", board, backlog) away from Juscribe. The description
+# is the router's matching surface, so the disambiguation lives there and is
+# pinned here so it cannot drift out.
+assert_match "ticket-workflow: description claims generic ticket language for Juscribe" \
+  "$PLUGIN_ROOT/skills/ticket-workflow/SKILL.md" "never a skill for any other issue tracker"
+assert_match "hard-rules: description disambiguates from other issue trackers" \
+  "$PLUGIN_ROOT/skills/hard-rules/SKILL.md" "not another issue tracker"
 
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="AGENTS.md title is tool-neutral (Codex, Kimi Code, Antigravity all read it)"

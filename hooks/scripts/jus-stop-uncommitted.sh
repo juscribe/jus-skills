@@ -22,6 +22,7 @@ juscribe_sop_require_jq
 input=$(cat)
 juscribe_sop_require_valid_json "$input"
 cwd=$(jq -r '.cwd // ""' <<<"$input")
+session_id=$(jq -r '.session_id // ""' <<<"$input")
 stop_hook_active=$(jq -r '.stop_hook_active // false' <<<"$input")
 
 # Already nudged once this turn — let Claude stop to avoid an infinite loop.
@@ -36,20 +37,59 @@ if ! ( cd "$cwd" 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 ); then
   exit 0
 fi
 
-dirty=""
-files=""
+# Resolve the repo root so porcelain paths are always root-relative, and run
+# status from there rather than from an arbitrary cwd subdirectory.
+toplevel=""
 if pushd "$cwd" >/dev/null 2>&1; then
-  dirty=$(git status --porcelain 2>/dev/null)
-  files=$(git status --porcelain 2>/dev/null | head -20)
+  toplevel=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
   popd >/dev/null
 fi
+[[ -z "$toplevel" ]] && exit 0
+
+# core.quotepath=false keeps non-ASCII paths literal so they match the
+# absolute paths jus-track-edits records.
+dirty=$(git -C "$toplevel" -c core.quotepath=false status --porcelain 2>/dev/null || echo "")
 if [[ -z "$dirty" ]]; then
   exit 0
 fi
 
+# #2216: scope the block to files THIS session actually touched. With two
+# agent sessions sharing one working tree, the dirty set includes the other
+# session's in-flight edits — committing those under this ticket's `[#N]` is
+# the failure this guard would otherwise cause. jus-track-edits records every
+# Edit/Write/MultiEdit path (absolute) in edits.log; block only on the dirty
+# files that appear there.
+#
+# Fallback: if the log is missing or empty, block on any dirty file exactly as
+# before — a file written via Bash (sed, a generator, a heredoc) never passes
+# through jus-track-edits, so without this fallback the guard would silently
+# stop covering that work.
+edits_log="$(juscribe_sop_state_dir "$session_id")/edits.log"
+blocking="$dirty"
+if [[ -s "$edits_log" ]]; then
+  owned=""
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    # Porcelain v1: two status chars + a space, then the path. For a
+    # rename/copy ("R  old -> new") the on-disk path is after " -> ".
+    path="${line:3}"
+    path="${path##* -> }"
+    if grep -qxF "$toplevel/$path" "$edits_log"; then
+      owned+="$line"$'\n'
+    fi
+  done <<<"$dirty"
+  blocking="${owned%$'\n'}"
+fi
+
+if [[ -z "$blocking" ]]; then
+  exit 0
+fi
+
+files=$(head -20 <<<"$blocking")
+
 # Cap the file list so we don't flood the message
 overflow=""
-total=$( wc -l <<<"$dirty" | tr -d ' ' )
+total=$( wc -l <<<"$blocking" | tr -d ' ' )
 if (( total > 20 )); then
   overflow=$'\n... and '"$((total - 20))"' more'
 fi

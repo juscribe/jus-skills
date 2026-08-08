@@ -13,21 +13,48 @@ the marketplace entry deliberately omits a version so the two can never drift
 
 Bump the version when the SOP changes, by impact on an adopting agent:
 
-| Bump      | When                                                                                                           |
-| --------- | -------------------------------------------------------------------------------------------------------------- |
+| Bump      | When                                                                                                                                                                                                                    |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **MAJOR** | Breaking change to the behavioral contract — a skill removed/renamed, a hook's block semantics changed, the lifecycle reshaped, or anything that would make an existing setup behave differently in a non-additive way. |
-| **MINOR** | Backwards-compatible additions — a new skill or hook, a new rule, a new lifecycle phase, expanded reference material. |
-| **PATCH** | Clarifications and fixes that don't change behavior — wording, typos, doc polish, a hook bug fix that only makes it match its documented intent. |
+| **MINOR** | Backwards-compatible additions — a new skill or hook, a new rule, a new lifecycle phase, expanded reference material.                                                                                                   |
+| **PATCH** | Clarifications and fixes that don't change behavior — wording, typos, doc polish, a hook bug fix that only makes it match its documented intent.                                                                        |
 
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
+
+## [1.2.3] — 2026-08-08
+
+### Added
+
+- **Ticket→project conversion**, documented in the `ticket-workflow` skill —
+  the previously-missing `converted` and `archived` states and the
+  `POST /workspaces/{ws}/tickets/{id}/convert` endpoint, so a ticket that has
+  outgrown itself is converted (carrying title, description, requester and
+  stakeholder) instead of cancelled and hand-recreated (#2205).
+- **Retired-token guidance** in the `ticket-workflow` skill: a 401 naming an
+  expired or retired token is a stop condition with a type-correct remedy —
+  rotate a bot key, re-login a mobile session — not something to retry
+  around (#2223).
+
+### Fixed
+
+- **The stop hook scopes its dirty-tree check to files this session actually
+  edited** (its own `edits.log`), ending false blocks on a concurrent
+  session's uncommitted files in a shared checkout (#2216).
+- **Skill descriptions disambiguate Juscribe from other trackers**, so
+  generic ticket language in a prompt no longer routes an agent to another
+  tool's workflow skill (#2183).
+- **Plugin-install surfaces say when `/reload-plugins` is required**, instead
+  of leaving a freshly-installed plugin silently unloaded (#2194).
+- **`hooks/tests.sh` no longer describes a manifest sync that was never
+  implemented** (#2137).
 
 ## [1.2.2] — 2026-08-05
 
 ### Fixed
 
 - **Request-shape gotchas for the `jus` API**, added to the `ticket-workflow`
-  skill. Each is listed by the *symptom you are looking at* rather than the
+  skill. Each is listed by the _symptom you are looking at_ rather than the
   cause, because every one presents as a hang, a no-op, a bare 500, or a silent
   success rather than an error:
   - a body-less `PATCH` hanging forever on stdin instead of defaulting to `{}`;
@@ -36,7 +63,7 @@ Juscribe ticket (`#N`) that introduced it.
   - `*_ids` writes succeeding while echoing back `null`, prompting a needless retry;
   - an enum-case mismatch (`"Release"` for `release`) surfacing as an
     unexplained **HTTP 500** that names no field.
-  (#2121, #2129)
+    (#2121, #2129)
 
 ## [1.2.1] — 2026-08-03
 

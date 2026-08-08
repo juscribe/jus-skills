@@ -1,16 +1,11 @@
 {
   "name": "jus",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Juscribe Workflow SOP as two on-demand Claude Code skills — ticket-workflow (lifecycle plus estimation, labels, testing gates, and the jus API reference) and hard-rules — backed by deterministic enforcement hooks.",
   "author": {
     "name": "Caleon Chun"
   },
   "homepage": "https://github.com/juscribe/jus-skills",
   "license": "MIT",
-  "keywords": [
-    "juscribe",
-    "agile",
-    "ticket-workflow",
-    "sop"
-  ]
+  "keywords": ["juscribe", "agile", "ticket-workflow", "sop"]
 }

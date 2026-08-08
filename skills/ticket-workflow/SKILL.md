@@ -1,6 +1,6 @@
 ---
 name: ticket-workflow
-description: The single load-bearing Juscribe SOP skill — the full ticket lifecycle from pickup to delivery PLUS estimation, ticket types, labels, metadata, testing gates, and the complete `jus` CLI / API reference. Use when working any ticket — picking one up, transitioning state, investigating, sizing, labeling, writing tests, running pre-commit gates, calling `jus api`, committing, self-reviewing, finishing, delivering, handling rejections, processing batches, or resolving dependency blockers. Auto-invoke whenever a ticket ID (`#N`) or "work on this ticket" / "pick up backlog" / "deliver" / "rejected" appears.
+description: The single load-bearing Juscribe SOP skill — the full ticket lifecycle from pickup to delivery PLUS estimation, ticket types, labels, metadata, testing gates, and the complete `jus` CLI / API reference. Use when working any ticket — picking one up, transitioning state, investigating, sizing, labeling, writing tests, running pre-commit gates, calling `jus api`, committing, self-reviewing, finishing, delivering, handling rejections, processing batches, or resolving dependency blockers. Auto-invoke whenever a ticket ID (`#N`) or "work on this ticket" / "pick up backlog" / "deliver" / "rejected" appears. In a project wired to Juscribe (a `.jus/` directory or the `jus` CLI), bare ticket language — `#123`, the board, the backlog, deliver — always means Juscribe tickets, so this skill is the one to invoke for them, never a skill for any other issue tracker.
 allowed-tools: Bash(jus *), Bash(git *), Bash(bin/rspec*), Bash(bin/rubocop*), Bash(bin/reek*), Bash(bin/diff-cover*), Bash(bin/with-rbenv*), Bash(bin/ci*), Bash(pnpm *), Bash(go *), Bash(golangci-lint *), Bash(make *), Bash(cd *), Read, Grep, Glob, Edit, Write
 license: MIT
 ---
@@ -28,8 +28,11 @@ This SOP drives the Juscribe board through the **`jus` CLI**. The bundle ships t
 
 - `jus: command not found` → the CLI isn't installed. Tell the user to `brew install juscribe/tap/jus`, then stop.
 - `Error: No token available. Run 'jus login'…` → installed but unauthenticated. Tell the user to run `jus login` or `jus init`, then stop.
+- `Error: Stored token is invalid or expired.` — or any `HTTP 401` from `jus api` — → the token was real and is now **retired**. API tokens expire: agent tokens 90 days after creation or last rotation, mobile sessions 60 days after last use. The 401 body names the remedy. Relay it and stop.
+  - An **agent** token needs a **rotate** (Settings → API Tokens), *not* another `jus login` — re-authenticating hands back the same dead secret.
+  - Tell the user which, then stop.
 
-**Do not loop `jus` commands against an unconfigured CLI.** Surface the single setup step the error points to and stop — one clear instruction beats a wall of repeated errors. Everything below assumes this preflight passed.
+**Do not loop `jus` commands against an unconfigured CLI, or against a 401.** A 401 never heals by retrying; it is a credential the user must replace. Surface the single setup step the error points to and stop — one clear instruction beats a wall of repeated errors. Everything below assumes this preflight passed.
 
 ## Phase 1: Session Start
 
@@ -596,12 +599,46 @@ Constraints: valid `blocker_type` = `Ticket` / `Project` / `External`; valid `bl
 ```
 unprioritized → prioritized → started → finished → delivered → accepted
                                                              → rejected → started
-Any non-terminal state → cancelled (requires resolution)
+Any non-terminal state → cancelled  (requires resolution)
+Any non-terminal state → converted  (ticket became a project — see below)
+archived → accepted
 ```
 
 Valid `cancelled` resolutions (enum — exact values): `duplicate`, `wont_do`, `cant_reproduce`, `obsolete`.
 
-Panel mapping: `unprioritized→icebox`, `prioritized→backlog`, `started/finished/delivered/rejected→current`, `accepted/cancelled→done`.
+Panel mapping: `unprioritized→icebox`, `prioritized→backlog`, `started/finished/delivered/rejected→current`, `accepted/cancelled/converted/archived→done`.
+
+> **`converted` and `archived` are real states.** An earlier version of this
+> reference listed neither, which made the lifecycle look like it ended at
+> accepted or cancelled. Both are terminal for practical purposes — `converted`
+> has no onward transitions at all, and `archived` can only go to `accepted`.
+
+## Turning a ticket into a project
+
+**A ticket that grew a multi-ticket design is a project wearing a ticket's clothes.** The signal is concrete: you are about to write acceptance criteria that decompose into separate deliverables with their own dependencies.
+
+There is a dedicated endpoint. **Do not cancel the ticket and hand-create a project** — that is the natural workaround if you do not know this exists, and it throws away the description, the requester, the stakeholder, and the link back.
+
+```sh
+jus api POST /workspaces/{ws}/tickets/{id}/convert '{}'
+```
+
+⚠️ **The body is required.** A body-less `POST`/`PATCH` hangs waiting on stdin rather than defaulting to `{}`.
+
+What it does, in one transaction:
+
+| | |
+|---|---|
+| Creates a project | carrying the ticket's **title, description, requester and stakeholder** |
+| Sets `source_ticket_id` | so the project records where it came from |
+| Transitions the ticket to **`converted`** | and clears its `project_id` |
+| Records activities on both | and broadcasts `project_created` |
+
+It returns `{ticket, project}`, so the new project's id comes back in the same call.
+
+**It refuses** when the ticket is already `converted`, or when it is `cancelled` — a terminal state cannot become a project. Both return `422` with a message rather than failing silently.
+
+**After converting**, populate the project: create the child tickets with `project_id` set, then order them. Remember that `position` is ignored on create — reordering is always a second call to `/reorder`.
 
 ```sh
 jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"started"}'
