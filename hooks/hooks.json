@@ -1,5 +1,5 @@
 {
-  "description": "Hard-rule enforcement hooks for the Juscribe SOP. Deterministic backstops to the prompt-level guidance in jus:hard-rules — block force-push, block --no-verify, block new lint/type suppressions, gate `git commit` on lints-run-since-last-edit, nudge after multiple uncommitted edits, nudge to post a start comment before the first source edit, and prevent stopping with a dirty working tree.",
+  "description": "Hard-rule enforcement hooks for the Juscribe SOP. Deterministic backstops to the prompt-level guidance in jus:hard-rules \u2014 block force-push, block --no-verify, block new lint/type suppressions, gate `git commit` on lints-run-since-last-edit, nudge after multiple uncommitted edits, nudge to post a start comment before the first source edit, and prevent stopping with a dirty working tree, and nudge at the project's own docs on the first edit under a mapped path.",
   "hooks": {
     "PreToolUse": [
       {
@@ -50,6 +50,11 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-start-comment-nudge.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-docs-nudge.sh",
             "timeout": 10
           }
         ]

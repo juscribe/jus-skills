@@ -22,6 +22,42 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.0] — 2026-08-09
+
+### Added
+
+- **Mixed-actor ticket rule** (`hard-rules` → "Mixed-Actor Tickets — One Timeline, Both Assigned"; `ticket-workflow` → description conventions + `assignee_ids` metadata row): tickets that interleave stakeholder-only steps with agent steps assign BOTH parties and carry a single numbered, actor-tagged, checkboxed step list in execution order — never separate per-actor sections. The first unchecked box shows whose move it is; the External-blocker protocol fires whenever the next unchecked step is the stakeholder's.
+
+## [1.3.1] — 2026-08-09
+
+### Changed
+
+- **Description rule scoped to its actual intent** (#2300, stakeholder
+  correction): the append-only protection covers _stakeholder-authored_ text
+  only — preserved verbatim, always. Agent-authored additions below the
+  `---` separator are living documentation with an affirmative duty to stay
+  current: edit them in place when facts change; do **not** stack dated
+  "Update (…):" layers onto agent-authored sections. Reworded in
+  `hard-rules` (rule section, enforcement table, frontmatter) and
+  `ticket-workflow` (description conventions, cross-reference).
+
+## [1.3.0] — 2026-08-09
+
+### Added
+
+- **`jus-docs-nudge.sh`** (`PostToolUse Edit|Write|MultiEdit`): on the first
+  edit under a path the project maps in `.jus/docs-nudges.tsv`, a non-blocking
+  nudge names the project doc for that subsystem and its when-to-read hint —
+  once per doc per active ticket. A silent no-op for projects with no map, so
+  the hook is safe everywhere. Registered for Claude Code and the Codex
+  adapter; Kimi rides the prompt-time reminder like the other nudges (#2290,
+  measured motivation in #2277: a documented gotcha re-derived from scratch
+  15 hours after being written up).
+- **Read-side documentation rule** in the `hard-rules` skill's Document
+  Discoveries section: check the project docs index before debugging a
+  subsystem, and route shared-relevance gotchas to the shared docs rather
+  than per-user auto-memory (#2290, #2287).
+
 ## [1.2.3] — 2026-08-08
 
 ### Added

@@ -10,6 +10,13 @@
 
 set -uo pipefail
 
+# Belt-and-suspenders (#2290): this harness spawns nested git repos. When run
+# from a git hook, the exported GIT_DIR/GIT_INDEX_FILE would make those
+# nested commands operate on the REAL repository — a stray `git init` here
+# once re-initialized the shared .git as bare, breaking every checkout. The
+# lefthook entry strips the env too; this protects every other invocation.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_COMMON_DIR GIT_ALTERNATE_OBJECT_DIRECTORIES
+
 HOOKS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPTS="$HOOKS_DIR/scripts"
 
@@ -425,6 +432,75 @@ else
 fi
 
 rm -rf "$TMP_REPO"
+
+# ---- jus-docs-nudge.sh --------------------------------------------------------
+
+section "jus-docs-nudge.sh"
+
+DOCS_PROJECT=$(mktemp -d)
+mkdir -p "$DOCS_PROJECT/.jus"
+printf 'app/styles/\tdocs/css.md\tthe styling rules live there\n' > "$DOCS_PROJECT/.jus/docs-nudges.tsv"
+SID_DOCS="test-docs-$$"
+docs_state="$CLAUDE_PLUGIN_DATA/sessions/$SID_DOCS"
+mkdir -p "$docs_state"
+
+t "nudges with doc + hint on first mapped edit"
+out=$(printf '{"tool_name":"Edit","session_id":"%s","tool_input":{"file_path":"%s/app/styles/a.css"}}' \
+        "$SID_DOCS" "$DOCS_PROJECT" \
+      | CLAUDE_PROJECT_DIR="$DOCS_PROJECT" "$SCRIPTS/jus-docs-nudge.sh")
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="docs-nudge emits systemMessage naming the doc"
+if [[ "$out" == *"systemMessage"* && "$out" == *"docs/css.md"* && "$out" == *"styling rules"* ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (got: %s)\n' "$TEST_NAME" "$out"
+fi
+
+t "stays quiet on the second edit for the same doc and ticket scope"
+out2=$(printf '{"tool_name":"Edit","session_id":"%s","tool_input":{"file_path":"%s/app/styles/b.css"}}' \
+        "$SID_DOCS" "$DOCS_PROJECT" \
+      | CLAUDE_PROJECT_DIR="$DOCS_PROJECT" "$SCRIPTS/jus-docs-nudge.sh")
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="docs-nudge dedups within one scope"
+if [[ -z "$out2" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (got: %s)\n' "$TEST_NAME" "$out2"
+fi
+
+t "re-fires when a new ticket becomes active"
+echo "77" > "$docs_state/active_ticket"
+out3=$(printf '{"tool_name":"Edit","session_id":"%s","tool_input":{"file_path":"%s/app/styles/c.css"}}' \
+        "$SID_DOCS" "$DOCS_PROJECT" \
+      | CLAUDE_PROJECT_DIR="$DOCS_PROJECT" "$SCRIPTS/jus-docs-nudge.sh")
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="docs-nudge re-fires per new active ticket"
+if [[ "$out3" == *"docs/css.md"* ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (got: %s)\n' "$TEST_NAME" "$out3"
+fi
+
+t "silent no-op with no map file"
+NOMAP_PROJECT=$(mktemp -d)
+export CLAUDE_PROJECT_DIR="$NOMAP_PROJECT"
+assert_exit 0 "$SCRIPTS/jus-docs-nudge.sh" \
+  "{\"tool_name\":\"Edit\",\"session_id\":\"$SID_DOCS\",\"tool_input\":{\"file_path\":\"$NOMAP_PROJECT/app/styles/a.css\"}}"
+rm -rf "$NOMAP_PROJECT"
+
+t "silent for unmapped paths"
+export CLAUDE_PROJECT_DIR="$DOCS_PROJECT"
+assert_exit 0 "$SCRIPTS/jus-docs-nudge.sh" \
+  "{\"tool_name\":\"Edit\",\"session_id\":\"$SID_DOCS\",\"tool_input\":{\"file_path\":\"$DOCS_PROJECT/lib/other.rb\"}}"
+unset CLAUDE_PROJECT_DIR
+
+rm -rf "$DOCS_PROJECT"
 
 # ---- jus-stop-uncommitted.sh --------------------------------------------------
 

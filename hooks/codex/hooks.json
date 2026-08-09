@@ -1,5 +1,5 @@
 {
-  "description": "Juscribe SOP enforcement hooks for OpenAI Codex — deterministic backstops to the prompt-level rules in the hard-rules skill. Command paths assume the canonical ~/.jus-skills install; see hooks/codex/README.md for setup, the trust flow, and path overrides.",
+  "description": "Juscribe SOP enforcement hooks for OpenAI Codex \u2014 deterministic backstops to the prompt-level rules in the hard-rules skill. Command paths assume the canonical ~/.jus-skills install; see hooks/codex/README.md for setup, the trust flow, and path overrides.",
   "hooks": {
     "PreToolUse": [
       {
@@ -64,6 +64,11 @@
           {
             "type": "command",
             "command": "~/.jus-skills/hooks/codex/scripts/jus-codex-adapt.sh ~/.jus-skills/hooks/scripts/jus-start-comment-nudge.sh",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/.jus-skills/hooks/codex/scripts/jus-codex-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh",
             "timeout": 10
           }
         ]

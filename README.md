@@ -28,27 +28,28 @@ The skills are tool-agnostic Markdown — readable by any agent that loads them.
 
 ## Skills
 
-| Skill                                | When it fires                                                                    |
-| ------------------------------------ | -------------------------------------------------------------------------------- |
-| `jus:hard-rules`            | Auto-loaded at session start; about-to-write-code; about-to-edit-description     |
-| `jus:ticket-workflow`       | The single load-bearing skill — any ticket work: lifecycle, transitions, comments, delivery, **plus** estimation, labels, testing gates, and the `jus` CLI / API reference |
+| Skill                 | When it fires                                                                                                                                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jus:hard-rules`      | Auto-loaded at session start; about-to-write-code; about-to-edit-description                                                                                               |
+| `jus:ticket-workflow` | The single load-bearing skill — any ticket work: lifecycle, transitions, comments, delivery, **plus** estimation, labels, testing gates, and the `jus` CLI / API reference |
 
 > **One load-bearing skill, by design.** Cold-start validation (#1704 / #1854) found that only `ticket-workflow` (and `hard-rules`) reliably auto-invoke — the earlier `testing-gates`, `juscribe-api`, and `estimation-labels` skills never fired, because `ticket-workflow` already had their content resident. They were retired in #1856 and their reference folded into `ticket-workflow`. Don't slim that content on the assumption a specialist skill will auto-load to cover it — none will.
 
 ## Hooks
 
-Nine bash scripts wired into Claude Code's hook system. Each is a deterministic backstop (hard block) or soft nudge supporting the prompt-level rules in `hard-rules` / `ticket-workflow`. All are `jus-`prefixed.
+Ten bash scripts wired into Claude Code's hook system. Each is a deterministic backstop (hard block) or soft nudge supporting the prompt-level rules in `hard-rules` / `ticket-workflow`. All are `jus-`prefixed.
 
-| Hook                                                 | Event                | What it does                                                              |
-| ---------------------------------------------------- | -------------------- | ------------------------------------------------------------------------- |
-| `jus-block-force-push.sh`                            | `PreToolUse Bash`    | Blocks `git push --force`, `-f`, and `--force-with-lease`                 |
-| `jus-block-no-verify.sh`                             | `PreToolUse Bash`    | Blocks any command containing `--no-verify`                               |
-| `jus-pre-commit-gate.sh`                             | `PreToolUse Bash`    | Blocks `git commit` if linters haven't run since the last code edit       |
-| `jus-block-lint-suppression.sh`                      | `PreToolUse Edit/Write` | Blocks edits that introduce a new `rubocop:disable`, `eslint-disable`, `@ts-ignore`, `:reek:`, etc. |
-| `jus-track-edits.sh` + `jus-post-bash-tracker.sh`    | `PostToolUse`        | Records edits, lint/commit successes, and ticket-lifecycle state (active ticket, `started` transition, start-comment posted) in per-session state |
-| `jus-dirty-tree-nudge.sh`                            | `PostToolUse Edit/Write` | After 5 uncommitted edits, emits a system-message reminder to commit (non-blocking) |
-| `jus-start-comment-nudge.sh`                         | `PostToolUse Edit/Write` | On the first source-file edit after a `started` transition with no start comment yet, nudges (non-blocking) to post the start comment first |
-| `jus-stop-uncommitted.sh`                            | `Stop`               | Prevents the session from ending while the working tree is dirty          |
+| Hook                                              | Event                    | What it does                                                                                                                                                                                                     |
+| ------------------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jus-block-force-push.sh`                         | `PreToolUse Bash`        | Blocks `git push --force`, `-f`, and `--force-with-lease`                                                                                                                                                        |
+| `jus-block-no-verify.sh`                          | `PreToolUse Bash`        | Blocks any command containing `--no-verify`                                                                                                                                                                      |
+| `jus-pre-commit-gate.sh`                          | `PreToolUse Bash`        | Blocks `git commit` if linters haven't run since the last code edit                                                                                                                                              |
+| `jus-block-lint-suppression.sh`                   | `PreToolUse Edit/Write`  | Blocks edits that introduce a new `rubocop:disable`, `eslint-disable`, `@ts-ignore`, `:reek:`, etc.                                                                                                              |
+| `jus-track-edits.sh` + `jus-post-bash-tracker.sh` | `PostToolUse`            | Records edits, lint/commit successes, and ticket-lifecycle state (active ticket, `started` transition, start-comment posted) in per-session state                                                                |
+| `jus-dirty-tree-nudge.sh`                         | `PostToolUse Edit/Write` | After 5 uncommitted edits, emits a system-message reminder to commit (non-blocking)                                                                                                                              |
+| `jus-start-comment-nudge.sh`                      | `PostToolUse Edit/Write` | On the first source-file edit after a `started` transition with no start comment yet, nudges (non-blocking) to post the start comment first                                                                      |
+| `jus-docs-nudge.sh`                               | `PostToolUse Edit/Write` | On the first edit under a path the project maps in `.jus/docs-nudges.tsv`, nudges (non-blocking) at the project doc for that subsystem — once per doc per active ticket; a silent no-op for projects with no map |
+| `jus-stop-uncommitted.sh`                         | `Stop`                   | Prevents the session from ending while the working tree is dirty                                                                                                                                                 |
 
 ### Per-session state
 
@@ -56,9 +57,9 @@ Hooks track timestamps and counters in `${CLAUDE_PLUGIN_DATA}/sessions/<session_
 
 ### Tunable
 
-| Variable                        | Default | Effect                                              |
-| ------------------------------- | ------- | --------------------------------------------------- |
-| `JUSCRIBE_SOP_NUDGE_THRESHOLD`  | `5`     | Edits without a commit before the dirty-tree nudge fires |
+| Variable                       | Default | Effect                                                   |
+| ------------------------------ | ------- | -------------------------------------------------------- |
+| `JUSCRIBE_SOP_NUDGE_THRESHOLD` | `5`     | Edits without a commit before the dirty-tree nudge fires |
 
 ## Installing
 
@@ -116,7 +117,7 @@ the repo name — they happen to match here by design. The version is pinned by
 
 ### Option C — manual skills copy (skills only, no hooks)
 
-> Prefer **Option B (marketplace)** — it's the recommended path for external Claude Code users and is the only one that also installs the enforcement hooks. This manual copy is a fallback for users who want *only* the skills in their personal config without enabling the full plugin.
+> Prefer **Option B (marketplace)** — it's the recommended path for external Claude Code users and is the only one that also installs the enforcement hooks. This manual copy is a fallback for users who want _only_ the skills in their personal config without enabling the full plugin.
 
 ```sh
 cp -r jus/skills/* ~/.claude/skills/
@@ -134,8 +135,8 @@ Global (user-level) skills live at `~/.gemini/antigravity/skills/<name>/SKILL.md
 
 - **Context files** — Antigravity reads `GEMINI.md` and `AGENTS.md` unchanged ("no modifications needed"; `GEMINI.md` wins on conflict). Do **not** add a `.antigravity.md`; it is not part of the documented context hierarchy.
 - **Legacy extension** — bring the existing `gemini-extension.json` across with `agy plugin import gemini` (per Google's migration guide; the exact `agy plugin install/list/...` syntax is not yet documented — only `import gemini` is).
-- **Do NOT hand-author an Antigravity `plugin.json`** — its field schema is undocumented in every primary source. Generate it via `agy plugin import gemini`, never by guessing keys. (The bundle's `.claude-plugin/plugin.json` is a *Claude Code* manifest — unrelated; leave it untouched.)
-- **Symlink caveat — verify on a live install.** Antigravity's IDE is confirmed to ignore symlinks for *global* skills ([issue #633](https://github.com/google-antigravity/antigravity-cli/issues/633)); project-level symlink-following is unconfirmed. If skills don't appear, swap the `.agents/skills/` symlinks for real copies: `cp -r jus/skills/* .agents/skills/`.
+- **Do NOT hand-author an Antigravity `plugin.json`** — its field schema is undocumented in every primary source. Generate it via `agy plugin import gemini`, never by guessing keys. (The bundle's `.claude-plugin/plugin.json` is a _Claude Code_ manifest — unrelated; leave it untouched.)
+- **Symlink caveat — verify on a live install.** Antigravity's IDE is confirmed to ignore symlinks for _global_ skills ([issue #633](https://github.com/google-antigravity/antigravity-cli/issues/633)); project-level symlink-following is unconfirmed. If skills don't appear, swap the `.agents/skills/` symlinks for real copies: `cp -r jus/skills/* .agents/skills/`.
 
 Smoke-test (requires a real `agy` install): launch `agy` in a repo whose `.agents/skills/` exposes the bundle, and confirm the 2 skills appear (they convert to `/slash-commands` in the TUI) and auto-activate on matching intent.
 
@@ -172,7 +173,7 @@ $skill-installer install https://github.com/juscribe/jus-skills/tree/main/skills
 
 One skill per invocation, installed to `~/.codex/skills/<name>`. Caveat: there is no upgrade path — updating means deleting the installed directory and re-running. Prefer the canonical recipe for anything long-lived. (There is no official third-party skills registry to submit to — the old `openai/skills` catalog is deprecated in favor of plugins, whose public directory has no self-serve publishing yet; Codex plugin packaging for this bundle is tracked separately.)
 
-Verify after install: open a Codex session (CLI, IDE chat panel, or app) and ask something like *"what's the ticket workflow?"* — the `ticket-workflow` skill should auto-activate. `/skills` lists loaded skills; a `$ticket-workflow` mention invokes one explicitly.
+Verify after install: open a Codex session (CLI, IDE chat panel, or app) and ask something like _"what's the ticket workflow?"_ — the `ticket-workflow` skill should auto-activate. `/skills` lists loaded skills; a `$ticket-workflow` mention invokes one explicitly.
 
 ### Option G — Cursor 2.4+
 
@@ -189,7 +190,7 @@ Cursor reads the canonical `.agents/skills/` path natively — **install via the
 
 **Cursor Marketplace:** the bundle ships a `.cursor-plugin/plugin.json` manifest, making the repo a submittable Cursor plugin (skills auto-discover from the `skills/<name>/SKILL.md` layout; the manifest is metadata only — enforcement hooks are deliberately not wired into the Cursor plugin surface yet). Submission happens at cursor.com/marketplace/publish (open-source required — satisfied; manual security review, no fee). Until the listing is live, the canonical install above is the Cursor path.
 
-Verify after install (or after `Reload Window`) by opening Cursor's agent panel and asking *"how do I deliver this ticket?"* — the `ticket-workflow` skill should auto-activate based on its `description` frontmatter, the same way Claude Code, Gemini, and Codex do.
+Verify after install (or after `Reload Window`) by opening Cursor's agent panel and asking _"how do I deliver this ticket?"_ — the `ticket-workflow` skill should auto-activate based on its `description` frontmatter, the same way Claude Code, Gemini, and Codex do.
 
 Cursor recognizes the same `name` and `description` fields Claude Code uses; `allowed-tools` is silently ignored — same delta we already document for Gemini and Codex. The bundle ships skills only — Cursor's separate Subagents surface (`.cursor/agents/`) is out of scope, and per Cursor's docs, subagents currently can't load skills anyway.
 
@@ -197,7 +198,7 @@ Cursor recognizes the same `name` and `description` fields Claude Code uses; `al
 
 This is how the bundle is wired into the monumental repo itself (ticket #1835). It is the project-committed variant of Options B/C, chosen over plugin-marketplace registration because it needs **zero per-user setup, survives across sessions, and travels into dispatch worktrees** (so autonomous dispatch agents load the SOP too).
 
-> **Do NOT _also_ marketplace-install the plugin in monumental.** This repo already loads the bundle via the committed copy below, so adding `/plugin install jus@jus-skills` here is pure duplication: the skills show up twice (committed `hard-rules`/`ticket-workflow` **plus** `jus:`-prefixed copies) and the nine hooks register twice (committed `.claude/settings.json` **plus** the plugin), so each hook fires twice. The marketplace install (Option B) is for **other** repos that lack the committed copy. If you installed it here to smoke-test publishing, back it out with `/plugin uninstall jus@jus-skills` && `/reload-plugins` (leave the marketplace *added* — that's harmless).
+> **Do NOT _also_ marketplace-install the plugin in monumental.** This repo already loads the bundle via the committed copy below, so adding `/plugin install jus@jus-skills` here is pure duplication: the skills show up twice (committed `hard-rules`/`ticket-workflow` **plus** `jus:`-prefixed copies) and the nine hooks register twice (committed `.claude/settings.json` **plus** the plugin), so each hook fires twice. The marketplace install (Option B) is for **other** repos that lack the committed copy. If you installed it here to smoke-test publishing, back it out with `/plugin uninstall jus@jus-skills` && `/reload-plugins` (leave the marketplace _added_ — that's harmless).
 
 **Skills** — per-skill relative symlinks point Claude Code's auto-discovered `.claude/skills/` and the cross-tool `.agents/skills/` at the canonical bundle:
 
@@ -216,17 +217,17 @@ Relative targets mean the symlinks resolve inside any `git worktree` checkout (w
 
 ### Cross-tool support matrix
 
-| Tool | Skills supported | Hooks bundled | Install path |
-|------|------------------|---------------|--------------|
-| Claude Code | ✅ via `.claude-plugin/plugin.json` | ✅ | `claude --plugin-dir ./jus` or `/plugin marketplace add juscribe/jus-skills` → `/plugin install jus@jus-skills` |
-| Google Antigravity CLI (`agy`) | ✅ via `.agents/skills/` (Gemini CLI sunset 2026-06-18) | ❌ | canonical `.agents/skills/` install; `agy plugin import gemini` for the legacy ext |
-| Antigravity IDE (desktop) | ✅ via `.agents/skills/` (Gemini Code Assist IDE sunset 2026-06-18) | ❌ | canonical `.agents/skills/` install (same project path as the CLI) |
-| OpenAI Codex (CLI / IDE / app) | ✅ via `.agents/skills/` (documented roots; same `SKILL.md`) | ✅ via `hooks/codex/` adapter (same scripts, Codex-native manifest + trust flow) | canonical `.agents/skills/` install + `hooks/codex/README.md` |
-| Cursor | ✅ via Skills surface (uses same `SKILL.md`) | ❌ (plugin manifest ships hookless for now) | canonical `.agents/skills/` install (`.cursor/skills/` also read); Marketplace listing via `.cursor-plugin/plugin.json` pending submission |
-| Kimi Code (CLI / VS Code / ACP) | ✅ via `.agents/skills/` (also `.kimi-code/skills/`; does **not** read `.claude/skills/`) | ✅ via `hooks/kimi-code/` adapter or the `kimi.plugin.json` plugin (PostToolUse nudges degrade — see its README) | Kimi plugin (`kimi.plugin.json` — skills + hooks + session-start hard-rules) or canonical `.agents/skills/` install |
-| GitHub Copilot (coding agent / CLI / IDE agent mode) | ✅ via `.agents/skills/` (also `.github/skills/`, `.claude/skills/`; user scope `~/.copilot/skills/` + `~/.agents/skills/`) | ❌ | `gh skill install juscribe/jus-skills` (gh ≥ 2.90, preview) or canonical `.agents/skills/` install |
-| Windsurf | ✅ via `.agents/skills/` (native skills) | ❌ | canonical `.agents/skills/` install |
-| Zed | ✅ via `.agents/skills/` (native skills) | ❌ | canonical `.agents/skills/` install |
+| Tool                                                 | Skills supported                                                                                                            | Hooks bundled                                                                                                    | Install path                                                                                                                               |
+| ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Claude Code                                          | ✅ via `.claude-plugin/plugin.json`                                                                                         | ✅                                                                                                               | `claude --plugin-dir ./jus` or `/plugin marketplace add juscribe/jus-skills` → `/plugin install jus@jus-skills`                            |
+| Google Antigravity CLI (`agy`)                       | ✅ via `.agents/skills/` (Gemini CLI sunset 2026-06-18)                                                                     | ❌                                                                                                               | canonical `.agents/skills/` install; `agy plugin import gemini` for the legacy ext                                                         |
+| Antigravity IDE (desktop)                            | ✅ via `.agents/skills/` (Gemini Code Assist IDE sunset 2026-06-18)                                                         | ❌                                                                                                               | canonical `.agents/skills/` install (same project path as the CLI)                                                                         |
+| OpenAI Codex (CLI / IDE / app)                       | ✅ via `.agents/skills/` (documented roots; same `SKILL.md`)                                                                | ✅ via `hooks/codex/` adapter (same scripts, Codex-native manifest + trust flow)                                 | canonical `.agents/skills/` install + `hooks/codex/README.md`                                                                              |
+| Cursor                                               | ✅ via Skills surface (uses same `SKILL.md`)                                                                                | ❌ (plugin manifest ships hookless for now)                                                                      | canonical `.agents/skills/` install (`.cursor/skills/` also read); Marketplace listing via `.cursor-plugin/plugin.json` pending submission |
+| Kimi Code (CLI / VS Code / ACP)                      | ✅ via `.agents/skills/` (also `.kimi-code/skills/`; does **not** read `.claude/skills/`)                                   | ✅ via `hooks/kimi-code/` adapter or the `kimi.plugin.json` plugin (PostToolUse nudges degrade — see its README) | Kimi plugin (`kimi.plugin.json` — skills + hooks + session-start hard-rules) or canonical `.agents/skills/` install                        |
+| GitHub Copilot (coding agent / CLI / IDE agent mode) | ✅ via `.agents/skills/` (also `.github/skills/`, `.claude/skills/`; user scope `~/.copilot/skills/` + `~/.agents/skills/`) | ❌                                                                                                               | `gh skill install juscribe/jus-skills` (gh ≥ 2.90, preview) or canonical `.agents/skills/` install                                         |
+| Windsurf                                             | ✅ via `.agents/skills/` (native skills)                                                                                    | ❌                                                                                                               | canonical `.agents/skills/` install                                                                                                        |
+| Zed                                                  | ✅ via `.agents/skills/` (native skills)                                                                                    | ❌                                                                                                               | canonical `.agents/skills/` install                                                                                                        |
 
 **Frontmatter portability.** The `SKILL.md` files use `name`, `description`, and `allowed-tools`. The first two are required by every tool above; `allowed-tools` is a Claude Code-only allowlist hint that other tools ignore. One set of skill files works for every supported tool — no per-tool variants needed.
 

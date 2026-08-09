@@ -1,7 +1,7 @@
 ---
 name: ticket-workflow
 description: The single load-bearing Juscribe SOP skill — the full ticket lifecycle from pickup to delivery PLUS estimation, ticket types, labels, metadata, testing gates, and the complete `jus` CLI / API reference. Use when working any ticket — picking one up, transitioning state, investigating, sizing, labeling, writing tests, running pre-commit gates, calling `jus api`, committing, self-reviewing, finishing, delivering, handling rejections, processing batches, or resolving dependency blockers. Auto-invoke whenever a ticket ID (`#N`) or "work on this ticket" / "pick up backlog" / "deliver" / "rejected" appears. In a project wired to Juscribe (a `.jus/` directory or the `jus` CLI), bare ticket language — `#123`, the board, the backlog, deliver — always means Juscribe tickets, so this skill is the one to invoke for them, never a skill for any other issue tracker.
-allowed-tools: Bash(jus *), Bash(git *), Bash(bin/rspec*), Bash(bin/rubocop*), Bash(bin/reek*), Bash(bin/diff-cover*), Bash(bin/with-rbenv*), Bash(bin/ci*), Bash(pnpm *), Bash(go *), Bash(golangci-lint *), Bash(make *), Bash(cd *), Read, Grep, Glob, Edit, Write
+allowed-tools: Bash(jus *), Bash(git *), Bash(make *), Bash(cd *), Read, Grep, Glob, Edit, Write
 license: MIT
 ---
 
@@ -29,7 +29,7 @@ This SOP drives the Juscribe board through the **`jus` CLI**. The bundle ships t
 - `jus: command not found` → the CLI isn't installed. Tell the user to `brew install juscribe/tap/jus`, then stop.
 - `Error: No token available. Run 'jus login'…` → installed but unauthenticated. Tell the user to run `jus login` or `jus init`, then stop.
 - `Error: Stored token is invalid or expired.` — or any `HTTP 401` from `jus api` — → the token was real and is now **retired**. API tokens expire: agent tokens 90 days after creation or last rotation, mobile sessions 60 days after last use. The 401 body names the remedy. Relay it and stop.
-  - An **agent** token needs a **rotate** (Settings → API Tokens), *not* another `jus login` — re-authenticating hands back the same dead secret.
+  - An **agent** token needs a **rotate** (Settings → API Tokens), _not_ another `jus login` — re-authenticating hands back the same dead secret.
   - Tell the user which, then stop.
 
 **Do not loop `jus` commands against an unconfigured CLI, or against a 401.** A 401 never heals by retrying; it is a credential the user must replace. Surface the single setup step the error points to and stop — one clear instruction beats a wall of repeated errors. Everything below assumes this preflight passed.
@@ -116,7 +116,7 @@ After starting, investigate the codebase. Then apply 1–3 labels before writing
 ### Investigation guidelines
 
 - **Limit codebase exploration to 2–3 direct file reads** for frontend UI tickets. Don't deploy deep exploration agents for straightforward features.
-- **Skip deep architecture analysis for familiar domains** — for React/hooks/CSS work, read the target files + 1–2 neighbors. Don't trace the full state-management chain unless the fix requires it.
+- **Skip deep architecture analysis for familiar domains** — for routine UI or styling work, read the target files + 1–2 neighbors. Don't trace the full state-management chain unless the fix requires it.
 - **Time-box investigation to ~3 minutes** for tickets ≤ 2 points. If you're still reading code after 3 files, start implementing and adjust as you go.
 - **Document what you learn in code comments** — when you decode an animation flow, state pattern, or WebSocket dance, leave explanatory comments in the source. Focus on "why" and "how the pieces connect" rather than obvious "what".
 
@@ -136,32 +136,23 @@ Guidelines:
 - `refactor` — restructuring without behavior change. Don't combine with `frontend`/`backend` unless the refactor genuinely spans both.
 - `regression` — bug that fixes behavior that previously worked. Apply alongside the relevant area label (e.g., `regression` + `frontend`).
 
-#### Workspace 1 label IDs
+#### Finding this workspace's labels
 
-| ID | Name | When to apply |
-|----|------|---------------|
-| 1 | `frontend` | Changes under `app/frontend/` |
-| 2 | `backend` | Rails models / controllers / services / migrations |
-| 3 | `api` | API contract changes — endpoint, payload shape, authorization |
-| 4 | `database` | Schema, migrations, indexes, query performance |
-| 5 | `css` | Styling-only changes (Tailwind, `application.css`) |
-| 6 | `real-time` | Action Cable channels, broadcasts, Zustand sync |
-| 7 | `docs` | Documentation-only — `.jus/docs/`, README, agent context files |
-| 8 | `refactor` | Behavior-preserving restructuring |
-| 9 | `regression` | Bug that fixes previously-working behavior |
-| 10 | `responsive` | Responsive / breakpoint / mobile-web layout work |
-| 11 | `docker` | Dockerfile, compose, container configuration |
-| 12 | `branding` | Logo, color, typography, identity |
-| 13 | `ui/ux` | Interaction design, flows, behavior — not pure styling |
-| 14 | `mobile` | React Native / `mobile/` directory |
+**Label IDs are per-workspace and are not listed here** — the set in your project is its own. Fetch it:
 
-To confirm IDs in another workspace, list them: `jus api GET '/workspaces/{ws}/labels'`. **If you need a label that doesn't exist, ask the stakeholder before inventing one** — labels are a controlled vocabulary.
+```sh
+jus api GET '/workspaces/{ws}/labels'
+```
+
+**The project should document what each label MEANS**, not just its id, and that belongs in the project's own instructions. An id with no _when to apply_ is a label applied by guesswork — and the cost lands on whichever label people later want to filter by. In this project a security sweep once missed an internet-facing container with a route to the production database, because `security` had an id and no definition, so the ticket carried only `docker`.
+
+**If you need a label that doesn't exist, ask the stakeholder before inventing one** — labels are a controlled vocabulary, and a near-duplicate is worse than a missing one because it silently splits every future filter.
 
 ## Phase 4: Coding
 
 ### Post the start comment BEFORE the first code edit
 
-The very first thing in Phase 4 — before you edit a single source file — **post a "Starting" comment on the ticket**: the root cause / your read of the problem, the plan, and your TDD intent. This is the earliest stakeholder-facing signal that work began and the record of your plan *before* implementation. It is prompt-only (on harnesses running the jus hooks, a soft nudge fires on the first source edit — nothing hard-blocks it anywhere), so it rests on you remembering. Do not skip it; do not fold it into the delivery comment.
+The very first thing in Phase 4 — before you edit a single source file — **post a "Starting" comment on the ticket**: the root cause / your read of the problem, the plan, and your TDD intent. This is the earliest stakeholder-facing signal that work began and the record of your plan _before_ implementation. It is prompt-only (on harnesses running the jus hooks, a soft nudge fires on the first source edit — nothing hard-blocks it anywhere), so it rests on you remembering. Do not skip it; do not fold it into the delivery comment.
 
 ```sh
 jus api POST /workspaces/{ws}/tickets/{id}/comments '{"comment":{"body":"Starting. <root cause + plan + TDD intent>"}}'
@@ -181,19 +172,20 @@ Do not skip TDD because investigation was long, the fix seems obvious, or you're
 
 #### What to test, where
 
-| Layer | Spec location | Coverage target |
-|-------|---------------|-----------------|
-| API endpoints (`/api/v1/...`) | `spec/requests/api/v1/` | Happy path + validation errors + authorization |
-| Mobile API endpoints (`/api/mobile/v1/...`) | `spec/requests/api/mobile/v1/` | Same as v1 — happy path + errors + auth |
-| Models | `spec/models/` | Validations, scopes, callbacks, business-logic methods |
-| Frontend logic | colocated `*.test.ts(x)` under `app/frontend/` | Hooks, store actions, utility functions, component behavior |
-| Mobile logic | colocated `*.test.ts(x)` under `mobile/` | Same as frontend |
-| Agent (Go) | `*_test.go` colocated under `station/` | Business logic, race-tested where concurrency matters |
+| Layer                | Coverage target                                                           |
+| -------------------- | ------------------------------------------------------------------------- |
+| HTTP endpoints       | Happy path + validation errors + **authorization**                        |
+| Domain / data models | Validations, scopes, callbacks, business-logic methods                    |
+| Client-side logic    | Hooks, store actions, utility functions, component behaviour              |
+| Concurrent code      | Business logic, exercised under the race detector if the language has one |
+
+**Put each test where the project already puts that kind of test** — mirror the neighbours rather than inventing a location. If a layer has no existing home, ask; a test in the wrong tree often does not run at all, which looks identical to passing.
 
 ### Description conventions
 
 - **Every ticket must have a description and effort estimate.** A title alone is not sufficient.
-- **Append to the stakeholder's existing description, never overwrite it** (protects stakeholder-authored intent — especially a sparse or blank description you're filling in; not a blanket ban on editing your own prior additions). Fetch the ticket BEFORE patching. If `description` is non-null, prepend the existing content + `\n\n---\n\n` separator before your additions. The original — even a one-sentence stakeholder request — is the source of truth.
+- **Stakeholder text verbatim; agent text kept current.** Fetch the ticket BEFORE patching. A stakeholder's description is preserved word-for-word — prepend it plus a `\n\n---\n\n` separator before your additions; their one-sentence request is the source of truth. Your own prior additions are living documentation: when facts change, edit them in place rather than appending dated update layers — the description should always read as one coherent, current spec.
+- **Mixed-actor tickets: one timeline, both assigned.** When some steps are only the stakeholder's (vendor consoles, secrets, purchases, hardware) and others are the agent's, assign BOTH parties and write a single numbered checklist in execution order, each step prefixed with its actor — `- [ ] 2. **[Stakeholder]** …` — checkboxes kept current as steps complete. Never separate "Stakeholder does: / Agent does:" sections: they hide the interleaving, and the first unchecked box must show whose move it is. When the next unchecked step is the stakeholder's, apply the External-blocker protocol (leave `started`, comment naming the awaited step, add the dependency). Full rule + example: [`hard-rules`](#related-skills) → Mixed-Actor Tickets.
 
 ### Comment conventions
 
@@ -266,57 +258,38 @@ After committing, review your diff (`git show`). Go beyond the diff:
 - Refactoring the change exposes
 - Performance implications
 
-### Per-area test commands
+### Where the commands come from
 
-Use the `bin/` wrappers — Bash sessions don't inherit rbenv, so raw `bundle exec` will fail. The wrappers initialize rbenv automatically.
+**This skill does not name them, deliberately.** It ships to projects with different stacks, and a runner named here is wrong everywhere it does not apply. The obligations below are universal; the exact invocations live in the project's own instructions — its `CLAUDE.md`, contributor guide, or task runner.
 
-```sh
-# Backend (Rails / RSpec) — SimpleCov is gated on COVERAGE=1; a plain run
-# does NOT refresh coverage/backend/lcov.info (diff-cover then reads stale data)
-COVERAGE=1 bin/rspec                               # full suite with coverage
-bin/rspec                                          # full suite (no coverage)
-bin/rspec spec/requests/api/v1/tickets_spec.rb     # single file
-bin/rspec spec/requests/api/v1/tickets_spec.rb:42  # single example by line
-
-# Frontend (React / Vitest)
-pnpm test                                          # full suite (CI mode)
-pnpm exec vitest run path/to/file.test.tsx         # single file
-pnpm exec vitest run --coverage                    # with coverage
-
-# Mobile (React Native / Jest)
-cd mobile && pnpm test                             # full suite
-cd mobile && pnpm test -- --coverage               # with coverage
-
-# Agent (Go / station)
-cd station && go test ./...                        # full suite
-cd station && go test -race -count=1 ./...          # with race detection
-```
+If you cannot find them, **ask rather than guess**. A test command invented from the directory layout can pass while running nothing, which is worse than admitting you don't know it.
 
 ### Mandatory post-commit checks
 
 > These checks are the entire point of self-review. Skipping them has shipped broken tests and lint warnings across multiple tickets. **Do not skip.**
 
-1. **Run the full backend suite** if Ruby files changed (`bin/rspec`) — not just files you touched. Tests you didn't write can break from your changes.
-2. **Run architectural smell analysis** on ALL modified Ruby files (`bin/reek <file...>`) — fix every warning. Reek catches `TooManyMethods`, `FeatureEnvy`, `DuplicateMethodCall`, and other smells that rubocop misses. Do not defer reek warnings — they accumulate quickly. Genuine false positives → discuss with the stakeholder rather than suppressing silently.
-3. **Run rubocop** on ALL modified Ruby files (`bin/rubocop <file...>`) — fix every offense.
-4. **Run frontend linters** if `.ts`/`.tsx`/`.css` files changed: `pnpm exec eslint`, `pnpm exec prettier --check`, `pnpm exec tsc --noEmit` (always project-wide).
-5. **Run the agent gate** when `station/` files changed: **always use `bin/ci --station`** — it runs the canonical agent CI flow (lint + test + race + coverage). Do NOT call raw `go test` / `golangci-lint` for the gate.
+Run, **scoped to the files in this commit**:
+
+1. **The tests covering what you changed.** Prefer the tooling's own dependency-aware selection where it exists — a runner that follows the import graph finds the tests that actually exercise your change, not just the ones with matching filenames.
+2. **Every linter and formatter that applies to those files**, including the static-analysis or smell tools the project treats as mandatory. Fix every warning in a file you touched, whether or not your change caused it.
+3. **Any type checker**, which is usually project-wide rather than per-file — check whether yours can be scoped at all before assuming it can.
+
+⚠️ **Know what this scope does not prove.** A changed-file gate cannot catch a change that breaks a test it has no textual or import-level link to — a shared callback, a fixture, a factory, a config default. Where the project's runner has no dependency-aware selection, "tests for the changed files" collapses to a filename convention and that blind spot is wide.
+
+So: **widen the scope yourself when the change is cross-cutting.** Editing a base class, a shared fixture, a migration, a config default or anything imported broadly means running more than the file's own tests, regardless of what the default gate says. If the project runs a full suite anywhere — CI, a pre-push hook, a nightly job — know which, because that is what is actually covering the gap.
 
 Fix issues in a follow-up commit with the same ticket prefix. Only finish once the code would pass a senior review.
 
 ### Diff coverage gate
 
-After lints pass, run diff coverage for every component you touched. This verifies that **all new/changed lines** are exercised — not just that tests pass.
+After lints pass, check coverage **of the diff** for every component you touched. This verifies that all new/changed lines are exercised — not just that tests pass.
 
-```sh
-bin/diff-cover --backend          # Ruby changes
-bin/diff-cover --frontend         # app/frontend/ changes
-bin/diff-cover --mobile           # mobile/ changes
-bin/diff-cover --station          # station/ changes
-bin/diff-cover                    # all at once
-```
+Most projects wrap this in a single command; find it rather than assembling one. Two things that bite:
 
-Prerequisite: tests must run with coverage enabled first (`bin/rspec` does this automatically; frontend needs `pnpm exec vitest run --coverage`; mobile needs `cd mobile && pnpm test -- --coverage`; agent uses `cd station && make test-coverage`).
+- **Coverage instrumentation is usually opt-in.** A plain test run often does not refresh the coverage data, so the diff check silently reads a stale report with the wrong line numbers and reports success. Confirm the report was written by the run you just did.
+- **Scoping the test run also scopes the coverage.** If you ran only the tests for the changed files, the report covers only what those exercised — which is the right denominator here, but not a statement about the project as a whole.
+
+Default threshold: **100%**. Every new/changed line must be covered. If the check fails, write the missing tests before finishing. **This is a hard gate** — do not deliver with uncovered lines.
 
 Default threshold: **100%**. Every new/changed line must be covered. If `bin/diff-cover` fails, write the missing tests before finishing. **This is a hard gate** — do not deliver with uncovered lines.
 
@@ -358,14 +331,20 @@ The "To verify" section with concrete acceptance/rejection steps is **mandatory,
 **Every delivery comment MUST include git information:**
 
 - **Direct commits on main:**
-  ```
+
+  ````
   **Commit:** `abc1234` on main
   ```sh
   git show abc1234 --stat
   git show abc1234
-  ```
+  ````
+
   N files changed, X insertions, Y deletions.
+
   ```
+
+  ```
+
 - **Dispatched work (on a branch):** Do NOT include branch info — the dispatch job appends it automatically after the session completes.
 - **Tickets with no code changes** (research, documentation, already-implemented): Omit git info — state plainly that no code changes were made.
 
@@ -409,14 +388,14 @@ Guidelines:
 
 Effort is captured in `points`. **Valid values: `0`, `1`, `2`, `3`, `5`, `8`** — no other values, no half-points.
 
-| Points | Calibration |
-|--------|-------------|
-| `0` | Trivial config change, typo fix — no real engineering effort |
-| `1` | Single-file change, simple bug fix |
-| `2` | Small feature or multi-file change with clear scope |
-| `3` | Medium feature — new endpoint + frontend, multiple specs |
-| `5` | Large feature spanning backend + frontend + tests, or a complex refactor |
-| `8` | Epic-scale work — usually a sign the ticket should be broken into smaller tickets |
+| Points | Calibration                                                                       |
+| ------ | --------------------------------------------------------------------------------- |
+| `0`    | Trivial config change, typo fix — no real engineering effort                      |
+| `1`    | Single-file change, simple bug fix                                                |
+| `2`    | Small feature or multi-file change with clear scope                               |
+| `3`    | Medium feature — new endpoint + frontend, multiple specs                          |
+| `5`    | Large feature spanning backend + frontend + tests, or a complex refactor          |
+| `8`    | Epic-scale work — usually a sign the ticket should be broken into smaller tickets |
 
 - **Every ticket gets points, including chores and bugs.** Chores are NOT automatically `0`; a chore that requires real work gets real points (chores affect velocity too). `0` is reserved for genuinely trivial / no-effort items.
 - **Research tickets are typically `1`–`2` points** — the deliverable is description content, not code.
@@ -431,12 +410,12 @@ jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"points":2}}'
 
 The `ticket_type` field controls which icon renders on the board and signals intent to the stakeholder.
 
-| Type | API value | Icon | Meaning |
-|------|-----------|------|---------|
-| Feature | `feature` | ★ | New functionality or enhancement to existing behavior |
-| Bug | `bug` | ● | Something that worked before is now broken |
-| Chore | `chore` | ⚙ | Maintenance, refactoring, config, CI — no user-visible behavior change |
-| Research | `research` | ⚗ | Investigation, analysis, answering questions — deliverable is description content, not code |
+| Type     | API value  | Icon | Meaning                                                                                     |
+| -------- | ---------- | ---- | ------------------------------------------------------------------------------------------- |
+| Feature  | `feature`  | ★    | New functionality or enhancement to existing behavior                                       |
+| Bug      | `bug`      | ●    | Something that worked before is now broken                                                  |
+| Chore    | `chore`    | ⚙    | Maintenance, refactoring, config, CI — no user-visible behavior change                      |
+| Research | `research` | ⚗    | Investigation, analysis, answering questions — deliverable is description content, not code |
 
 ### Choosing the right type
 
@@ -454,26 +433,26 @@ Common miscalibrations to avoid: "document how X works" → `research`, not `cho
 
 Markers render as horizontal bars on the board, not cards. They are timeline-planning artifacts and are excluded from API responses by default — pass `include_markers=true` to include them when listing.
 
-| Type | API value | Icon | Use for |
-|------|-----------|------|---------|
-| Milestone | `milestone` | ◆ | Significant project checkpoint or goal |
-| Release | `release` | ⚑ | Version cut or deployment boundary |
-| Deadline | `deadline` | ⚑ | Hard date constraint (renders red) |
+| Type      | API value   | Icon | Use for                                |
+| --------- | ----------- | ---- | -------------------------------------- |
+| Milestone | `milestone` | ◆    | Significant project checkpoint or goal |
+| Release   | `release`   | ⚑    | Version cut or deployment boundary     |
+| Deadline  | `deadline`  | ⚑    | Hard date constraint (renders red)     |
 
 ## Ticket Metadata
 
-| Field | Default / convention |
-|-------|----------------------|
-| `requester_id` | **Auto-set** to `current_user` by the API — not settable. The agent that creates the ticket is the requester. |
-| `stakeholder_id` | **Set to the workspace owner's user ID** for all tickets. In workspace 1 that's user `1` (Caleon). |
-| `assignee_ids` | Set to your agent user ID (`2` for `caleon-claude`) when you are doing the coding. **Omit or leave empty** when creating tickets you won't immediately work on — let the stakeholder assign. |
-| `description` | **Append-only.** Fetch first; if non-null, prepend existing content + `\n\n---\n\n` before your additions. See [`hard-rules`](#related-skills). |
-| `points` | Required for features to leave icebox. Valid values: `0, 1, 2, 3, 5, 8`. See [Estimation](#estimation). |
-| `ticket_type` | One of `feature`, `bug`, `chore`, `research` (or marker types). See [Ticket Types](#ticket-types). |
-| `label_ids` | Array of integers, 1–3 entries. See [Label conventions](#label-conventions). |
-| `project_id` | Scope a ticket under a project when one applies — improves board organization and unlocks project-level rollups. |
-| `comments_count` | Counter-cached integer. Check before fetching comments. |
-| `blocked` / `active_dependencies_count` | If `true` / `> 0`, fetch dependencies before deciding to start. |
+| Field                                   | Default / convention                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requester_id`                          | **Auto-set** to `current_user` by the API — not settable. The agent that creates the ticket is the requester.                                                                                                                                                                                                                                                                                   |
+| `stakeholder_id`                        | **Set to the workspace owner's user ID** for all tickets. In workspace 1 that's user `1` (Caleon).                                                                                                                                                                                                                                                                                              |
+| `assignee_ids`                          | Set to your agent user ID (`2` for `caleon-claude`) when you are doing the coding. **Mixed-actor tickets (some steps only the stakeholder can perform): assign BOTH** — and write the actor-tagged chronological checklist (see [Description conventions](#description-conventions)). **Omit or leave empty** when creating tickets you won't immediately work on — let the stakeholder assign. |
+| `description`                           | **Append-only.** Fetch first; if non-null, prepend existing content + `\n\n---\n\n` before your additions. See [`hard-rules`](#related-skills).                                                                                                                                                                                                                                                 |
+| `points`                                | Required for features to leave icebox. Valid values: `0, 1, 2, 3, 5, 8`. See [Estimation](#estimation).                                                                                                                                                                                                                                                                                         |
+| `ticket_type`                           | One of `feature`, `bug`, `chore`, `research` (or marker types). See [Ticket Types](#ticket-types).                                                                                                                                                                                                                                                                                              |
+| `label_ids`                             | Array of integers, 1–3 entries. See [Label conventions](#label-conventions).                                                                                                                                                                                                                                                                                                                    |
+| `project_id`                            | Scope a ticket under a project when one applies — improves board organization and unlocks project-level rollups.                                                                                                                                                                                                                                                                                |
+| `comments_count`                        | Counter-cached integer. Check before fetching comments.                                                                                                                                                                                                                                                                                                                                         |
+| `blocked` / `active_dependencies_count` | If `true` / `> 0`, fetch dependencies before deciding to start.                                                                                                                                                                                                                                                                                                                                 |
 
 ### Creating a ticket with full metadata
 
@@ -497,7 +476,7 @@ jus api POST /workspaces/1/tickets '{
 The `jus` CLI wraps curl with auth, the `/api/v1` prefix, and jq formatting. Flags: `--raw` (no jq), `-v` (verbose). Token comes from `JUSCRIBE_API_TOKEN` or `.jus/config/api_token.txt`. Installed via Homebrew (`brew install juscribe/tap/jus`) and symlinked at `bin/jus` in this repo. **Output:** the `HTTP <status>` line goes to **stderr**; **stdout is pure JSON** — pipe stdout straight to a parser (`jus api GET '...' | jq .`). Never `2>&1`: it merges the status line into the body and breaks the parse. **Response shape:** bodies are wrapped under a top-level key — a single resource under `.ticket` / `.project`, lists under `.tickets` (with a sibling `.pagination`), `.comments`, etc. Parse `.ticket`/`.project`/`.tickets`, not the JSON root. `include_comments=true` inlines comments on a single **ticket** (`.ticket.comments`) but **not on a project** — fetch those from `jus api GET '/workspaces/{ws}/projects/{id}/comments'` (`.comments`). **Errors:** every mutating body must be wrapped under its resource key — `{"comment":{"body":"..."}}`, not `{"comment":"..."}` and not `{"body":"..."}` for anything you build by hand. A wrong shape is a **400** whose `.error` names the key. **Check the exit code, not just the body:** `jus api` exits **non-zero on any non-2xx** (since v0.6.11), and the error body is still valid JSON on stdout — so `| jq` succeeds on a failure too. A 404 body is only `{"error":"Not found"}` with no status field, so there is nothing in the JSON to key on; use `if ! jus api ...` or `set -e`.
 
 - **Use `jus api` instead of `curl`** — manual curl loses auth and pretty-printing.
-- **Avoid `rails runner` for data work** — it bypasses controllers, broadcasts, and activity logging, so changes won't show live and won't generate an audit trail.
+- **Avoid a direct console or ORM script for data work** — it bypasses controllers, broadcasts and activity logging, so changes won't show live and won't generate an audit trail. Go through the API.
 - **Never fetch full ticket lists at session start** — use `agent_state` for orientation; fetch individual tickets on demand.
 - **Combine efficiency tools** — sparse fieldsets, opt-out params, and `agent_state` stack; use them together. Every byte returned costs tokens.
 
@@ -513,7 +492,7 @@ EOF
 jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"points":2}}'
 jus api DELETE /workspaces/{ws}/dependencies/{dep_id}
 
-jus download /rails/active_storage/blobs/redirect/eyJ... .jus/tmp/screenshot.png  # ActiveStorage attachment
+jus download <attachment-url-path> .jus/tmp/screenshot.png                      # attachment from a ticket
 jus init      # first-time setup (token + workspace + symlink)
 jus login     # authenticate with API token
 jus whoami    # show authenticated user
@@ -537,26 +516,26 @@ Five behaviours that present as a hang, a no-op, a bare 500, or a silent success
 - **Opt-out params**: `include_markers` (default `false`), `include_label_objects` (default `true`; `false` omits the array — string `labels` always present), `include_attachments` (default `false`), `include_comments` (default `false`), `comments_limit` (caps to N most recent).
 - **`comments_count`**: every ticket response carries it — check before fetching comments; if `0`, skip `include_comments` entirely.
 
-| Task | Approach |
-|------|----------|
-| Session start | `agent_state?panels=current,backlog` |
-| Fetch a ticket to work on | `tickets/{id}?include_comments=true&include_attachments=true&include_label_objects=false` |
-| Bulk state check across panel | `tickets?fields=id,title,state&panel=current` |
-| Project ticket list | `projects/{id}/tickets?fields=id,title,state,points` |
-| Create / update / transition | Normal endpoints — write paths return full data |
+| Task                          | Approach                                                                                  |
+| ----------------------------- | ----------------------------------------------------------------------------------------- |
+| Session start                 | `agent_state?panels=current,backlog`                                                      |
+| Fetch a ticket to work on     | `tickets/{id}?include_comments=true&include_attachments=true&include_label_objects=false` |
+| Bulk state check across panel | `tickets?fields=id,title,state&panel=current`                                             |
+| Project ticket list           | `projects/{id}/tickets?fields=id,title,state,points`                                      |
+| Create / update / transition  | Normal endpoints — write paths return full data                                           |
 
 ## Dependency Handling Protocol
 
 When a ticket has `blocked: true` or `active_dependencies_count > 0`, fetch `GET .../dependencies` and evaluate each blocker:
 
-| Blocker state | Action |
-|---------------|--------|
-| `accepted` / `cancelled` | Stale — resolve manually, comment, proceed |
-| `delivered` / `finished` | Proceed (note in start comment) |
-| `started` + assigned to another agent | **Skip** — comment "Blocked by #N", move on |
-| `started` + unassigned | Pick up if small (≤2pt, same project), otherwise skip + flag |
-| `prioritized` / `unprioritized` | **Skip** — prerequisite hasn't started, flag to stakeholder |
-| `External` | Check description; resolve if met, otherwise skip + ask |
+| Blocker state                         | Action                                                       |
+| ------------------------------------- | ------------------------------------------------------------ |
+| `accepted` / `cancelled`              | Stale — resolve manually, comment, proceed                   |
+| `delivered` / `finished`              | Proceed (note in start comment)                              |
+| `started` + assigned to another agent | **Skip** — comment "Blocked by #N", move on                  |
+| `started` + unassigned                | Pick up if small (≤2pt, same project), otherwise skip + flag |
+| `prioritized` / `unprioritized`       | **Skip** — prerequisite hasn't started, flag to stakeholder  |
+| `External`                            | Check description; resolve if met, otherwise skip + ask      |
 
 In batch work: skip blocked tickets (don't transition to `started`), post a comment, continue in position order. Respect dependency order over position order (topological sort).
 
@@ -627,12 +606,12 @@ jus api POST /workspaces/{ws}/tickets/{id}/convert '{}'
 
 What it does, in one transaction:
 
-| | |
-|---|---|
-| Creates a project | carrying the ticket's **title, description, requester and stakeholder** |
-| Sets `source_ticket_id` | so the project records where it came from |
-| Transitions the ticket to **`converted`** | and clears its `project_id` |
-| Records activities on both | and broadcasts `project_created` |
+|                                           |                                                                         |
+| ----------------------------------------- | ----------------------------------------------------------------------- |
+| Creates a project                         | carrying the ticket's **title, description, requester and stakeholder** |
+| Sets `source_ticket_id`                   | so the project records where it came from                               |
+| Transitions the ticket to **`converted`** | and clears its `project_id`                                             |
+| Records activities on both                | and broadcasts `project_created`                                        |
 
 It returns `{ticket, project}`, so the new project's id comes back in the same call.
 
@@ -651,6 +630,6 @@ jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"cancelled","re
 
 ## Related Skills
 
-- `hard-rules` — the non-negotiable must/must-not that overrides everything here (commit immediately, no lint suppression, append-only descriptions, never deliver incomplete work, no `git push`, document discoveries) and the map of which rules the enforcement hooks back deterministically on harnesses that run them. (Claude Code plugin installs show skill names prefixed with `jus:` — invoke the prefixed form there.)
+- `hard-rules` — the non-negotiable must/must-not that overrides everything here (commit immediately, no lint suppression, stakeholder-verbatim descriptions, never deliver incomplete work, no `git push`, document discoveries) and the map of which rules the enforcement hooks back deterministically on harnesses that run them. (Claude Code plugin installs show skill names prefixed with `jus:` — invoke the prefixed form there.)
 
 > **Note:** `ticket-workflow` is the single load-bearing SOP skill — it inlines the estimation, labeling, testing-gate, and `jus` API material that earlier lived in the separate `testing-gates`, `juscribe-api`, and `estimation-labels` skills (retired in #1856 because they never auto-invoked; their content was already resident here). For monumental, the deeper extracted reference also lives in `.jus/sop/` (`api-reference.md`, `workflows.md`, `commands.md`) and `.jus/docs/`.
