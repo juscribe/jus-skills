@@ -29,6 +29,7 @@ tool_name=$(jq -r '.tool_name // ""' <<<"$input")
 
 command=$(jq -r '.tool_input.command // ""' <<<"$input")
 session_id=$(jq -r '.session_id // ""' <<<"$input")
+cwd=$(jq -r '.cwd // ""' <<<"$input")
 
 # (1) Only act on `git commit`
 if ! juscribe_sop_is_git_commit "$command"; then
@@ -47,10 +48,23 @@ state_dir=$(juscribe_sop_state_dir "$session_id")
 
 # (4) Only doc/config files edited → no lint requirement
 if [[ -f "${state_dir}/edits.log" ]]; then
+  # Scope the scan to the repo being committed to. #2388 keeps out-of-repo
+  # entries — scratchpad scripts, auto-memory — in the log for the session's
+  # whole life by design, and they are not part of THIS commit, so demanding
+  # lints for them would raise a gate no lint in this repo can lower. Only when
+  # a toplevel resolves: with no cwd (the shape the harness sometimes sends) the
+  # scan stays unscoped, exactly as before.
+  base_dir=$(juscribe_sop_repo_toplevel "$cwd")
+  [[ -n "$base_dir" ]] || base_dir="$cwd"
   code_edited=0
   while IFS= read -r path; do
     [[ -z "$path" ]] && continue
-    if juscribe_sop_is_code_file "$path"; then
+    if [[ -n "$base_dir" ]]; then
+      case "$path" in
+        /*) [[ "$path" == "$base_dir"/* ]] || continue ;;
+      esac
+    fi
+    if juscribe_sop_is_code_file "$path" "$base_dir"; then
       code_edited=1
       break
     fi
@@ -90,6 +104,9 @@ applicable linters scoped to the files you changed, then retry the commit.
 
   Go files (station/):
     bin/ci --station
+
+  Shell scripts (.sh, or extensionless with a shell shebang):
+    shellcheck <files>        # or the project's wrapper, e.g. bin/lint-shell
 
 If you've already linted but the gate is firing, the hook didn't see the lint
 exit code. Re-run the lint command in its own Bash call (not chained), then

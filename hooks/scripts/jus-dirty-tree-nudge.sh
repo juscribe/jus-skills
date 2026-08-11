@@ -73,7 +73,9 @@ if [[ -z "$toplevel" ]]; then
   exit 0
 fi
 
-count=$(juscribe_sop_session_dirty_lines "$toplevel" "$session_id" | grep -c . || true)
+# Unscoped — see juscribe_sop_dirty_lines. The per-session ownership scoping was
+# removed in #2392; worktrees are the isolation strategy.
+count=$(juscribe_sop_dirty_lines "$toplevel" | grep -c . || true)
 
 if (( count < NUDGE_THRESHOLD )); then
   exit 0
@@ -82,7 +84,7 @@ fi
 # Emit a system message via JSON output. Exit 0 with valid JSON on stdout
 # is processed by Claude Code as structured hook output.
 jq -n --argjson count "$count" '{
-  systemMessage: ("[jus:hard-rules] " + ($count|tostring) + " files you edited are uncommitted, and checks have run since your last edit. The Juscribe SOP requires committing IMMEDIATELY once code changes are complete and linters pass — treat an uncommitted change like an unsaved file. If these are not ready to commit together, commit the part that is.")
+  systemMessage: ("[jus:hard-rules] " + ($count|tostring) + " files are uncommitted, and checks have run since your last edit. The Juscribe SOP requires committing IMMEDIATELY once code changes are complete and linters pass — treat an uncommitted change like an unsaved file. If these are not ready to commit together, commit the part that is.")
 }'
 
 exit 0

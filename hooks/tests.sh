@@ -75,6 +75,22 @@ assert_exit() {
 
 t() { TEST_NAME="$1"; }
 
+# Assert a per-session state file is present or absent. Lives up here with the
+# other helpers because sections from the gate onward use it, and a function
+# defined further down is simply not in scope yet — a silent 127, not an error.
+assert_state_file() { # <path> <present|absent>
+  local file="$1" want="$2" have
+  if [[ -f "$file" ]]; then have=present; else have=absent; fi
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if [[ "$have" == "$want" ]]; then
+    printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s (%s: %s, wanted %s)\n' "$TEST_NAME" "$(basename "$file")" "$have" "$want"
+  fi
+}
+
 section() {
   printf '\n\033[1m%s\033[0m\n' "$1"
 }
@@ -357,6 +373,29 @@ assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
   "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$SID_EDITED\"}" \
   "linters have not been run"
 
+t "blocks git -C <path> commit — a global option must not bypass the gate (#2363)"
+assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git -C . commit -m x\"},\"session_id\":\"$SID_EDITED\"}" \
+  "linters have not been run"
+
+t "blocks git -c k=v commit (#2363)"
+assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git -c core.editor=true commit -m x\"},\"session_id\":\"$SID_EDITED\"}" \
+  "linters have not been run"
+
+t "blocks an env-prefixed commit (#2363)"
+assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"GIT_AUTHOR_NAME=x git commit -m y\"},\"session_id\":\"$SID_EDITED\"}" \
+  "linters have not been run"
+
+t "still does not treat git commit-tree as a commit (#2363)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit-tree abc123\"},\"session_id\":\"$SID_EDITED\"}"
+
+t "still does not treat git -C . commit-tree as a commit (#2363)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git -C . commit-tree abc123\"},\"session_id\":\"$SID_EDITED\"}"
+
 t "allows git commit when the command itself runs a linter"
 assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
   "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"bin/rubocop foo.rb && git commit -m x\"},\"session_id\":\"$SID_EDITED\"}"
@@ -385,6 +424,26 @@ rm -rf "$GATE_CLEAN_REPO"
 t "allows git commit with no edits after a prior commit cleared state"
 assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
   "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$SID_LINTED\"}"
+
+# The tracker's commit branch must fire for the -C/-c forms too (#2363). Both
+# callers share juscribe_sop_is_git_commit, but "shared helper" is an inference
+# and this is a test.
+SID_DASHC="dashc-$$"
+printf '{"tool_name":"Edit","tool_input":{"file_path":"/repo/foo.rb","old_string":"a","new_string":"b"},"session_id":"%s"}' "$SID_DASHC" \
+  | "$SCRIPTS/jus-track-edits.sh" >/dev/null
+sleep 1
+printf '{"tool_name":"Bash","tool_input":{"command":"bin/rubocop foo.rb"},"tool_response":{"interrupted":false},"session_id":"%s"}' "$SID_DASHC" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+DASHC_REPO=$(mktemp -d)
+( cd "$DASHC_REPO" && git init -q && git config user.email t@t && git config user.name t \
+  && touch seed && git add seed && git commit -q -m init )
+printf '{"tool_name":"Bash","tool_input":{"command":"git -C . commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$SID_DASHC" "$DASHC_REPO" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+rm -rf "$DASHC_REPO"
+
+t "tracker clears state for a git -C <path> commit, same as a plain one (#2363)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$SID_DASHC\"}"
 
 # Doc-only edits → no lint required
 printf '{"tool_name":"Edit","tool_input":{"file_path":"/repo/README.md","old_string":"a","new_string":"b"},"session_id":"%s"}' "$SID_DOCS" \
@@ -428,6 +487,159 @@ printf '{"tool_name":"Bash","tool_input":{"command":"bin/rubocop foo.rb"},"tool_
 t "records lint from real harness payload (no exit_code) → allows commit"
 assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
   "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$SID_REAL\"}"
+
+# ---- #2387: shell was invisible to the gate in BOTH directions ---------------
+#
+# `.sh` was not a code file and extensionless scripts matched nothing, so a
+# commit touching only shell took the "only doc/config files edited" exit and
+# was never gated. Measured in this repo: 18 files end in `.sh`, but 76 are
+# shell scripts by shebang — the bin/* majority is extensionless, so extension
+# alone would still leave most of the surface ungated.
+#
+# Conversely neither `shellcheck` nor a project wrapper counted as a lint, so
+# running the CORRECT linter never advanced last_linted_at. Combined, a
+# shell-only commit could be blocked with no way to clear it.
+SH_FIX=$(cd "$(mktemp -d)" && pwd -P)
+( cd "$SH_FIX" && git init -q && git config user.email t@t && git config user.name t \
+  && touch seed && git add seed && git commit -q -m init )
+mkdir -p "$SH_FIX/bin" "$SH_FIX/sub"
+printf '#!/usr/bin/env bash\necho hi\n' > "$SH_FIX/deploy.sh"
+printf '#!/usr/bin/env bash\necho hi\n' > "$SH_FIX/bin/scan-fleet"
+printf '#!/usr/bin/env fish\necho hi\n' > "$SH_FIX/bin/fishy"
+printf 'key = value\n' > "$SH_FIX/plainconf"
+printf 'puts 1\n' > "$SH_FIX/app.rb"
+SH_SCRATCH=$(cd "$(mktemp -d)" && pwd -P)
+printf '#!/usr/bin/env bash\necho hi\n' > "$SH_SCRATCH/probe.sh"
+
+# Arm the gate for a session whose only tracked edits are the given paths.
+sh_gate_session() { # <sid> <path...>
+  local sid="$1"; shift
+  local dir="$CLAUDE_PLUGIN_DATA/sessions/$sid"
+  rm -rf "$dir"; mkdir -p "$dir"
+  printf '%s\n' "$@" > "$dir/edits.log"
+  date +%s > "$dir/last_modified_at"
+}
+
+sh_gate_session "sh-dotsh-2387" "$SH_FIX/deploy.sh"
+t "blocks a commit that touched only a .sh file (#2387)"
+assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"sh-dotsh-2387\",\"cwd\":\"$SH_FIX\"}" \
+  "linters have not been run"
+
+sh_gate_session "sh-extless-2387" "$SH_FIX/bin/scan-fleet"
+t "blocks a commit that touched only an extensionless shell script (#2387)"
+assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"sh-extless-2387\",\"cwd\":\"$SH_FIX\"}" \
+  "linters have not been run"
+
+# Codex records paths REPO-RELATIVE (#2352). The base must come from the git
+# toplevel, not the raw cwd, or a tool call made in a subdirectory resolves the
+# entry against the wrong directory and the script is silently not classified.
+sh_gate_session "sh-relative-2387" "bin/scan-fleet"
+t "classifies a repo-relative shell path against the git toplevel from a subdirectory cwd (#2352, #2387)"
+assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"sh-relative-2387\",\"cwd\":\"$SH_FIX/sub\"}" \
+  "linters have not been run"
+
+# GUARD: with no cwd there is no base, and a bare relative path must NOT be
+# probed — `[[ -f ]]` would consult the HOOK PROCESS's own cwd, letting an
+# unrelated checkout answer a question that can BLOCK a commit.
+t "does not probe a repo-relative path when the payload carries no cwd (#2387)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"sh-relative-2387\"}"
+
+# #2388 keeps out-of-repo entries in the log for the whole session by design.
+# They are not part of THIS commit, so they must not raise a gate that no lint
+# in this repo can lower.
+sh_gate_session "sh-foreign-2387" "$SH_SCRATCH/probe.sh"
+t "a shell script edited outside the commit's repo does not arm the gate (#2387, #2388)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"sh-foreign-2387\",\"cwd\":\"$SH_FIX\"}"
+
+sh_gate_session "sh-mixed-2387" "$SH_SCRATCH/probe.sh" "$SH_FIX/app.rb"
+t "an in-repo code file still arms the gate alongside an out-of-repo script (#2387)"
+assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"sh-mixed-2387\",\"cwd\":\"$SH_FIX\"}" \
+  "linters have not been run"
+
+# GUARDS on the shebang probe. These are why the decision was "by shebang", not
+# "anything under bin/" — a path heuristic would classify all of these as code.
+sh_gate_session "sh-noshebang-2387" "$SH_FIX/plainconf"
+t "an extensionless file with no shebang is not code (#2387)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"sh-noshebang-2387\",\"cwd\":\"$SH_FIX\"}"
+
+sh_gate_session "sh-fish-2387" "$SH_FIX/bin/fishy"
+t "a non-shell shebang does not make a file code (#2387)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"sh-fish-2387\",\"cwd\":\"$SH_FIX\"}"
+
+# Documents the accepted degradation so a later "fix" does not silently make it
+# fail closed: a deleted file cannot be classified, and blocking on it would
+# raise a gate nothing can lower.
+sh_gate_session "sh-gone-2387" "$SH_FIX/gone-forever"
+t "a tracked path that no longer exists fails open (#2387)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"sh-gone-2387\",\"cwd\":\"$SH_FIX\"}"
+
+# The matcher half. Each feeds the tracker a command and asserts last_linted_at.
+# Arguments must be $SH_FIX paths — never bin/ci or bin/rspec, which already
+# match the existing patterns and would pass without the new branch.
+sh_lint_records() { # <sid> <command> <present|absent>
+  local sid="$1" cmd="$2" want="$3"
+  local dir="$CLAUDE_PLUGIN_DATA/sessions/$sid"
+  rm -rf "$dir"
+  jq -nc --arg c "$cmd" --arg s "$sid" \
+    '{tool_name:"Bash",tool_input:{command:$c},tool_response:{interrupted:false},session_id:$s}' \
+    | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+  assert_state_file "$dir/last_linted_at" "$want"
+}
+
+t "bare shellcheck records last_linted_at (#2387)"
+sh_lint_records "shl-bare-2387" "shellcheck -x $SH_FIX/deploy.sh" present
+t "a project shell-lint wrapper records last_linted_at (#2387)"
+sh_lint_records "shl-wrap-2387" "bin/lint-shell $SH_FIX/deploy.sh" present
+t "a directory-prefixed wrapper records last_linted_at (#2387)"
+sh_lint_records "shl-dir-2387" "./bin/lint-shell $SH_FIX/deploy.sh" present
+t "xargs shellcheck records last_linted_at (#2387)"
+sh_lint_records "shl-xargs-2387" "git ls-files '*.sh' | xargs shellcheck" present
+t "find -exec shellcheck records last_linted_at (#2387)"
+sh_lint_records "shl-exec-2387" "find . -name '*.sh' -exec shellcheck {} +" present
+t "shfmt records last_linted_at (#2387)"
+sh_lint_records "shl-shfmt-2387" "shfmt -d $SH_FIX" present
+t "zsh -n records last_linted_at (#2387)"
+sh_lint_records "shl-zshn-2387" "zsh -n $SH_FIX/deploy.sh" present
+
+# GUARDS. Each is a command an agent plausibly runs in the very session it is
+# editing shell, and counting any of them silently disarms the gate.
+t "installing shellcheck is not a lint run (#2387)"
+sh_lint_records "shl-install-2387" "brew install shellcheck" absent
+t "probing for shellcheck is not a lint run (#2387)"
+sh_lint_records "shl-probe-2387" "command -v shellcheck" absent
+t "running a script with bash is not a lint run (#2387)"
+sh_lint_records "shl-run-2387" "bash jus/hooks/tests.sh" absent
+
+# ⚠️ THE ONE THAT MATTERS. juscribe_sop_command_segments turns every newline
+# into a separator, so each line of a heredoc body becomes a segment anchored at
+# column 0 — anchoring alone does NOT stop prose from matching. The SOP mandates
+# writing commit bodies through quoted heredocs, so a message describing this
+# very change would otherwise register as a lint run and disarm the gate for the
+# commit shipping it. Measured before juscribe_sop_strip_heredocs existed.
+t "prose in a heredoc that mentions shellcheck is not a lint run (#2387)"
+sh_lint_records "shl-heredoc-2387" \
+  "$(printf 'git commit -F - <<EOF\n[#2387] Teach the gate about shell\nshellcheck and the wrapper now record last_linted_at.\nEOF\n')" absent
+
+# End to end: the linter that was previously unrecognised now clears the gate
+# for the commit it applies to.
+sh_gate_session "sh-e2e-2387" "$SH_FIX/deploy.sh"
+sleep 1
+printf '{"tool_name":"Bash","tool_input":{"command":"shellcheck -x %s"},"tool_response":{"interrupted":false},"session_id":"sh-e2e-2387"}' "$SH_FIX/deploy.sh" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+t "running the shell linter clears the gate for a .sh-only commit (#2387)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"sh-e2e-2387\",\"cwd\":\"$SH_FIX\"}"
+
+rm -rf "$SH_FIX" "$SH_SCRATCH"
 
 # ---- jus-dirty-tree-nudge.sh --------------------------------------------------
 
@@ -541,30 +753,6 @@ assert_stdout "fires once checks have run since the last edit" "8 files" \
   "$(nudge_out "$SID_RED" "$REPO_RED")"
 rm -rf "$REPO_RED"
 
-# Only this session's files count. With two agents sharing a checkout the dirty
-# set includes the other session's work, and nudging about it is the #2216
-# failure wearing a different hat.
-SID_FOREIGN="test-nudge-foreign-$$"
-REPO_FOREIGN=$(nudge_repo 2 "$SID_FOREIGN")
-for i in 3 4 5 6 7; do echo "someone else" > "$REPO_FOREIGN/other$i.txt"; done
-assert_stdout "ignores dirty files this session never touched" "" \
-  "$(nudge_out "$SID_FOREIGN" "$REPO_FOREIGN")"
-rm -rf "$REPO_FOREIGN"
-
-# Codex records REPO-RELATIVE paths: its `*** Update File:` header carries
-# "app/a.ts", and jus-codex-adapt passes that through as file_path. Matching
-# only the absolute form left the intersection permanently empty on Codex, so
-# both this nudge and the stop gate silently covered nothing while exiting 0.
-SID_REL="test-nudge-relative-$$"
-REPO_REL=$(nudge_repo 0 "$SID_REL")
-for i in 1 2 3 4 5; do
-  echo "dirty" > "$REPO_REL/r$i.txt"
-  echo "r$i.txt" >> "$CLAUDE_PLUGIN_DATA/sessions/$SID_REL/edits.log"
-done
-assert_stdout "counts repo-relative recorded paths (Codex shape)" "5 files" \
-  "$(nudge_out "$SID_REL" "$REPO_REL")"
-rm -rf "$REPO_REL"
-
 # A clean tree is the normal post-commit state; no output, no error.
 SID_CLEAN_NUDGE="test-nudge-clean-$$"
 REPO_CLEAN=$(nudge_repo 5 "$SID_CLEAN_NUDGE")
@@ -572,26 +760,6 @@ REPO_CLEAN=$(nudge_repo 5 "$SID_CLEAN_NUDGE")
 assert_stdout "silent once the work is committed" "" \
   "$(nudge_out "$SID_CLEAN_NUDGE" "$REPO_CLEAN")"
 rm -rf "$REPO_CLEAN"
-
-# #2355: the window between a commit and the next edit. The commit event makes
-# the tracker delete edits.log AND last_modified_at — so the verification gate
-# passes (linted_at >= 0) and, pre-fix, the fallback counted the remaining
-# dirty files, which after a real commit are precisely the ones this session
-# did NOT touch. The sentinel must keep the nudge silent here.
-SID_POSTCOMMIT="test-nudge-postcommit-$$"
-REPO_POSTCOMMIT=$(nudge_repo 0 "$SID_POSTCOMMIT")
-STATE_POSTCOMMIT="$CLAUDE_PLUGIN_DATA/sessions/$SID_POSTCOMMIT"
-# This session's work: tracked, then genuinely committed (clean).
-echo "mine" > "$REPO_POSTCOMMIT/mine.txt"
-echo "$REPO_POSTCOMMIT/mine.txt" >> "$STATE_POSTCOMMIT/edits.log"
-( cd "$REPO_POSTCOMMIT" && git add mine.txt && git commit -q -m mine )
-# Another session's in-flight work: dirty, never tracked here.
-for i in 1 2 3 4 5; do echo "foreign" > "$REPO_POSTCOMMIT/other$i.txt"; done
-printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$SID_POSTCOMMIT" "$REPO_POSTCOMMIT" \
-  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
-assert_stdout "silent about foreign dirty files between a commit and the next edit (#2355)" "" \
-  "$(nudge_out "$SID_POSTCOMMIT" "$REPO_POSTCOMMIT")"
-rm -rf "$REPO_POSTCOMMIT"
 
 t "non-git cwd is a no-op"
 assert_exit 0 "$SCRIPTS/jus-dirty-tree-nudge.sh" \
@@ -703,237 +871,10 @@ t "allows stop in non-git directory"
 assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
   '{"cwd":"/tmp"}'
 
-# #2216: scope the block to files THIS session touched. With two agent
-# sessions in one repo, the hook used to fire on the other session's in-flight
-# edits. jus-track-edits records every Edit/Write path per session in
-# edits.log; the stop hook now blocks only on the dirty files that appear there.
-STOP_SID="stop-scope-2216"
-STOP_STATE="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID"
-mkdir -p "$STOP_STATE"
-STOP_TOP=$( cd "$DIRTY_REPO" && git rev-parse --show-toplevel )
-
-# The only tracked edit is an unrelated path — the dirty file `b` is another
-# session's, so the stop must NOT block.
-printf '%s\n' "/some/other/session/file.rb" > "$STOP_STATE/edits.log"
-t "does not block on a dirty file this session never touched (#2216)"
-assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID\"}"
-
-# Codex records the path REPO-RELATIVE (its `*** Update File:` header), so the
-# scoping has to match both forms or it silently covers nothing there (#2352).
-STOP_SID_REL="stop-scope-relative"
-STOP_STATE_REL="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_REL"
-mkdir -p "$STOP_STATE_REL"
-printf '%s\n' "b" > "$STOP_STATE_REL/edits.log"
-t "blocks on a relative recorded path (Codex shape, #2352)"
-assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_REL\"}" \
-  "STOP BLOCKED"
-
-# Now the dirty file IS one this session edited — block exactly as before.
-printf '%s\n' "$STOP_TOP/b" >> "$STOP_STATE/edits.log"
-t "still blocks on a dirty file this session touched (#2216)"
-assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID\"}" \
-  "STOP BLOCKED"
-
-# No edit log for the session (e.g. all edits went through Bash, which is not
-# tracked) — fall back to blocking on any dirty file, preserving the guard.
-t "falls back to blocking any dirty file when the session has no edit log (#2216)"
-assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"stop-scope-nolog\"}" \
-  "STOP BLOCKED"
-
-# #2355: a `git commit` makes the tracker delete edits.log, which used to be
-# indistinguishable from "never tracked" — so for the window after every commit
-# the scoping fell back to claiming EVERY dirty line, and the hook told the
-# session to commit another session's files (it fired for real on 2026-08-10:
-# a #2353 session was instructed to commit .claude/settings.json, a file only
-# the concurrent #2348 session had touched). The tracker now verifies against
-# git that the commit RESOLVED the tracked edits and leaves an edits_cleared_at
-# sentinel: log missing + sentinel present = this session owns nothing until it
-# records another edit.
-#
-# The incident shape: this session's tracked file `a` was genuinely committed
-# (clean), the remaining dirty `b` is another session's in-flight work.
-STOP_SID_COMMIT="stop-scope-committed-2355"
-STOP_STATE_COMMIT="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_COMMIT"
-mkdir -p "$STOP_STATE_COMMIT"
-printf '%s\n' "$STOP_TOP/a" > "$STOP_STATE_COMMIT/edits.log"
-printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$STOP_SID_COMMIT" "$DIRTY_REPO" \
-  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
-
-t "does not block on foreign dirty files after a commit resolved tracked edits (#2355)"
-assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_COMMIT\"}"
-
-# The sentinel must be CONDITIONAL on tracked edits having existed. A session
-# whose writes all went through Bash has no log to resolve; writing the
-# sentinel on its commits would switch the block-everything fallback off for
-# the rest of the session — the exact coverage hole the ticket forbids.
-STOP_SID_NOLOG_COMMIT="stop-scope-nolog-commit-2355"
-printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$STOP_SID_NOLOG_COMMIT" "$DIRTY_REPO" \
-  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
-
-t "a never-tracked session keeps the block-everything fallback after a commit (#2355)"
-assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_NOLOG_COMMIT\"}" \
-  "STOP BLOCKED"
-
-# The tool_response carries no exit status (#1873), so a FAILED or partial
-# commit reaches the tracker's commit branch too. The tracked `b` is still
-# dirty — nothing was resolved — so tracking must be KEPT: a sentinel here
-# would let the session end its turn with its OWN work uncommitted.
-STOP_SID_FAILED="stop-scope-failedcommit-2355"
-STOP_STATE_FAILED="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_FAILED"
-mkdir -p "$STOP_STATE_FAILED"
-printf '%s\n' "$STOP_TOP/b" > "$STOP_STATE_FAILED/edits.log"
-printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$STOP_SID_FAILED" "$DIRTY_REPO" \
-  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
-
-t "keeps blocking on own dirty files after a commit that did not resolve them (#2355)"
-assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_FAILED\"}" \
-  "STOP BLOCKED"
-
-t "an unresolved commit keeps the edit log (#2355)"
-TESTS_RUN=$((TESTS_RUN + 1))
-if [[ -s "$STOP_STATE_FAILED/edits.log" ]]; then
-  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
-else
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-  FAILURES+=("$TEST_NAME")
-  printf '  \033[31m✗\033[0m %s (edits.log was cleared)\n' "$TEST_NAME"
-fi
-
-# Recording a new edit re-arms the scoping: jus-track-edits clears the
-# sentinel, the fresh log is non-empty, and intersection behaviour resumes.
-printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/b"},"session_id":"%s"}' "$STOP_TOP" "$STOP_SID_COMMIT" \
-  | "$SCRIPTS/jus-track-edits.sh" >/dev/null
-
-t "recording an edit clears the commit sentinel (#2355)"
-TESTS_RUN=$((TESTS_RUN + 1))
-if [[ ! -f "$STOP_STATE_COMMIT/edits_cleared_at" ]]; then
-  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
-else
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-  FAILURES+=("$TEST_NAME")
-  printf '  \033[31m✗\033[0m %s (sentinel still present)\n' "$TEST_NAME"
-fi
-
-t "blocks again once a new edit is recorded after the commit (#2355)"
-assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_COMMIT\"}" \
-  "STOP BLOCKED"
-
-# Porcelain without -uall COLLAPSES an untracked directory to one "?? newdir/"
-# line, which can never match a logged file inside it — so the intersection
-# silently skipped such files (pre-existing #2216 blind spot), and worse, the
-# #2355 resolution check read them as "resolved" and wrote the sentinel over
-# the session's own uncommitted work. The helper now passes -uall.
-STOP_SID_NEWDIR="stop-scope-newdir-2355"
-STOP_STATE_NEWDIR="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_NEWDIR"
-mkdir -p "$STOP_STATE_NEWDIR" "$DIRTY_REPO/newdir"
-echo "own" > "$DIRTY_REPO/newdir/own.rb"
-printf '%s\n' "$STOP_TOP/newdir/own.rb" > "$STOP_STATE_NEWDIR/edits.log"
-
-t "blocks on a tracked file inside an untracked directory (#2355)"
-assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_NEWDIR\"}" \
-  "STOP BLOCKED"
-
-# A commit in ANOTHER repo cannot resolve this log. `cd /other && git commit`
-# runs with the session's persistent cwd still here, so the tracker would
-# verify against the wrong toplevel, where foreign-repo log entries vacuously
-# never match the dirty set — a FAILED commit over there read as "resolved".
-# Any absolute log entry outside the verification toplevel must keep the log.
-CROSS_REPO=$(cd "$(mktemp -d)" && pwd -P)
-( cd "$CROSS_REPO" && git init -q && git config user.email t@t && git config user.name t \
-  && touch seed && git add seed && git commit -q -m init && echo dirty > mine.rb )
-STOP_SID_CROSS="stop-scope-crossrepo-2355"
-STOP_STATE_CROSS="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_CROSS"
-mkdir -p "$STOP_STATE_CROSS"
-printf '%s\n' "$CROSS_REPO/mine.rb" > "$STOP_STATE_CROSS/edits.log"
-printf '{"tool_name":"Bash","tool_input":{"command":"cd %s && git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$CROSS_REPO" "$STOP_SID_CROSS" "$DIRTY_REPO" \
-  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
-
-t "a cross-repo commit keeps the log instead of writing the sentinel (#2355)"
-TESTS_RUN=$((TESTS_RUN + 1))
-if [[ -s "$STOP_STATE_CROSS/edits.log" && ! -f "$STOP_STATE_CROSS/edits_cleared_at" ]]; then
-  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
-else
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-  FAILURES+=("$TEST_NAME")
-  printf '  \033[31m✗\033[0m %s (log kept: %s, sentinel absent: %s)\n' "$TEST_NAME" \
-    "$([[ -s "$STOP_STATE_CROSS/edits.log" ]] && echo yes || echo no)" \
-    "$([[ ! -f "$STOP_STATE_CROSS/edits_cleared_at" ]] && echo yes || echo no)"
-fi
-
-t "still blocks in the other repo after the cross-repo commit failed (#2355)"
-assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$CROSS_REPO\",\"session_id\":\"$STOP_SID_CROSS\"}" \
-  "STOP BLOCKED"
-rm -rf "$CROSS_REPO"
-
-# The _anonymous state dir is shared by every session without an id. A
-# sentinel there would assert "owns nothing" on behalf of ALL of them, and
-# nothing prunes it — so one anonymous commit would permanently switch off the
-# never-tracked fallback for every later anonymous session. No session_id →
-# no sentinel; tracking still clears, which is the pre-#2355 status quo.
-ANON_STATE="$CLAUDE_PLUGIN_DATA/sessions/_anonymous"
-mkdir -p "$ANON_STATE"
-printf '%s\n' "$STOP_TOP/a" > "$ANON_STATE/edits.log"
-printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"cwd":"%s"}' "$DIRTY_REPO" \
-  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
-
-t "an anonymous resolved commit clears tracking but writes no sentinel (#2355)"
-TESTS_RUN=$((TESTS_RUN + 1))
-if [[ ! -f "$ANON_STATE/edits_cleared_at" && ! -f "$ANON_STATE/edits.log" ]]; then
-  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
-else
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-  FAILURES+=("$TEST_NAME")
-  printf '  \033[31m✗\033[0m %s (sentinel: %s, log: %s)\n' "$TEST_NAME" \
-    "$([[ -f "$ANON_STATE/edits_cleared_at" ]] && echo present || echo absent)" \
-    "$([[ -f "$ANON_STATE/edits.log" ]] && echo present || echo absent)"
-fi
-
-t "anonymous sessions keep the block-everything fallback after a commit (#2355)"
-assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$DIRTY_REPO\"}" \
-  "STOP BLOCKED"
-
-# session_dirty_lines fails OPEN on a git-status error (right for its advisory
-# consumers), but the tracker uses emptiness as a POSITIVE trust signal — a
-# status failure must not read as "everything resolved". Stub git so rev-parse
-# succeeds and `status` fails, the one split the unverifiable-cwd guard misses.
-REALGIT=$(command -v git)
-GITSTUB=$(mktemp -d)
-cat > "$GITSTUB/git" <<STUB
-#!/usr/bin/env bash
-for a in "\$@"; do [[ "\$a" == "status" ]] && exit 128; done
-exec "$REALGIT" "\$@"
-STUB
-chmod +x "$GITSTUB/git"
-STOP_SID_GITFAIL="stop-scope-gitfail-2355"
-STOP_STATE_GITFAIL="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_GITFAIL"
-mkdir -p "$STOP_STATE_GITFAIL"
-printf '%s\n' "$STOP_TOP/a" > "$STOP_STATE_GITFAIL/edits.log"
-printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$STOP_SID_GITFAIL" "$DIRTY_REPO" \
-  | PATH="$GITSTUB:$PATH" "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
-rm -rf "$GITSTUB"
-
-t "a git-status failure keeps the log instead of reading as resolved (#2355)"
-TESTS_RUN=$((TESTS_RUN + 1))
-if [[ -s "$STOP_STATE_GITFAIL/edits.log" && ! -f "$STOP_STATE_GITFAIL/edits_cleared_at" ]]; then
-  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
-else
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-  FAILURES+=("$TEST_NAME")
-  printf '  \033[31m✗\033[0m %s (log kept: %s, sentinel absent: %s)\n' "$TEST_NAME" \
-    "$([[ -s "$STOP_STATE_GITFAIL/edits.log" ]] && echo yes || echo no)" \
-    "$([[ ! -f "$STOP_STATE_GITFAIL/edits_cleared_at" ]] && echo yes || echo no)"
-fi
+# The scoping tests that lived here (#2216 / #2352 / #2355 / #2362 / #2366 /
+# #2388) were removed with the machinery they covered (#2392). The hook now
+# blocks on the whole tree, which is what it did before any of it, and what
+# worktree isolation makes correct.
 
 rm -rf "$DIRTY_REPO" "$CLEAN_REPO"
 

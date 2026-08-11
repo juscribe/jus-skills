@@ -22,7 +22,6 @@ juscribe_sop_require_jq
 input=$(cat)
 juscribe_sop_require_valid_json "$input"
 cwd=$(jq -r '.cwd // ""' <<<"$input")
-session_id=$(jq -r '.session_id // ""' <<<"$input")
 stop_hook_active=$(jq -r '.stop_hook_active // false' <<<"$input")
 
 # Already nudged once this turn — let Claude stop to avoid an infinite loop.
@@ -33,10 +32,11 @@ fi
 toplevel=$(juscribe_sop_repo_toplevel "$cwd")
 [[ -z "$toplevel" ]] && exit 0
 
-# Scoped to the files THIS session touched (#2216) by the shared helper, which
-# jus-dirty-tree-nudge.sh also uses so both hooks answer "which dirty files does
-# this session own" identically by construction (#2352).
-blocking=$(juscribe_sop_session_dirty_lines "$toplevel" "$session_id")
+# The WHOLE tree, unscoped. This used to intersect against a per-session log of
+# edited files so two sessions sharing a checkout would not claim each other's
+# work; that machinery was removed in #2392 — worktrees are the isolation
+# strategy, and in a worktree every dirty file is genuinely yours.
+blocking=$(juscribe_sop_dirty_lines "$toplevel")
 blocking="${blocking%$'\n'}"
 
 if [[ -z "$blocking" ]]; then

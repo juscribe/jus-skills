@@ -22,6 +22,46 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.2] — 2026-08-11
+
+### Changed
+
+- Strip the per-session file-ownership tracking out of the hooks (#2392)
+- Shell was invisible to the gate in both directions (#2387)
+- Partition the log instead of bailing on the first out-of-repo entry (#2388)
+- A session that edited nothing no longer claims the whole dirty tree (#2366)
+- Prune the resolved entries from a kept edits.log (#2362)
+- Close the gate bypass: git global options no longer hide a commit (#2363)
+- Record the 1.4.1 changelog entry that the release shipped without (#2261)
+
+## [1.4.1] — 2026-08-10
+
+> Entry written after `v1.4.1` was tagged, so the published snapshot at that tag
+> does not contain it. Recorded here rather than skipped: the changelog is the
+> record of what a version contains, and a missing entry is worse than a late
+> one. It publishes with the next release. See #2374 — the release tool now
+> takes the entry as an input, so the step cannot be skipped again.
+
+### Fixed
+
+- **The stop gate no longer blocks on other sessions' files after a commit**
+  (#2355): the #2216 session scoping fell back to blocking on _any_ dirty file
+  in the post-commit window, so a second agent working in the same repo could
+  not stop. Resolution is now verified against git — a commit clears tracking
+  only when it actually resolved the tracked edits — and a cross-repo or failed
+  commit keeps the log rather than reading as resolved.
+- **The dirty-tree nudge counts what it claims** (#2352): it fired at three
+  edits reporting five, because it counted edit _events_ rather than distinct
+  uncommitted files, and repeated delivery double-counted. It now derives the
+  count from files, stays silent until checks have run since the last edit, and
+  matches repo-relative recorded paths — the shape Codex records, which the
+  session scoping previously missed entirely.
+- **Editing an accepted release manifest is refused** (#2333): nothing
+  mechanically prevented a description `PATCH` on an accepted ticket, so a
+  shipped runbook could be rewritten to look like it had unrun commands. Comments
+  are untouched — they are the sanctioned correction path — as are transitions
+  and non-description updates.
+
 ## [1.4.0] — 2026-08-09
 
 ### Added

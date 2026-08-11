@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # PostToolUse hook (Edit|Write): record that a file was edited this session.
 #
-# Updates per-session state used by `pre-commit-gate.sh` and
-# `dirty-tree-nudge.sh`:
-#   last_modified_at  — unix timestamp of this edit
-#   edits.log         — append the edited file path
+# Updates per-session state, read ONLY by `pre-commit-gate.sh`:
+#   last_modified_at  — unix timestamp of this edit, so the gate can ask
+#                       "have lints run since?"
+#   edits.log         — the edited file paths, so the gate can ask "was any of
+#                       this a code file, or is it a doc-only commit?"
 #
-# An `unsaved_edits` counter used to live here too. It was removed in #2352:
-# edits.log already knows which files are outstanding, and a counter cannot
-# survive the same hook being registered twice (#2353) — it double-counted, so
-# the nudge fired at 3 edits while reporting 5. Anything that needs "how much
-# is outstanding" derives it from edits.log ∩ `git status` instead, via
-# juscribe_sop_session_dirty_lines.
+# ⚠️ edits.log is NOT an ownership record. It used to double as one — the stop
+# hook intersected it with `git status` to decide which dirty files a session
+# could claim when several shared a checkout. That machinery was removed in
+# #2392 (worktrees are the isolation strategy); the log survives purely as the
+# lint gate's input, and a commit clears it so the gate does not re-fire.
 
 set -euo pipefail
 
@@ -38,10 +38,6 @@ date +%s > "${state_dir}/last_modified_at"
 
 if [[ -n "$file_path" ]]; then
   echo "$file_path" >> "${state_dir}/edits.log"
-  # A recorded edit supersedes any post-commit edits_cleared_at sentinel
-  # (#2355): the log is non-empty again, so scoping returns to intersecting
-  # against it, and the sentinel must not linger into the next commit cycle.
-  rm -f "${state_dir}/edits_cleared_at"
 fi
 
 exit 0

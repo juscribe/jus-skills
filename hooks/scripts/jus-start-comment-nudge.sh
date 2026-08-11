@@ -33,6 +33,11 @@ esac
 
 session_id=$(jq -r '.session_id // ""' <<<"$input")
 file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input")
+# Resolves a repo-relative recorded path so an extensionless shell script can be
+# classified by its shebang (#2387). Without a base, such a path is not probed.
+cwd=$(jq -r '.cwd // ""' <<<"$input")
+base_dir=$(juscribe_sop_repo_toplevel "$cwd")
+[[ -n "$base_dir" ]] || base_dir="$cwd"
 state_dir=$(juscribe_sop_state_dir "$session_id")
 
 # Only nudge for ticket work — a `started` transition must have been observed.
@@ -47,7 +52,7 @@ if [[ -f "${state_dir}/start_nudged" ]]; then exit 0; fi
 
 # Only nudge on source-file edits (the same set the pre-commit gate cares
 # about) — doc/config edits do not require the start-comment-before-coding step.
-if ! juscribe_sop_is_code_file "$file_path"; then exit 0; fi
+if ! juscribe_sop_is_code_file "$file_path" "$base_dir"; then exit 0; fi
 
 # Fire once.
 mkdir -p "$state_dir"
