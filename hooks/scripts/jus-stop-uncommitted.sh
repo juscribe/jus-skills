@@ -30,56 +30,14 @@ if [[ "$stop_hook_active" == "true" ]]; then
   exit 0
 fi
 
-[[ -z "$cwd" ]] && exit 0
-command -v git >/dev/null 2>&1 || exit 0
-
-if ! ( cd "$cwd" 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 ); then
-  exit 0
-fi
-
-# Resolve the repo root so porcelain paths are always root-relative, and run
-# status from there rather than from an arbitrary cwd subdirectory.
-toplevel=""
-if pushd "$cwd" >/dev/null 2>&1; then
-  toplevel=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
-  popd >/dev/null
-fi
+toplevel=$(juscribe_sop_repo_toplevel "$cwd")
 [[ -z "$toplevel" ]] && exit 0
 
-# core.quotepath=false keeps non-ASCII paths literal so they match the
-# absolute paths jus-track-edits records.
-dirty=$(git -C "$toplevel" -c core.quotepath=false status --porcelain 2>/dev/null || echo "")
-if [[ -z "$dirty" ]]; then
-  exit 0
-fi
-
-# #2216: scope the block to files THIS session actually touched. With two
-# agent sessions sharing one working tree, the dirty set includes the other
-# session's in-flight edits — committing those under this ticket's `[#N]` is
-# the failure this guard would otherwise cause. jus-track-edits records every
-# Edit/Write/MultiEdit path (absolute) in edits.log; block only on the dirty
-# files that appear there.
-#
-# Fallback: if the log is missing or empty, block on any dirty file exactly as
-# before — a file written via Bash (sed, a generator, a heredoc) never passes
-# through jus-track-edits, so without this fallback the guard would silently
-# stop covering that work.
-edits_log="$(juscribe_sop_state_dir "$session_id")/edits.log"
-blocking="$dirty"
-if [[ -s "$edits_log" ]]; then
-  owned=""
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    # Porcelain v1: two status chars + a space, then the path. For a
-    # rename/copy ("R  old -> new") the on-disk path is after " -> ".
-    path="${line:3}"
-    path="${path##* -> }"
-    if grep -qxF "$toplevel/$path" "$edits_log"; then
-      owned+="$line"$'\n'
-    fi
-  done <<<"$dirty"
-  blocking="${owned%$'\n'}"
-fi
+# Scoped to the files THIS session touched (#2216) by the shared helper, which
+# jus-dirty-tree-nudge.sh also uses so both hooks answer "which dirty files does
+# this session own" identically by construction (#2352).
+blocking=$(juscribe_sop_session_dirty_lines "$toplevel" "$session_id")
+blocking="${blocking%$'\n'}"
 
 if [[ -z "$blocking" ]]; then
   exit 0

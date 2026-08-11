@@ -57,9 +57,9 @@ Hooks track timestamps and counters in `${CLAUDE_PLUGIN_DATA}/sessions/<session_
 
 ### Tunable
 
-| Variable                       | Default | Effect                                                   |
-| ------------------------------ | ------- | -------------------------------------------------------- |
-| `JUSCRIBE_SOP_NUDGE_THRESHOLD` | `5`     | Edits without a commit before the dirty-tree nudge fires |
+| Variable                       | Default | Effect                                                                                                                                                                                   |
+| ------------------------------ | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `JUSCRIBE_SOP_NUDGE_THRESHOLD` | `5`     | Distinct uncommitted files this session edited before the dirty-tree nudge fires. It only fires once checks have run since the last edit, so a red test-driven span stays silent (#2352) |
 
 ## Installing
 

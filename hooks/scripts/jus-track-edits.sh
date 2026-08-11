@@ -5,7 +5,13 @@
 # `dirty-tree-nudge.sh`:
 #   last_modified_at  — unix timestamp of this edit
 #   edits.log         — append the edited file path
-#   unsaved_edits     — increment counter for the dirty-tree nudge
+#
+# An `unsaved_edits` counter used to live here too. It was removed in #2352:
+# edits.log already knows which files are outstanding, and a counter cannot
+# survive the same hook being registered twice (#2353) — it double-counted, so
+# the nudge fired at 3 edits while reporting 5. Anything that needs "how much
+# is outstanding" derives it from edits.log ∩ `git status` instead, via
+# juscribe_sop_session_dirty_lines.
 
 set -euo pipefail
 
@@ -32,9 +38,10 @@ date +%s > "${state_dir}/last_modified_at"
 
 if [[ -n "$file_path" ]]; then
   echo "$file_path" >> "${state_dir}/edits.log"
+  # A recorded edit supersedes any post-commit edits_cleared_at sentinel
+  # (#2355): the log is non-empty again, so scoping returns to intersecting
+  # against it, and the sentinel must not linger into the next commit cycle.
+  rm -f "${state_dir}/edits_cleared_at"
 fi
-
-count=$(juscribe_sop_read_num "${state_dir}/unsaved_edits")
-echo $((count + 1)) > "${state_dir}/unsaved_edits"
 
 exit 0

@@ -79,6 +79,55 @@ section() {
   printf '\n\033[1m%s\033[0m\n' "$1"
 }
 
+# ---- jus-block-accepted-manifest-edit.sh ---------------------------------------
+
+section "jus-block-accepted-manifest-edit.sh"
+
+# ⚠️ These use a STUB `jus` on PATH rather than the real API: a hook test that
+# depends on a live ticket's state would change meaning the day that ticket is
+# accepted, and would fail offline. The stub also pins the parsing gotcha —
+# `jus api` prints an "HTTP 200" line BEFORE the JSON, and piping that straight
+# into jq silently emptied the state, which (because this hook fails open)
+# turned the whole guard into a no-op.
+STUBDIR=$(mktemp -d)
+stub_jus() {
+  cat > "$STUBDIR/jus" <<STUB
+#!/usr/bin/env bash
+echo "HTTP 200"
+echo '{"ticket":{"state":"$1","id":"999"}}'
+STUB
+  chmod +x "$STUBDIR/jus"
+}
+PATH="$STUBDIR:$PATH"
+export PATH
+
+stub_jus accepted
+t "blocks a description PATCH on an accepted ticket"
+assert_exit 2 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /workspaces/1/tickets/999 \"{\\\"ticket\\\":{\\\"description\\\":\\\"x\\\"}}\""}}' \
+  "accepted"
+
+t "never blocks a comment, which is the sanctioned correction path"
+assert_exit 0 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api POST /workspaces/1/tickets/999/comments \"{}\""}}'
+
+t "allows a transition on an accepted ticket (sub-resource, not a rewrite)"
+assert_exit 0 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /workspaces/1/tickets/999/transition \"{}\""}}'
+
+t "allows a non-description PATCH on an accepted ticket"
+assert_exit 0 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /workspaces/1/tickets/999 \"{\\\"ticket\\\":{\\\"label_ids\\\":[1]}}\""}}'
+
+stub_jus prioritized
+t "allows a description PATCH on an open ticket"
+assert_exit 0 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /workspaces/1/tickets/999 \"{\\\"ticket\\\":{\\\"description\\\":\\\"x\\\"}}\""}}'
+
+t "ignores unrelated bash commands"
+assert_exit 0 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git status"}}'
+
 # ---- jus-block-force-push.sh ---------------------------------------------------
 
 section "jus-block-force-push.sh"
@@ -323,9 +372,15 @@ t "allows git commit after lints have run"
 assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
   "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$SID_LINTED\"}"
 
-# After successful commit, edit tracking should reset
-printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s"}' "$SID_LINTED" \
+# After successful commit, edit tracking should reset. The tracker verifies
+# resolution against git (#2355), so hand it a clean repo as cwd: the tracked
+# /repo/foo.rb is not in its dirty set, which reads as resolved.
+GATE_CLEAN_REPO=$(mktemp -d)
+( cd "$GATE_CLEAN_REPO" && git init -q && git config user.email t@t && git config user.name t \
+  && touch seed && git add seed && git commit -q -m init )
+printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$SID_LINTED" "$GATE_CLEAN_REPO" \
   | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+rm -rf "$GATE_CLEAN_REPO"
 
 t "allows git commit with no edits after a prior commit cleared state"
 assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
@@ -378,60 +433,175 @@ assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
 
 section "jus-dirty-tree-nudge.sh"
 
+# A repo with N dirty files, all recorded in edits.log as this session's, and
+# checks recorded as having run since the last edit — the state in which a
+# commit was possible and did not happen.
+#
+# `edits.log` rather than a counter is the whole point of #2352: a counter
+# double-counts when the same hook is registered twice (measured: the plugin
+# copy and the project copy both fire, so the threshold halved and the message
+# reported a number that never happened), and it counts edit operations where
+# the message claims files.
+# ⚠️ The repo path must be the PHYSICAL one. `mktemp -d` hands back
+# /var/folders/… while `git rev-parse --show-toplevel` reports
+# /private/var/folders/… — macOS symlinks /var. The scoping matches recorded
+# absolute paths against "$toplevel/$path", so the two forms must agree or the
+# intersection is silently empty and the hook becomes a no-op that still exits
+# 0. Real sessions never hit this (Claude Code passes unsymlinked paths for both
+# cwd and file_path); a fixture built on mktemp does, and would otherwise "pass"
+# by testing nothing.
+nudge_repo() {
+  local repo dirty_count="$1" sid="$2" state_dir
+  repo=$(cd "$(mktemp -d)" && pwd -P)
+  ( cd "$repo" && git init -q && git config user.email t@t && git config user.name t \
+    && touch seed && git add seed && git commit -q -m init )
+  state_dir="$CLAUDE_PLUGIN_DATA/sessions/$sid"
+  mkdir -p "$state_dir"
+  local i
+  for (( i = 1; i <= dirty_count; i++ )); do
+    echo "dirty" > "$repo/f$i.txt"
+    echo "$repo/f$i.txt" >> "$state_dir/edits.log"
+  done
+  # Checks ran after the last edit: the nudge's precondition.
+  echo 100 > "$state_dir/last_modified_at"
+  echo 200 > "$state_dir/last_linted_at"
+  echo "$repo"
+}
+
+nudge_out() {
+  printf '{"tool_name":"Edit","session_id":"%s","cwd":"%s"}' "$1" "$2" \
+    | "$SCRIPTS/jus-dirty-tree-nudge.sh"
+}
+
+# assert_stdout <description> <expected-substring-or-empty> <actual>
+assert_stdout() {
+  local name="$1" want="$2" got="$3"
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local ok=0
+  if [[ -z "$want" ]]; then
+    [[ -z "$got" ]] && ok=1
+  elif [[ "$got" == *"$want"* ]]; then
+    ok=1
+  fi
+  if (( ok )); then
+    printf '  \033[32m✓\033[0m %s\n' "$name"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILURES+=("$name")
+    printf '  \033[31m✗\033[0m %s\n' "$name"
+    printf '      wanted: %s\n' "${want:-<no output>}"
+    printf '      got:    %s\n' "${got:0:300}"
+  fi
+}
+
 SID_NUDGE="test-nudge-$$"
-state_dir="$CLAUDE_PLUGIN_DATA/sessions/$SID_NUDGE"
-mkdir -p "$state_dir"
+REPO_UNDER=$(nudge_repo 4 "$SID_NUDGE")
+assert_stdout "stays quiet below the threshold (4 dirty files)" "" \
+  "$(nudge_out "$SID_NUDGE" "$REPO_UNDER")"
+rm -rf "$REPO_UNDER"
 
-t "stays quiet under threshold"
-echo 1 > "$state_dir/unsaved_edits"
-assert_exit 0 "$SCRIPTS/jus-dirty-tree-nudge.sh" \
-  "{\"tool_name\":\"Edit\",\"session_id\":\"$SID_NUDGE\",\"cwd\":\"/tmp\"}"
+SID_AT="test-nudge-at-$$"
+REPO_AT=$(nudge_repo 5 "$SID_AT")
+assert_stdout "fires at the threshold and names the file count" "5 files" \
+  "$(nudge_out "$SID_AT" "$REPO_AT")"
 
-# Test in a real (clean) git repo to verify the clean-tree branch
-TMP_REPO=$(mktemp -d)
-( cd "$TMP_REPO" && git init -q && git config user.email t@t && git config user.name t \
-  && touch a && git add a && git commit -q -m init )
+# THE DEFECT THIS TICKET EXISTS FOR. Both hook copies are registered in the
+# producing repo (#2353), so every event is delivered twice. A counter reaches
+# the threshold in half the edits and reports a number that never happened; a
+# derived count is identical however many times it is asked.
+SID_TWICE="test-nudge-twice-$$"
+REPO_TWICE=$(nudge_repo 5 "$SID_TWICE")
+first=$(nudge_out "$SID_TWICE" "$REPO_TWICE")
+second=$(nudge_out "$SID_TWICE" "$REPO_TWICE")
+assert_stdout "double delivery reports the same count, not double" "5 files" "$second"
+assert_stdout "double delivery is identical to single delivery" "$first" "$second"
+rm -rf "$REPO_TWICE"
+
+# Editing ONE file repeatedly is not five files. edits.log records a path per
+# operation, so the count has to be of DISTINCT paths.
+SID_SAME="test-nudge-samefile-$$"
+REPO_SAME=$(nudge_repo 1 "$SID_SAME")
+for _ in 1 2 3 4 5 6; do echo "$REPO_SAME/f1.txt" >> "$CLAUDE_PLUGIN_DATA/sessions/$SID_SAME/edits.log"; done
+assert_stdout "six edits to one file is one file, not six" "" \
+  "$(nudge_out "$SID_SAME" "$REPO_SAME")"
+rm -rf "$REPO_SAME"
+
+# The complaint that opened #2352: mid-TDD the tree is dirty and red, and there
+# is no correct commit to make. last_linted_at < last_modified_at means checks
+# have not run since the last edit.
+SID_RED="test-nudge-unverified-$$"
+REPO_RED=$(nudge_repo 8 "$SID_RED")
+echo 300 > "$CLAUDE_PLUGIN_DATA/sessions/$SID_RED/last_modified_at"
+echo 200 > "$CLAUDE_PLUGIN_DATA/sessions/$SID_RED/last_linted_at"
+assert_stdout "silent while checks have not run since the last edit" "" \
+  "$(nudge_out "$SID_RED" "$REPO_RED")"
+
+echo 400 > "$CLAUDE_PLUGIN_DATA/sessions/$SID_RED/last_linted_at"
+assert_stdout "fires once checks have run since the last edit" "8 files" \
+  "$(nudge_out "$SID_RED" "$REPO_RED")"
+rm -rf "$REPO_RED"
+
+# Only this session's files count. With two agents sharing a checkout the dirty
+# set includes the other session's work, and nudging about it is the #2216
+# failure wearing a different hat.
+SID_FOREIGN="test-nudge-foreign-$$"
+REPO_FOREIGN=$(nudge_repo 2 "$SID_FOREIGN")
+for i in 3 4 5 6 7; do echo "someone else" > "$REPO_FOREIGN/other$i.txt"; done
+assert_stdout "ignores dirty files this session never touched" "" \
+  "$(nudge_out "$SID_FOREIGN" "$REPO_FOREIGN")"
+rm -rf "$REPO_FOREIGN"
+
+# Codex records REPO-RELATIVE paths: its `*** Update File:` header carries
+# "app/a.ts", and jus-codex-adapt passes that through as file_path. Matching
+# only the absolute form left the intersection permanently empty on Codex, so
+# both this nudge and the stop gate silently covered nothing while exiting 0.
+SID_REL="test-nudge-relative-$$"
+REPO_REL=$(nudge_repo 0 "$SID_REL")
+for i in 1 2 3 4 5; do
+  echo "dirty" > "$REPO_REL/r$i.txt"
+  echo "r$i.txt" >> "$CLAUDE_PLUGIN_DATA/sessions/$SID_REL/edits.log"
+done
+assert_stdout "counts repo-relative recorded paths (Codex shape)" "5 files" \
+  "$(nudge_out "$SID_REL" "$REPO_REL")"
+rm -rf "$REPO_REL"
+
+# A clean tree is the normal post-commit state; no output, no error.
 SID_CLEAN_NUDGE="test-nudge-clean-$$"
-state_dir2="$CLAUDE_PLUGIN_DATA/sessions/$SID_CLEAN_NUDGE"
-mkdir -p "$state_dir2"
-echo 9 > "$state_dir2/unsaved_edits"
+REPO_CLEAN=$(nudge_repo 5 "$SID_CLEAN_NUDGE")
+( cd "$REPO_CLEAN" && git add -A && git commit -q -m work )
+assert_stdout "silent once the work is committed" "" \
+  "$(nudge_out "$SID_CLEAN_NUDGE" "$REPO_CLEAN")"
+rm -rf "$REPO_CLEAN"
 
-t "resets counter when working tree is clean"
+# #2355: the window between a commit and the next edit. The commit event makes
+# the tracker delete edits.log AND last_modified_at — so the verification gate
+# passes (linted_at >= 0) and, pre-fix, the fallback counted the remaining
+# dirty files, which after a real commit are precisely the ones this session
+# did NOT touch. The sentinel must keep the nudge silent here.
+SID_POSTCOMMIT="test-nudge-postcommit-$$"
+REPO_POSTCOMMIT=$(nudge_repo 0 "$SID_POSTCOMMIT")
+STATE_POSTCOMMIT="$CLAUDE_PLUGIN_DATA/sessions/$SID_POSTCOMMIT"
+# This session's work: tracked, then genuinely committed (clean).
+echo "mine" > "$REPO_POSTCOMMIT/mine.txt"
+echo "$REPO_POSTCOMMIT/mine.txt" >> "$STATE_POSTCOMMIT/edits.log"
+( cd "$REPO_POSTCOMMIT" && git add mine.txt && git commit -q -m mine )
+# Another session's in-flight work: dirty, never tracked here.
+for i in 1 2 3 4 5; do echo "foreign" > "$REPO_POSTCOMMIT/other$i.txt"; done
+printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$SID_POSTCOMMIT" "$REPO_POSTCOMMIT" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+assert_stdout "silent about foreign dirty files between a commit and the next edit (#2355)" "" \
+  "$(nudge_out "$SID_POSTCOMMIT" "$REPO_POSTCOMMIT")"
+rm -rf "$REPO_POSTCOMMIT"
+
+t "non-git cwd is a no-op"
 assert_exit 0 "$SCRIPTS/jus-dirty-tree-nudge.sh" \
-  "{\"tool_name\":\"Edit\",\"session_id\":\"$SID_CLEAN_NUDGE\",\"cwd\":\"$TMP_REPO\"}"
-counter=$(cat "$state_dir2/unsaved_edits" 2>/dev/null || echo missing)
-TESTS_RUN=$((TESTS_RUN + 1))
-TEST_NAME="counter reset to 0 after clean check"
-if [[ "$counter" == "0" ]]; then
-  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
-else
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-  FAILURES+=("$TEST_NAME")
-  printf '  \033[31m✗\033[0m %s (got: %s)\n' "$TEST_NAME" "$counter"
-fi
+  "{\"tool_name\":\"Edit\",\"session_id\":\"$SID_AT\",\"cwd\":\"/nonexistent-path-$$\"}"
 
-# Dirty tree → emits systemMessage on stdout
-echo "dirty" > "$TMP_REPO/dirty.txt"
-SID_DIRTY_NUDGE="test-nudge-dirty-$$"
-state_dir3="$CLAUDE_PLUGIN_DATA/sessions/$SID_DIRTY_NUDGE"
-mkdir -p "$state_dir3"
-echo 9 > "$state_dir3/unsaved_edits"
+t "non-edit tool is a no-op"
+assert_exit 0 "$SCRIPTS/jus-dirty-tree-nudge.sh" \
+  "{\"tool_name\":\"Bash\",\"session_id\":\"$SID_AT\",\"cwd\":\"$REPO_AT\"}"
 
-t "emits systemMessage when tree is dirty and threshold reached"
-out=$(printf '{"tool_name":"Edit","session_id":"%s","cwd":"%s"}' "$SID_DIRTY_NUDGE" "$TMP_REPO" \
-       | "$SCRIPTS/jus-dirty-tree-nudge.sh")
-TESTS_RUN=$((TESTS_RUN + 1))
-TEST_NAME="dirty-tree-nudge stdout contains systemMessage"
-if [[ "$out" == *"systemMessage"* && "$out" == *"without committing"* ]]; then
-  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
-else
-  TESTS_FAILED=$((TESTS_FAILED + 1))
-  FAILURES+=("$TEST_NAME")
-  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
-  printf '      got: %s\n' "${out:0:300}"
-fi
-
-rm -rf "$TMP_REPO"
+rm -rf "$REPO_AT"
 
 # ---- jus-docs-nudge.sh --------------------------------------------------------
 
@@ -549,6 +719,17 @@ t "does not block on a dirty file this session never touched (#2216)"
 assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
   "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID\"}"
 
+# Codex records the path REPO-RELATIVE (its `*** Update File:` header), so the
+# scoping has to match both forms or it silently covers nothing there (#2352).
+STOP_SID_REL="stop-scope-relative"
+STOP_STATE_REL="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_REL"
+mkdir -p "$STOP_STATE_REL"
+printf '%s\n' "b" > "$STOP_STATE_REL/edits.log"
+t "blocks on a relative recorded path (Codex shape, #2352)"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_REL\"}" \
+  "STOP BLOCKED"
+
 # Now the dirty file IS one this session edited — block exactly as before.
 printf '%s\n' "$STOP_TOP/b" >> "$STOP_STATE/edits.log"
 t "still blocks on a dirty file this session touched (#2216)"
@@ -562,6 +743,197 @@ t "falls back to blocking any dirty file when the session has no edit log (#2216
 assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
   "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"stop-scope-nolog\"}" \
   "STOP BLOCKED"
+
+# #2355: a `git commit` makes the tracker delete edits.log, which used to be
+# indistinguishable from "never tracked" — so for the window after every commit
+# the scoping fell back to claiming EVERY dirty line, and the hook told the
+# session to commit another session's files (it fired for real on 2026-08-10:
+# a #2353 session was instructed to commit .claude/settings.json, a file only
+# the concurrent #2348 session had touched). The tracker now verifies against
+# git that the commit RESOLVED the tracked edits and leaves an edits_cleared_at
+# sentinel: log missing + sentinel present = this session owns nothing until it
+# records another edit.
+#
+# The incident shape: this session's tracked file `a` was genuinely committed
+# (clean), the remaining dirty `b` is another session's in-flight work.
+STOP_SID_COMMIT="stop-scope-committed-2355"
+STOP_STATE_COMMIT="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_COMMIT"
+mkdir -p "$STOP_STATE_COMMIT"
+printf '%s\n' "$STOP_TOP/a" > "$STOP_STATE_COMMIT/edits.log"
+printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$STOP_SID_COMMIT" "$DIRTY_REPO" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+
+t "does not block on foreign dirty files after a commit resolved tracked edits (#2355)"
+assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_COMMIT\"}"
+
+# The sentinel must be CONDITIONAL on tracked edits having existed. A session
+# whose writes all went through Bash has no log to resolve; writing the
+# sentinel on its commits would switch the block-everything fallback off for
+# the rest of the session — the exact coverage hole the ticket forbids.
+STOP_SID_NOLOG_COMMIT="stop-scope-nolog-commit-2355"
+printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$STOP_SID_NOLOG_COMMIT" "$DIRTY_REPO" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+
+t "a never-tracked session keeps the block-everything fallback after a commit (#2355)"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_NOLOG_COMMIT\"}" \
+  "STOP BLOCKED"
+
+# The tool_response carries no exit status (#1873), so a FAILED or partial
+# commit reaches the tracker's commit branch too. The tracked `b` is still
+# dirty — nothing was resolved — so tracking must be KEPT: a sentinel here
+# would let the session end its turn with its OWN work uncommitted.
+STOP_SID_FAILED="stop-scope-failedcommit-2355"
+STOP_STATE_FAILED="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_FAILED"
+mkdir -p "$STOP_STATE_FAILED"
+printf '%s\n' "$STOP_TOP/b" > "$STOP_STATE_FAILED/edits.log"
+printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$STOP_SID_FAILED" "$DIRTY_REPO" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+
+t "keeps blocking on own dirty files after a commit that did not resolve them (#2355)"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_FAILED\"}" \
+  "STOP BLOCKED"
+
+t "an unresolved commit keeps the edit log (#2355)"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ -s "$STOP_STATE_FAILED/edits.log" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (edits.log was cleared)\n' "$TEST_NAME"
+fi
+
+# Recording a new edit re-arms the scoping: jus-track-edits clears the
+# sentinel, the fresh log is non-empty, and intersection behaviour resumes.
+printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/b"},"session_id":"%s"}' "$STOP_TOP" "$STOP_SID_COMMIT" \
+  | "$SCRIPTS/jus-track-edits.sh" >/dev/null
+
+t "recording an edit clears the commit sentinel (#2355)"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ ! -f "$STOP_STATE_COMMIT/edits_cleared_at" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (sentinel still present)\n' "$TEST_NAME"
+fi
+
+t "blocks again once a new edit is recorded after the commit (#2355)"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_COMMIT\"}" \
+  "STOP BLOCKED"
+
+# Porcelain without -uall COLLAPSES an untracked directory to one "?? newdir/"
+# line, which can never match a logged file inside it — so the intersection
+# silently skipped such files (pre-existing #2216 blind spot), and worse, the
+# #2355 resolution check read them as "resolved" and wrote the sentinel over
+# the session's own uncommitted work. The helper now passes -uall.
+STOP_SID_NEWDIR="stop-scope-newdir-2355"
+STOP_STATE_NEWDIR="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_NEWDIR"
+mkdir -p "$STOP_STATE_NEWDIR" "$DIRTY_REPO/newdir"
+echo "own" > "$DIRTY_REPO/newdir/own.rb"
+printf '%s\n' "$STOP_TOP/newdir/own.rb" > "$STOP_STATE_NEWDIR/edits.log"
+
+t "blocks on a tracked file inside an untracked directory (#2355)"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\",\"session_id\":\"$STOP_SID_NEWDIR\"}" \
+  "STOP BLOCKED"
+
+# A commit in ANOTHER repo cannot resolve this log. `cd /other && git commit`
+# runs with the session's persistent cwd still here, so the tracker would
+# verify against the wrong toplevel, where foreign-repo log entries vacuously
+# never match the dirty set — a FAILED commit over there read as "resolved".
+# Any absolute log entry outside the verification toplevel must keep the log.
+CROSS_REPO=$(cd "$(mktemp -d)" && pwd -P)
+( cd "$CROSS_REPO" && git init -q && git config user.email t@t && git config user.name t \
+  && touch seed && git add seed && git commit -q -m init && echo dirty > mine.rb )
+STOP_SID_CROSS="stop-scope-crossrepo-2355"
+STOP_STATE_CROSS="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_CROSS"
+mkdir -p "$STOP_STATE_CROSS"
+printf '%s\n' "$CROSS_REPO/mine.rb" > "$STOP_STATE_CROSS/edits.log"
+printf '{"tool_name":"Bash","tool_input":{"command":"cd %s && git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$CROSS_REPO" "$STOP_SID_CROSS" "$DIRTY_REPO" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+
+t "a cross-repo commit keeps the log instead of writing the sentinel (#2355)"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ -s "$STOP_STATE_CROSS/edits.log" && ! -f "$STOP_STATE_CROSS/edits_cleared_at" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (log kept: %s, sentinel absent: %s)\n' "$TEST_NAME" \
+    "$([[ -s "$STOP_STATE_CROSS/edits.log" ]] && echo yes || echo no)" \
+    "$([[ ! -f "$STOP_STATE_CROSS/edits_cleared_at" ]] && echo yes || echo no)"
+fi
+
+t "still blocks in the other repo after the cross-repo commit failed (#2355)"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$CROSS_REPO\",\"session_id\":\"$STOP_SID_CROSS\"}" \
+  "STOP BLOCKED"
+rm -rf "$CROSS_REPO"
+
+# The _anonymous state dir is shared by every session without an id. A
+# sentinel there would assert "owns nothing" on behalf of ALL of them, and
+# nothing prunes it — so one anonymous commit would permanently switch off the
+# never-tracked fallback for every later anonymous session. No session_id →
+# no sentinel; tracking still clears, which is the pre-#2355 status quo.
+ANON_STATE="$CLAUDE_PLUGIN_DATA/sessions/_anonymous"
+mkdir -p "$ANON_STATE"
+printf '%s\n' "$STOP_TOP/a" > "$ANON_STATE/edits.log"
+printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"cwd":"%s"}' "$DIRTY_REPO" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+
+t "an anonymous resolved commit clears tracking but writes no sentinel (#2355)"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ ! -f "$ANON_STATE/edits_cleared_at" && ! -f "$ANON_STATE/edits.log" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (sentinel: %s, log: %s)\n' "$TEST_NAME" \
+    "$([[ -f "$ANON_STATE/edits_cleared_at" ]] && echo present || echo absent)" \
+    "$([[ -f "$ANON_STATE/edits.log" ]] && echo present || echo absent)"
+fi
+
+t "anonymous sessions keep the block-everything fallback after a commit (#2355)"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\"}" \
+  "STOP BLOCKED"
+
+# session_dirty_lines fails OPEN on a git-status error (right for its advisory
+# consumers), but the tracker uses emptiness as a POSITIVE trust signal — a
+# status failure must not read as "everything resolved". Stub git so rev-parse
+# succeeds and `status` fails, the one split the unverifiable-cwd guard misses.
+REALGIT=$(command -v git)
+GITSTUB=$(mktemp -d)
+cat > "$GITSTUB/git" <<STUB
+#!/usr/bin/env bash
+for a in "\$@"; do [[ "\$a" == "status" ]] && exit 128; done
+exec "$REALGIT" "\$@"
+STUB
+chmod +x "$GITSTUB/git"
+STOP_SID_GITFAIL="stop-scope-gitfail-2355"
+STOP_STATE_GITFAIL="$CLAUDE_PLUGIN_DATA/sessions/$STOP_SID_GITFAIL"
+mkdir -p "$STOP_STATE_GITFAIL"
+printf '%s\n' "$STOP_TOP/a" > "$STOP_STATE_GITFAIL/edits.log"
+printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$STOP_SID_GITFAIL" "$DIRTY_REPO" \
+  | PATH="$GITSTUB:$PATH" "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+rm -rf "$GITSTUB"
+
+t "a git-status failure keeps the log instead of reading as resolved (#2355)"
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ -s "$STOP_STATE_GITFAIL/edits.log" && ! -f "$STOP_STATE_GITFAIL/edits_cleared_at" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (log kept: %s, sentinel absent: %s)\n' "$TEST_NAME" \
+    "$([[ -s "$STOP_STATE_GITFAIL/edits.log" ]] && echo yes || echo no)" \
+    "$([[ ! -f "$STOP_STATE_GITFAIL/edits_cleared_at" ]] && echo yes || echo no)"
+fi
 
 rm -rf "$DIRTY_REPO" "$CLEAN_REPO"
 

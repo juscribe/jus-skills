@@ -1,10 +1,44 @@
 #!/usr/bin/env bash
-# PostToolUse hook (Edit|Write): once enough edits have accumulated without a
-# commit, emit a `systemMessage` reminding Claude to commit.
+# PostToolUse hook (Edit|Write): when this session has left enough DISTINCT
+# files dirty AND checks have run since the last edit, emit a `systemMessage`
+# reminding Claude to commit.
 #
-# Threshold is intentionally low — the SOP says "commit IMMEDIATELY after code
-# changes." This nudge fires when the working tree has stayed dirty across
-# multiple consecutive edits.
+# ── it counts files, derived, rather than accumulating a counter (#2352) ──────
+#
+# An earlier version incremented `unsaved_edits` on every edit and nudged at 5.
+# That was a second source of truth for something edits.log already knew, and
+# the two disagreed in three ways:
+#
+#   * DOUBLE COUNTING. A repo that registers these hooks both from its own
+#     settings and from the installed plugin (#2353) delivers every event
+#     twice, so the counter reached 5 in 3 edits — and then reported "5 file
+#     edits", a number that had not happened. A derived count is the same
+#     however many times it is asked.
+#   * OPERATIONS, NOT FILES. Five Edits refining one method tripped a nudge
+#     whose text said "file edits".
+#   * NO SELF-CLEARING. The counter needed an explicit reset on commit;
+#     committed files simply leave the dirty set.
+#
+# ── and it waits for checks to have run ──────────────────────────────────────
+#
+# The SOP mandates TDD: failing spec first, then implementation. Across that
+# span the tree is necessarily dirty and the suite is necessarily red, lefthook
+# would reject the commit anyway, and there is no correct commit to make. A
+# nudge there fires where compliance is impossible, which trains its reader to
+# filter it out — and then it is absent on the occasion the tree is genuinely
+# dirty because attention drifted.
+#
+# `last_linted_at >= last_modified_at` means checks have run since the last
+# edit: a commit was possible and did not happen. That is the only window in
+# which this message names something actionable.
+#
+# ⚠️ It reads as "checks were RUN", not "checks PASSED" — the Bash
+# tool_response carries no exit status, so jus-post-bash-tracker records a
+# failing lint too (#1873, deliberate). lefthook remains the thing that blocks a
+# broken commit; this only decides when to speak.
+#
+# The end-of-turn case is covered separately and harder by
+# jus-stop-uncommitted.sh, which blocks rather than nudges.
 
 set -euo pipefail
 
@@ -27,40 +61,28 @@ session_id=$(jq -r '.session_id // ""' <<<"$input")
 cwd=$(jq -r '.cwd // ""' <<<"$input")
 
 state_dir=$(juscribe_sop_state_dir "$session_id")
-count=$(juscribe_sop_read_num "${state_dir}/unsaved_edits")
+modified_at=$(juscribe_sop_read_num "${state_dir}/last_modified_at")
+linted_at=$(juscribe_sop_read_num "${state_dir}/last_linted_at")
+
+if (( linted_at < modified_at )); then
+  exit 0
+fi
+
+toplevel=$(juscribe_sop_repo_toplevel "$cwd")
+if [[ -z "$toplevel" ]]; then
+  exit 0
+fi
+
+count=$(juscribe_sop_session_dirty_lines "$toplevel" "$session_id" | grep -c . || true)
 
 if (( count < NUDGE_THRESHOLD )); then
   exit 0
 fi
 
-# Verify the working tree is actually dirty before nudging — the user may
-# have committed via a tool we didn't see, leaving the counter stale.
-if [[ -z "$cwd" ]] || ! command -v git >/dev/null 2>&1; then
-  exit 0
-fi
-
-if ! ( cd "$cwd" 2>/dev/null && git rev-parse --git-dir >/dev/null 2>&1 ); then
-  exit 0
-fi
-
-dirty=""
-if pushd "$cwd" >/dev/null 2>&1; then
-  dirty=$(git status --porcelain 2>/dev/null | head -1)
-  popd >/dev/null
-fi
-if [[ -z "$dirty" ]]; then
-  echo 0 > "${state_dir}/unsaved_edits"
-  exit 0
-fi
-
-# Reset the counter so the nudge fires once per N edits, not on every edit
-# past the threshold.
-echo 0 > "${state_dir}/unsaved_edits"
-
 # Emit a system message via JSON output. Exit 0 with valid JSON on stdout
 # is processed by Claude Code as structured hook output.
 jq -n --argjson count "$count" '{
-  systemMessage: ("[jus:hard-rules] You have made " + ($count|tostring) + " file edits without committing. The Juscribe SOP requires committing IMMEDIATELY after code changes are complete and linters pass. Treat an uncommitted change like an unsaved file — commit before responding to the user, before self-review, before anything else.")
+  systemMessage: ("[jus:hard-rules] " + ($count|tostring) + " files you edited are uncommitted, and checks have run since your last edit. The Juscribe SOP requires committing IMMEDIATELY once code changes are complete and linters pass — treat an uncommitted change like an unsaved file. If these are not ready to commit together, commit the part that is.")
 }'
 
 exit 0
