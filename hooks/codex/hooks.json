@@ -45,6 +45,11 @@
             "type": "command",
             "command": "~/.jus-skills/hooks/scripts/jus-post-bash-tracker.sh",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "~/.jus-skills/hooks/scripts/jus-docs-nudge.sh",
+            "timeout": 10
           }
         ]
       },

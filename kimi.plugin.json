@@ -1,6 +1,6 @@
 {
   "name": "jus",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "description": "Juscribe Workflow SOP as two on-demand Agent Skills (ticket-workflow + hard-rules) plus deterministic enforcement hooks, packaged for Kimi Code.",
   "homepage": "https://github.com/juscribe/jus-skills",
   "license": "MIT",

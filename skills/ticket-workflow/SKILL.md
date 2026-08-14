@@ -439,6 +439,8 @@ Markers render as horizontal bars on the board, not cards. They are timeline-pla
 | Release   | `release`   | ⚑    | Version cut or deployment boundary     |
 | Deadline  | `deadline`  | ⚑    | Hard date constraint (renders red)     |
 
+**Marker titles name the thing itself** — the vehicle + payload for a release, the checkpoint for a milestone. No "Pending …" or type-word prefixes ("Release:", "Milestone:") and no leading icon characters: the board renders every marker with its type icon (and a type-colored bar), so a prefixed or icon-led title states the type twice.
+
 ## Ticket Metadata
 
 | Field                                   | Default / convention                                                                                                                                                                                                                                                                                                                                                                            |

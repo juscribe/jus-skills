@@ -838,6 +838,109 @@ assert_exit 0 "$SCRIPTS/jus-docs-nudge.sh" \
   "{\"tool_name\":\"Edit\",\"session_id\":\"$SID_DOCS\",\"tool_input\":{\"file_path\":\"$DOCS_PROJECT/lib/other.rb\"}}"
 unset CLAUDE_PROJECT_DIR
 
+# #2487: the pickup trigger. A `started` transition (PostToolUse Bash) matches
+# `label:`/`kw:` rows against the ticket's labels and title, fetched through a
+# stubbed `jus` on a restricted PATH (a real jq symlinked in, the real jus
+# unreachable). By the first edit the approach is already chosen — the pickup
+# is the moment a doc can still change the plan.
+PICKUP_STUB=$(mktemp -d)
+ln -s "$(command -v jq)" "$PICKUP_STUB/jq"
+cat > "$PICKUP_STUB/jus" <<STUB
+#!/bin/bash
+printf '%s\n' "\$*" >> "$PICKUP_STUB/log"
+printf '%s' '{"ticket":{"title":"Container hardening pass","labels":["docker"]}}'
+STUB
+chmod +x "$PICKUP_STUB/jus"
+printf 'label:docker\tdocs/threat.md\twhat a compromised container can reach\n' \
+  >> "$DOCS_PROJECT/.jus/docs-nudges.tsv"
+STARTED_CMD='jus api PATCH /workspaces/1/tickets/501/transition {"state":"started"}'
+SID_PICKUP="test-docs-pickup-$$"
+
+t "pickup nudge fires when a ticket label matches a label: row"
+out_pickup=$(jq -n --arg sid "$SID_PICKUP" --arg cmd "$STARTED_CMD" \
+        '{tool_name:"Bash", session_id:$sid, tool_input:{command:$cmd}}' \
+      | CLAUDE_PROJECT_DIR="$DOCS_PROJECT" PATH="$PICKUP_STUB:/usr/bin:/bin" \
+        "$SCRIPTS/jus-docs-nudge.sh")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ "$out_pickup" == *"systemMessage"* && "$out_pickup" == *"docs/threat.md"* \
+      && "$out_pickup" == *"#501"* ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (got: %s)\n' "$TEST_NAME" "$out_pickup"
+fi
+
+t "pickup-nudged doc stays quiet at the first edit under its mapped path"
+printf 'app/threat/\tdocs/threat.md\twhat a compromised container can reach\n' \
+  >> "$DOCS_PROJECT/.jus/docs-nudges.tsv"
+mkdir -p "$CLAUDE_PLUGIN_DATA/sessions/$SID_PICKUP"
+echo "501" > "$CLAUDE_PLUGIN_DATA/sessions/$SID_PICKUP/active_ticket"
+out_dedup=$(printf '{"tool_name":"Edit","session_id":"%s","tool_input":{"file_path":"%s/app/threat/model.rb"}}' \
+        "$SID_PICKUP" "$DOCS_PROJECT" \
+      | CLAUDE_PROJECT_DIR="$DOCS_PROJECT" "$SCRIPTS/jus-docs-nudge.sh")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ -z "$out_dedup" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (got: %s)\n' "$TEST_NAME" "$out_dedup"
+fi
+
+t "pickup is silent for a non-transition command and calls no jus"
+rm -f "$PICKUP_STUB/log"
+out_nontrans=$(jq -n --arg sid "$SID_PICKUP" \
+        '{tool_name:"Bash", session_id:$sid, tool_input:{command:"jus api GET /workspaces/1/tickets/501"}}' \
+      | CLAUDE_PROJECT_DIR="$DOCS_PROJECT" PATH="$PICKUP_STUB:/usr/bin:/bin" \
+        "$SCRIPTS/jus-docs-nudge.sh")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ -z "$out_nontrans" && ! -f "$PICKUP_STUB/log" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (got: %s)\n' "$TEST_NAME" "$out_nontrans"
+fi
+
+t "pickup makes no jus call when the map has only path rows"
+PATHONLY_PROJECT=$(mktemp -d)
+mkdir -p "$PATHONLY_PROJECT/.jus"
+printf 'app/styles/\tdocs/css.md\tthe styling rules live there\n' \
+  > "$PATHONLY_PROJECT/.jus/docs-nudges.tsv"
+rm -f "$PICKUP_STUB/log"
+out_pathonly=$(jq -n --arg sid "$SID_PICKUP" --arg cmd "$STARTED_CMD" \
+        '{tool_name:"Bash", session_id:$sid, tool_input:{command:$cmd}}' \
+      | CLAUDE_PROJECT_DIR="$PATHONLY_PROJECT" PATH="$PICKUP_STUB:/usr/bin:/bin" \
+        "$SCRIPTS/jus-docs-nudge.sh")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ -z "$out_pathonly" && ! -f "$PICKUP_STUB/log" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (got: %s)\n' "$TEST_NAME" "$out_pathonly"
+fi
+rm -rf "$PATHONLY_PROJECT"
+
+t "pickup fails open when jus is not on PATH"
+NOJUS_STUB=$(mktemp -d)
+ln -s "$(command -v jq)" "$NOJUS_STUB/jq"
+out_nojus=$(jq -n --arg sid "$SID_PICKUP" --arg cmd "$STARTED_CMD" \
+        '{tool_name:"Bash", session_id:$sid, tool_input:{command:$cmd}}' \
+      | CLAUDE_PROJECT_DIR="$DOCS_PROJECT" PATH="$NOJUS_STUB:/usr/bin:/bin" \
+        "$SCRIPTS/jus-docs-nudge.sh")
+rc_nojus=$?
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ -z "$out_nojus" && "$rc_nojus" -eq 0 ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (exit=%s, got: %s)\n' "$TEST_NAME" "$rc_nojus" "$out_nojus"
+fi
+rm -rf "$NOJUS_STUB" "$PICKUP_STUB"
+
 rm -rf "$DOCS_PROJECT"
 
 # ---- jus-stop-uncommitted.sh --------------------------------------------------

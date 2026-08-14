@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.3] — 2026-08-14
+
+### Changed
+
+- Marker titles name the thing itself — no prefixes, no leading icons (#2462)
+- Nudge project docs at ticket pickup, keyed on labels and title (#2487)
+
 ## [1.4.2] — 2026-08-11
 
 ### Changed
