@@ -22,6 +22,14 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.4] — 2026-08-15
+
+### Changed
+
+- References are automatic; a prerequisite is a dependency (#2532)
+- Move the batch rule to CLAUDE.md — it is not the plugin's to carry (#2525)
+- Drain deliverable tickets before asking a blocking question (#2525)
+
 ## [1.4.3] — 2026-08-14
 
 ### Changed

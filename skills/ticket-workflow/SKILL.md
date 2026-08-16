@@ -194,7 +194,13 @@ Post comments as you work — at minimum a start comment (see [above](#post-the-
 - **Capture user interjections** — if the user sends scope-affecting messages mid-ticket, mirror those notes into the ticket's comment thread.
 - **Use `#N` for tickets, `pN` for projects** — autolinks on the board. Never write "ticket 123" or "project 66" in prose.
 - **Format for the board, not a terminal** — see [Formatting](#formatting-descriptions-and-comments) below. Descriptions and comments render as markdown; unformatted walls of text are hard for the stakeholder to scan.
-- **Use References for prerequisites** — when a ticket mentions "requires #752 complete", create formal References via the API so dependencies are tracked, not just described.
+- **References happen by themselves; a prerequisite needs a DEPENDENCY.** These are two different features and this skill used to conflate them, telling you to "create formal References via the API". **There is no such API and nothing to call.** Juscribe parses `#N`/`pN` out of a ticket's **title and description** on save and stores the References itself — writing the reference _is_ the mechanism, and stale rows disappear when you edit the text.
+  - ⚠️ **Comments are NOT scanned.** Only title and description feed the parser, so a `#N` written only in a comment creates no Reference. It still autolinks when rendered — that is the client drawing a link, not a stored relationship.
+  - **When a ticket genuinely gates another** ("requires #752 complete"), the mechanism that makes it real on the board — `blocked: true`, a row in `active_dependencies_summary` — is a dependency:
+    ```sh
+    jus api POST /workspaces/{ws}/tickets/{blocked}/dependencies '{"dependency":{"blocker_type":"Ticket","blocker_id":{blocker},"blocked_type":"Ticket","blocked_id":{blocked}}}'
+    ```
+  - ⚠️ **Set one only when it is genuinely blocking.** A dependency asserts the work _cannot proceed_, and the [Dependency Handling Protocol](#dependency-handling-protocol) tells other agents to skip what it marks. Recording a soft ordering preference that way makes a workable ticket look unstartable — put that in the description instead, and say why it is not a blocker.
 - **Pay attention to comment reactions** — `include_comments=true` returns a `reactions` array per comment. Interpret as stakeholder signals:
   - 👍 agreement / "good direction"
   - 👎 disagreement / "wrong approach" — multiple 👎 from the stakeholder = effective rejection of that approach
