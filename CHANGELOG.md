@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.5] — 2026-08-19
+
+### Changed
+
+- Fix a false API claim this ticket published, and wire the guards into the gate (#2506)
+- .jus/SOP.md becomes a generated artefact, and a phantom param dies (#2506)
+
 ## [1.4.4] — 2026-08-15
 
 ### Changed

@@ -521,7 +521,7 @@ Five behaviours that present as a hang, a no-op, a bare 500, or a silent success
 
 - **Agent state (preferred for session start)**: `agent_state?panels=current,backlog` returns ~2–4 KB markdown; `summary?panels=...` is the structured-JSON variant. Cache TTL 5 minutes; invalidated on ticket/project changes. Never start a session by listing all tickets.
 - **Sparse fieldsets**: `?fields=id,title,state,points` — pick exactly what you need (`id` always included).
-- **Opt-out params**: `include_markers` (default `false`), `include_label_objects` (default `true`; `false` omits the array — string `labels` always present), `include_attachments` (default `false`), `include_comments` (default `false`), `comments_limit` (caps to N most recent).
+- **Opt-out params**: `include_markers` (default `false`), `include_label_objects` (default `true`; `false` omits the array — string `labels` always present), `include_attachments` (default `false`), `include_comments` (default `false`), `include_subtasks` (default `false`), `comments_limit` (caps to N most recent).
 - **`comments_count`**: every ticket response carries it — check before fetching comments; if `0`, skip `include_comments` entirely.
 
 | Task                          | Approach                                                                                  |
@@ -529,8 +529,40 @@ Five behaviours that present as a hang, a no-op, a bare 500, or a silent success
 | Session start                 | `agent_state?panels=current,backlog`                                                      |
 | Fetch a ticket to work on     | `tickets/{id}?include_comments=true&include_attachments=true&include_label_objects=false` |
 | Bulk state check across panel | `tickets?fields=id,title,state&panel=current`                                             |
+| Everything with a label       | `tickets?label=security&fields=id,title,state` — one request, not a paging loop           |
 | Project ticket list           | `projects/{id}/tickets?fields=id,title,state,points`                                      |
 | Create / update / transition  | Normal endpoints — write paths return full data                                           |
+
+### Index filter params
+
+The ticket index takes a substantial filter set, and **nothing rejects a name it does not recognise, and nothing logs it either** — the index never puts the query string through strong parameters, so there is no `Unpermitted parameter` line to go looking for. A misspelled filter returns the unfiltered list with `HTTP 200`, which reads exactly like a filter that matched everything. Check `.pagination.count` against what you expected.
+
+⚠️ **This is why "the tickets API has no text search" circulates as lore.** `query=` and `search=` are silently ignored because neither is the param name. **`q` works** — a case-insensitive substring match on title _or_ description.
+
+| Param                                             | Notes                                                                                                                                    |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `q`                                               | Substring match (`ILIKE`) on title or description                                                                                        |
+| `label`                                           | Matches either label representation — see below                                                                                          |
+| `panel`                                           | `icebox` / `backlog` / `current` / `done`                                                                                                |
+| `state`                                           | Exact state name                                                                                                                         |
+| `ticket_type`                                     | Naming a marker type overrides the `include_markers` default                                                                             |
+| `project_id`                                      | The project's **external** ID, not its database ID. ⚠️ An unknown one does **not** return `[]` — it matches every ticket with NO project |
+| `iteration_id`                                    | Iteration external ID, or `none` for unassigned. ⚠️ An unknown one **404s** the whole request                                            |
+| `external_id`                                     | The `#N` you see on the board                                                                                                            |
+| `requester_id` / `stakeholder_id` / `assignee_id` | User ID                                                                                                                                  |
+| `team_id`                                         | Assignee, unassigned requester, or stakeholder is on the team                                                                            |
+| `points_gt` / `points_lt`                         | Strict, and exclusive of the bound. Non-numeric input reads as `0`                                                                       |
+| `created_after` / `_before`                       | Inclusive timestamps                                                                                                                     |
+| `updated_since`                                   | Strictly after — for polling what changed                                                                                                |
+| `page` / `per_page`                               | Default 50, max 200. The envelope key is `count`, **not** `total_count`                                                                  |
+
+Filters combine with `AND`, so one request usually replaces a paging loop:
+
+```sh
+jus api GET '/workspaces/{ws}/tickets?label=security&panel=backlog&fields=id,title,state'
+```
+
+⚠️ **`label` matches two representations, and only one of them renders.** A ticket carries labels twice: the `ticket_labels` join (serialized as `label_objects`, and what the board draws as badges) and a legacy string mirror on the ticket itself. The filter unions both, so it never under-returns — but a name living only in the mirror **shows no badge on the card**, has no `Label` record, and will never colour or appear in the label picker. Labelling still goes through `label_ids`, which writes both representations. `jus api GET '/workspaces/{ws}/labels'` is the vocabulary; a name outside it is history, not a label.
 
 ## Dependency Handling Protocol
 
