@@ -1497,6 +1497,68 @@ assert_match "ticket-workflow: description claims generic ticket language for Ju
 assert_match "hard-rules: description disambiguates from other issue trackers" \
   "$PLUGIN_ROOT/skills/hard-rules/SKILL.md" "not another issue tracker"
 
+# #2682. The enforcement table's Skill column is ✅ on every row by
+# construction — the table enumerates the rules THIS skill contains, so a row
+# claiming otherwise is stating something the file itself contradicts.
+#
+# #2282 put a ❌ there. It was correcting a real error at the time (the
+# pre-commit gate does not run the tests) and wrote "Prompt-only…" into the
+# Hook column to say so — then applied the same correction a second time, in
+# the wrong column. Correcting one column while looking at the other is exactly
+# when this slips, which is why it is worth a test rather than a re-read.
+#
+# ⚠️ COUNTED WITH grep, NOT COMPARED IN awk. The first cut of this check was
+# `awk … if ($3 != "✅") print $2`, which is green against a table that still
+# has a ❌ in it: /usr/bin/awk on macOS (version 20200816) evaluates
+# "❌" != "✅" as FALSE. Measured — `printf "cmp=%d", ($3 != "✅")` prints 0 on
+# the ❌ row. Two integer counts from grep have no such failure mode.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="hard-rules: every enforcement-table row claims the rule IS in the skill (#2682)"
+HR_SKILL="$PLUGIN_ROOT/skills/hard-rules/SKILL.md"
+table_rows="$(grep -cE '^\| .* \| *(✅|❌) *\|' "$HR_SKILL")"
+skill_yes="$(grep -cE '^\| .* \| *✅ *\|' "$HR_SKILL")"
+if [[ "$table_rows" -eq "$skill_yes" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+  grep -nE '^\| .* \| *❌ *\|' "$HR_SKILL" | sed 's/^/      /'
+fi
+
+# Guard the guard. If the row pattern stops matching, the equality above holds
+# at 0 == 0 and proves nothing — which is the same vacuous-pass shape the awk
+# version had, reached a different way.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="hard-rules: the enforcement-table guard actually reads rows (#2682)"
+if [[ "$table_rows" -ge 20 ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (matched %s rows)\n' "$TEST_NAME" "$table_rows"
+fi
+
+# #2586. The nudge text is read by whoever installs the bundle, in a string
+# they cannot edit — so it must not assert a testing methodology. It said
+# "root cause + plan + TDD intent", telling teams that do not practise
+# test-first development that they owe something this SOP does not require.
+# The obligation ("test intent") travels; the methodology does not.
+#
+# Keyed on the systemMessage line rather than the whole file, deliberately: the
+# script's own comments explain what was removed and why, and a whole-file grep
+# would forbid recording that.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="start-comment nudge text names no testing methodology (#2586)"
+if grep 'systemMessage:' "$SCRIPTS/jus-start-comment-nudge.sh" | grep -qiE 'TDD|test.driven|test.first'; then
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+else
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+fi
+
+# The other half: it must still ask for the thing that DOES travel.
+assert_match "start-comment nudge still asks for test intent (#2586)" \
+  "$SCRIPTS/jus-start-comment-nudge.sh" "test intent"
+
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="AGENTS.md title is tool-neutral (Codex, Kimi Code, Antigravity all read it)"
 if head -1 "$PLUGIN_ROOT/AGENTS.md" | grep -q "OpenAI Codex"; then

@@ -5,7 +5,11 @@
 # comment first. Mirrors dirty-tree-nudge.sh — it never blocks (exit 0 always).
 #
 # The start comment is the earliest stakeholder-facing signal that work began
-# and where root-cause + plan + TDD intent are declared. It is prompt-only in
+# and where root-cause + plan + test intent are declared. It deliberately does
+# NOT name a methodology (#2586): this bundle ships to projects that do not
+# practise test-first development, and a nudge telling them they owe "TDD
+# intent" asserts someone else's policy in text they cannot edit.
+# It is prompt-only in
 # both CLAUDE.md modes (no hook hard-blocks it); this nudge is the soft
 # backstop so a run cannot silently skip it. See #1852.
 #
@@ -59,7 +63,7 @@ mkdir -p "$state_dir"
 date +%s > "${state_dir}/start_nudged"
 
 jq -n --arg ticket "$active" '{
-  systemMessage: ("[jus:hard-rules] You are editing a source file on ticket #" + $ticket + " but have not posted a start comment yet. The Juscribe SOP wants a \"Starting\" comment — root cause + plan + TDD intent — on the ticket BEFORE the first code edit. Post it now (jus api POST /workspaces/{ws}/tickets/" + $ticket + "/comments ...), then continue.")
+  systemMessage: ("[jus:hard-rules] You are editing a source file on ticket #" + $ticket + " but have not posted a start comment yet. The Juscribe SOP wants a \"Starting\" comment — root cause + plan + test intent — on the ticket BEFORE the first code edit. Post it now (jus api POST /workspaces/{ws}/tickets/" + $ticket + "/comments ...), then continue.")
 }'
 
 exit 0

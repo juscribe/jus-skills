@@ -22,6 +22,14 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.6] — 2026-08-21
+
+### Changed
+
+- The enforcement table said a rule was absent from the skill stating it (#2682)
+- Guard the hook text too, not just the skill bodies (#2586)
+- The published SOP stops mandating a testing methodology (#2586)
+
 ## [1.4.5] — 2026-08-19
 
 ### Changed

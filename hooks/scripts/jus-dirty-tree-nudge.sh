@@ -21,8 +21,9 @@
 #
 # ── and it waits for checks to have run ──────────────────────────────────────
 #
-# The SOP mandates TDD: failing spec first, then implementation. Across that
-# span the tree is necessarily dirty and the suite is necessarily red, lefthook
+# On a project that writes the failing test first — this bundle's default, though
+# the ordering is the installing project's to set (#2586) — the tree is
+# necessarily dirty and the suite necessarily red across that span, lefthook
 # would reject the commit anyway, and there is no correct commit to make. A
 # nudge there fires where compliance is impossible, which trains its reader to
 # filter it out — and then it is absent on the occasion the tree is genuinely

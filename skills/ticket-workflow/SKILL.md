@@ -152,23 +152,29 @@ jus api GET '/workspaces/{ws}/labels'
 
 ### Post the start comment BEFORE the first code edit
 
-The very first thing in Phase 4 — before you edit a single source file — **post a "Starting" comment on the ticket**: the root cause / your read of the problem, the plan, and your TDD intent. This is the earliest stakeholder-facing signal that work began and the record of your plan _before_ implementation. It is prompt-only (on harnesses running the jus hooks, a soft nudge fires on the first source edit — nothing hard-blocks it anywhere), so it rests on you remembering. Do not skip it; do not fold it into the delivery comment.
+The very first thing in Phase 4 — before you edit a single source file — **post a "Starting" comment on the ticket**: the root cause / your read of the problem, the plan, and how you intend to test it. This is the earliest stakeholder-facing signal that work began and the record of your plan _before_ implementation. It is prompt-only (on harnesses running the jus hooks, a soft nudge fires on the first source edit — nothing hard-blocks it anywhere), so it rests on you remembering. Do not skip it; do not fold it into the delivery comment.
 
 ```sh
-jus api POST /workspaces/{ws}/tickets/{id}/comments '{"comment":{"body":"Starting. <root cause + plan + TDD intent>"}}'
+jus api POST /workspaces/{ws}/tickets/{id}/comments '{"comment":{"body":"Starting. <root cause + plan + test intent>"}}'
 ```
 
-### Test-Driven Development
+### Testing
 
-Write tests **first**. The sequence is: investigate → write failing test → implement → verify test passes → lint → COMMIT. Never reverse the test and implementation steps.
+**Every code change MUST include corresponding tests.** Specifically:
 
-- **Bugs**: write a failing test that reproduces the bug BEFORE writing the fix. The commit includes both the test and the fix.
-- **Features**: write specs that define the expected behavior BEFORE implementing. Tests double as a clean-interface design pass.
-- **Refactors**: ensure existing specs cover the behavior being preserved; add coverage if missing before refactoring.
+- **Bugs**: a test that reproduces the bug — one that fails before the fix and passes after. Ship it in the same commit as the fix; a fix with no failing-first test has not been shown to fix anything.
+- **Features**: tests that define the expected behaviour, including the error and edge paths.
+- **Refactors**: coverage of the behaviour being preserved, before you move it. Add it first if it is missing.
 
-Do not skip TDD because investigation was long, the fix seems obvious, or you're "just tweaking" something. If you catch yourself writing code before tests, stop and write the test first.
+Existing tests must pass — a green run of the tests covering your change is a prerequisite for every commit. Match the existing test style: study the neighbouring test files for their conventions (fixture and factory helpers, authentication helpers, the matchers they favour) rather than importing habits from elsewhere.
 
-**Every code change MUST include corresponding test coverage** — 100% statement and branch coverage on all new code, no exceptions, even for error handling and edge cases. Existing specs must pass (a green suite is a prerequisite for every commit). Match existing test style — study neighboring spec files for conventions (factory usage, `sign_in`/`sign_out` helpers, the `:unprocessable_content` matcher, etc.).
+#### The ordering and the coverage bar are the project's call
+
+**This skill's default is test-first** — investigate → write a failing test → implement → watch it pass → lint → COMMIT — and it is the default for a reason: a test written after the code tends to assert what the code does rather than what it should do, and a bug fix with no failing-first test cannot distinguish a fix from a coincidence.
+
+**But it is a default, not a universal.** Plenty of teams that ship well do not write test-first, and a coverage number that is right for one codebase is theatre in another. **The project's testing policy wins**: if the installing project's own instructions state an ordering or a bar, follow those. Where they are silent, use test-first and aim to cover every new or changed line.
+
+What does **not** vary, whatever the policy says: a change ships with tests, a bug fix has a test that failed before the fix, and the tests covering your change pass before you commit. Those are the obligations this skill enforces; the rest is the project's.
 
 #### What to test, where
 
@@ -236,8 +242,8 @@ dispatch that immediately fails when no station is running.
 **Plan:** guard with `workspace.online_agents_for(user).any?` — the same
 reachability check the dispatch button uses.
 
-**TDD:** failing job specs first (no station → no dispatch; station registered
-elsewhere → no dispatch; reachable → dispatch as before).
+**Tests:** failing job specs first (no station → no dispatch; station
+registered elsewhere → no dispatch; reachable → dispatch as before).
 ```
 
 And a delivery comment: `**Commit:**` line, a short `**What shipped:**` block, then a numbered `**To verify:**` list — see [Post finished comment](#post-finished-comment-before-transitioning). The same conventions apply to description flesh-outs (root cause, acceptance criteria) and dependency/blocker comments.
@@ -295,9 +301,7 @@ Most projects wrap this in a single command; find it rather than assembling one.
 - **Coverage instrumentation is usually opt-in.** A plain test run often does not refresh the coverage data, so the diff check silently reads a stale report with the wrong line numbers and reports success. Confirm the report was written by the run you just did.
 - **Scoping the test run also scopes the coverage.** If you ran only the tests for the changed files, the report covers only what those exercised — which is the right denominator here, but not a statement about the project as a whole.
 
-Default threshold: **100%**. Every new/changed line must be covered. If the check fails, write the missing tests before finishing. **This is a hard gate** — do not deliver with uncovered lines.
-
-Default threshold: **100%**. Every new/changed line must be covered. If `bin/diff-cover` fails, write the missing tests before finishing. **This is a hard gate** — do not deliver with uncovered lines.
+**Default threshold: 100%** — every new or changed line covered — unless the project's testing policy sets a different one. Where the default applies, a failure means write the missing tests, not "good enough": do not deliver with uncovered lines.
 
 **Coverage strategy for stubborn lines** — analyze case by case: a **reachable** line means write the test that exercises it (don't skip "edge cases" or "error branches" — those are the most likely to break in production); **unreachable / dead code** means refactor the source to eliminate it rather than gaming coverage with `:nocov:` / `/* istanbul ignore */` markers. Do all uncovered lines in one pass; don't accumulate coverage debt across commits.
 
