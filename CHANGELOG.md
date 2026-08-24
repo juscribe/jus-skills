@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.7] — 2026-08-24
+
+### Changed
+
+- Self-review: the section note quoted the wrong figure and pointed at the wrong tests (#2807)
+- Drop the five sleeps, and assert what they were believed to be covering (#2807)
+
 ## [1.4.6] — 2026-08-21
 
 ### Changed

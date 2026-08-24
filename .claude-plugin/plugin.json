@@ -1,6 +1,6 @@
 {
   "name": "jus",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "description": "Juscribe Workflow SOP as two on-demand Claude Code skills — ticket-workflow (lifecycle plus estimation, labels, testing gates, and the jus API reference) and hard-rules — backed by deterministic enforcement hooks.",
   "author": {
     "name": "Caleon Chun"

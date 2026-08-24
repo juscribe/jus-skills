@@ -354,6 +354,23 @@ assert_exit 2 "$SCRIPTS/jus-block-lint-suppression.sh" \
 
 section "jus-pre-commit-gate.sh + tracking"
 
+# ⚠️ NOTHING HERE PAUSES BETWEEN AN EDIT AND A LINT, and it used to (#2807).
+# Five `sleep 1` calls cost 5s of every run — most of the suite's wall clock —
+# on the belief that the gate needed `last_linted_at > last_modified_at` and
+# that two `date +%s` stamps in the same second would therefore race.
+#
+# The gate compares `>=` (jus-pre-commit-gate.sh), and so does the nudge
+# inverted, so a same-second edit and lint is ALLOWED and there was never a
+# race. Measured: deleting the five and changing nothing else gave 172 tests, 0
+# failed, 7.4s -> 2.3s. This section is 2.4s now, with six more tests.
+#
+# What the pauses did hide is that the ordering itself was never asserted. The
+# pair of tests further down this section — "blocks when the last lint predates
+# the last edit" and "allows when the lint landed in the same second" — pin it
+# against stamps written by hand, the idiom the nudge section already uses, so
+# `>=` is a stated expectation rather than an accident four end-to-end tests
+# silently depend on.
+
 # Use a fresh session id per scenario for isolation
 SID_CLEAN="test-clean-$$"
 SID_EDITED="test-edited-$$"
@@ -363,6 +380,33 @@ SID_DOCS="test-docs-$$"
 t "allows git commit when no edits tracked"
 assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
   "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$SID_CLEAN\"}"
+
+# The comparison itself, with the stamps written directly so no clock is
+# involved. `linted_at < modified_at` is the state the gate exists to catch —
+# edits made since the last lint — and until #2807 only the dirty-tree nudge
+# tested it; the gate's own side was covered solely by sessions that had never
+# linted at all, which is a different branch.
+SID_STALE="test-stale-lint-$$"
+mkdir -p "$CLAUDE_PLUGIN_DATA/sessions/$SID_STALE"
+echo "/repo/foo.rb" > "$CLAUDE_PLUGIN_DATA/sessions/$SID_STALE/edits.log"
+echo 300 > "$CLAUDE_PLUGIN_DATA/sessions/$SID_STALE/last_modified_at"
+echo 200 > "$CLAUDE_PLUGIN_DATA/sessions/$SID_STALE/last_linted_at"
+
+t "blocks when the last lint predates the last edit (#2807)"
+assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$SID_STALE\"}" \
+  "linters have not been run"
+
+# ⚠️ THE BOUNDARY, and the reason this file no longer sleeps. `date +%s` has
+# one-second resolution, so an edit and a lint in the same second produce EQUAL
+# stamps — the case every end-to-end test below now exercises. `>=` allows it;
+# a change to `>` would make those four fail for a reason none of them names,
+# so the equality is asserted here on its own.
+echo 300 > "$CLAUDE_PLUGIN_DATA/sessions/$SID_STALE/last_linted_at"
+
+t "allows when the lint landed in the same second as the edit (#2807)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$SID_STALE\"}"
 
 # Simulate an Edit on a Ruby file
 printf '{"tool_name":"Edit","tool_input":{"file_path":"/repo/foo.rb","old_string":"a","new_string":"b"},"session_id":"%s"}' "$SID_EDITED" \
@@ -403,7 +447,6 @@ assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
 # Simulate edit then lint
 printf '{"tool_name":"Edit","tool_input":{"file_path":"/repo/foo.rb","old_string":"a","new_string":"b"},"session_id":"%s"}' "$SID_LINTED" \
   | "$SCRIPTS/jus-track-edits.sh" >/dev/null
-sleep 1
 printf '{"tool_name":"Bash","tool_input":{"command":"bin/rubocop foo.rb"},"tool_response":{"interrupted":false},"session_id":"%s"}' "$SID_LINTED" \
   | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
 
@@ -421,6 +464,21 @@ printf '{"tool_name":"Bash","tool_input":{"command":"git commit -m x"},"tool_res
   | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
 rm -rf "$GATE_CLEAN_REPO"
 
+# ⚠️ THE EXIT-0 ASSERTION BELOW DOES NOT COVER THE CLEARING, which is why the
+# two state-file assertions are here (#2807). This session has a lint recorded,
+# so the gate allows the commit at its "lints ran after the last edit" step
+# whether or not the tracker cleared anything at all. Measured: disabling the
+# tracker's entire commit branch failed ZERO tests, before this change and
+# after it — the sleeps were never what covered this.
+#
+# Clearing is a property of the tracker, so assert it on the tracker's output
+# rather than through a second consumer that has its own reason to say yes.
+t "a plain git commit clears last_modified_at (#2807)"
+assert_state_file "$CLAUDE_PLUGIN_DATA/sessions/$SID_LINTED/last_modified_at" absent
+
+t "a plain git commit clears edits.log (#2807)"
+assert_state_file "$CLAUDE_PLUGIN_DATA/sessions/$SID_LINTED/edits.log" absent
+
 t "allows git commit with no edits after a prior commit cleared state"
 assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
   "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$SID_LINTED\"}"
@@ -431,7 +489,6 @@ assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
 SID_DASHC="dashc-$$"
 printf '{"tool_name":"Edit","tool_input":{"file_path":"/repo/foo.rb","old_string":"a","new_string":"b"},"session_id":"%s"}' "$SID_DASHC" \
   | "$SCRIPTS/jus-track-edits.sh" >/dev/null
-sleep 1
 printf '{"tool_name":"Bash","tool_input":{"command":"bin/rubocop foo.rb"},"tool_response":{"interrupted":false},"session_id":"%s"}' "$SID_DASHC" \
   | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
 DASHC_REPO=$(mktemp -d)
@@ -440,6 +497,14 @@ DASHC_REPO=$(mktemp -d)
 printf '{"tool_name":"Bash","tool_input":{"command":"git -C . commit -m x"},"tool_response":{"interrupted":false},"session_id":"%s","cwd":"%s"}' "$SID_DASHC" "$DASHC_REPO" \
   | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
 rm -rf "$DASHC_REPO"
+
+# Same trap as above: the -C form's clearing needs asserting on the state files,
+# not inferred from a gate that would allow this commit regardless (#2807).
+t "git -C <path> commit clears last_modified_at, same as a plain one (#2363)"
+assert_state_file "$CLAUDE_PLUGIN_DATA/sessions/$SID_DASHC/last_modified_at" absent
+
+t "git -C <path> commit clears edits.log, same as a plain one (#2363)"
+assert_state_file "$CLAUDE_PLUGIN_DATA/sessions/$SID_DASHC/edits.log" absent
 
 t "tracker clears state for a git -C <path> commit, same as a plain one (#2363)"
 assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
@@ -463,7 +528,6 @@ assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
 SID_INTR="test-interrupted-lint-$$"
 printf '{"tool_name":"Edit","tool_input":{"file_path":"/repo/foo.rb","old_string":"a","new_string":"b"},"session_id":"%s"}' "$SID_INTR" \
   | "$SCRIPTS/jus-track-edits.sh" >/dev/null
-sleep 1
 printf '{"tool_name":"Bash","tool_input":{"command":"bin/rubocop foo.rb"},"tool_response":{"interrupted":true},"session_id":"%s"}' "$SID_INTR" \
   | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
 
@@ -480,7 +544,6 @@ assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
 SID_REAL="test-real-shape-$$"
 printf '{"tool_name":"Edit","tool_input":{"file_path":"/repo/foo.rb","old_string":"a","new_string":"b"},"session_id":"%s"}' "$SID_REAL" \
   | "$SCRIPTS/jus-track-edits.sh" >/dev/null
-sleep 1
 printf '{"tool_name":"Bash","tool_input":{"command":"bin/rubocop foo.rb"},"tool_response":{"stdout":"","stderr":"","interrupted":false,"isImage":false},"session_id":"%s"}' "$SID_REAL" \
   | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
 
@@ -632,7 +695,6 @@ sh_lint_records "shl-heredoc-2387" \
 # End to end: the linter that was previously unrecognised now clears the gate
 # for the commit it applies to.
 sh_gate_session "sh-e2e-2387" "$SH_FIX/deploy.sh"
-sleep 1
 printf '{"tool_name":"Bash","tool_input":{"command":"shellcheck -x %s"},"tool_response":{"interrupted":false},"session_id":"sh-e2e-2387"}' "$SH_FIX/deploy.sh" \
   | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
 t "running the shell linter clears the gate for a .sh-only commit (#2387)"
