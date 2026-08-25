@@ -453,18 +453,19 @@ Markers render as horizontal bars on the board, not cards. They are timeline-pla
 
 ## Ticket Metadata
 
-| Field                                   | Default / convention                                                                                                                                                                                                                                                                                                                                                                            |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `requester_id`                          | **Auto-set** to `current_user` by the API — not settable. The agent that creates the ticket is the requester.                                                                                                                                                                                                                                                                                   |
-| `stakeholder_id`                        | **Set to the workspace owner's user ID** for all tickets. In workspace 1 that's user `1` (Caleon).                                                                                                                                                                                                                                                                                              |
-| `assignee_ids`                          | Set to your agent user ID (`2` for `caleon-claude`) when you are doing the coding. **Mixed-actor tickets (some steps only the stakeholder can perform): assign BOTH** — and write the actor-tagged chronological checklist (see [Description conventions](#description-conventions)). **Omit or leave empty** when creating tickets you won't immediately work on — let the stakeholder assign. |
-| `description`                           | **Append-only.** Fetch first; if non-null, prepend existing content + `\n\n---\n\n` before your additions. See [`hard-rules`](#related-skills).                                                                                                                                                                                                                                                 |
-| `points`                                | Required for features to leave icebox. Valid values: `0, 1, 2, 3, 5, 8`. See [Estimation](#estimation).                                                                                                                                                                                                                                                                                         |
-| `ticket_type`                           | One of `feature`, `bug`, `chore`, `research` (or marker types). See [Ticket Types](#ticket-types).                                                                                                                                                                                                                                                                                              |
-| `label_ids`                             | Array of integers, 1–3 entries. See [Label conventions](#label-conventions).                                                                                                                                                                                                                                                                                                                    |
-| `project_id`                            | Scope a ticket under a project when one applies — improves board organization and unlocks project-level rollups.                                                                                                                                                                                                                                                                                |
-| `comments_count`                        | Counter-cached integer. Check before fetching comments.                                                                                                                                                                                                                                                                                                                                         |
-| `blocked` / `active_dependencies_count` | If `true` / `> 0`, fetch dependencies before deciding to start.                                                                                                                                                                                                                                                                                                                                 |
+| Field                                        | Default / convention                                                                                                                                                                                                                                                                                                                                                                            |
+| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `requester_id`                               | **Auto-set** to `current_user` by the API — not settable. The agent that creates the ticket is the requester.                                                                                                                                                                                                                                                                                   |
+| `stakeholder_id`                             | **Set to the workspace owner's user ID** for all tickets. In workspace 1 that's user `1` (Caleon).                                                                                                                                                                                                                                                                                              |
+| `assignee_ids`                               | Set to your agent user ID (`2` for `caleon-claude`) when you are doing the coding. **Mixed-actor tickets (some steps only the stakeholder can perform): assign BOTH** — and write the actor-tagged chronological checklist (see [Description conventions](#description-conventions)). **Omit or leave empty** when creating tickets you won't immediately work on — let the stakeholder assign. |
+| `description`                                | **Append-only.** Fetch first; if non-null, prepend existing content + `\n\n---\n\n` before your additions. See [`hard-rules`](#related-skills).                                                                                                                                                                                                                                                 |
+| `points`                                     | Required for features to leave icebox. Valid values: `0, 1, 2, 3, 5, 8`. See [Estimation](#estimation).                                                                                                                                                                                                                                                                                         |
+| `ticket_type`                                | One of `feature`, `bug`, `chore`, `research` (or marker types). See [Ticket Types](#ticket-types).                                                                                                                                                                                                                                                                                              |
+| `label_ids`                                  | Array of integers, 1–3 entries. See [Label conventions](#label-conventions).                                                                                                                                                                                                                                                                                                                    |
+| `project_id`                                 | Scope a ticket under a project when one applies — improves board organization and unlocks project-level rollups.                                                                                                                                                                                                                                                                                |
+| `panel` / `state` / `position` / `insert_at` | The placement, honoured on create since #2772. See [Placing a ticket on create](#placing-a-ticket-on-create); `bulk_create` takes only the first two.                                                                                                                                                                                                                                           |
+| `comments_count`                             | Counter-cached integer. Check before fetching comments.                                                                                                                                                                                                                                                                                                                                         |
+| `blocked` / `active_dependencies_count`      | If `true` / `> 0`, fetch dependencies before deciding to start.                                                                                                                                                                                                                                                                                                                                 |
 
 ### Creating a ticket with full metadata
 
@@ -478,10 +479,14 @@ jus api POST /workspaces/1/tickets '{
     "stakeholder_id": 1,
     "assignee_ids": [2],
     "label_ids": [1, 5],
-    "project_id": 103
+    "project_id": 103,
+    "panel": "backlog",
+    "insert_at": "bottom"
   }
 }'
 ```
+
+`panel` and `insert_at` are the placement, and they belong in this call rather than a follow-up — see [Placing a ticket on create](#placing-a-ticket-on-create). Omit both and the ticket lands at the bottom of the **icebox**.
 
 ## `jus` CLI & API Reference
 
@@ -516,10 +521,81 @@ jus cleanup   # remove all files from .jus/tmp/
 Five behaviours that present as a hang, a no-op, a bare 500, or a silent success rather than an error. Each is listed by the **symptom you will actually be looking at**.
 
 - **The command hangs and never returns** → you ran `jus api PATCH <path>` with **no body argument**. It does not error and does not default to `{}` — it waits on stdin forever. Body-less endpoints still need an explicit empty object: `jus api PATCH /workspaces/{ws}/dependencies/{id}/resolve '{}'`.
-- **A newly created ticket is at the wrong position** → `position` passed to `POST /tickets` is **silently ignored** and the server assigns its own. Create first, then `PATCH /workspaces/{ws}/tickets/{id}/reorder '{"position": <float>}'`. (`reorder` is also the only way to move an existing ticket — a plain update won't reposition or broadcast `ticket_reordered`.)
+- **A newly created ticket is in the wrong panel, or at the wrong end of it** → you named no placement, and the default is the **bottom of the icebox** — not the panel you were looking at. Create takes `panel`, `state`, `position` and `insert_at` and honours all four (#2772); see [Placing a ticket on create](#placing-a-ticket-on-create). ⚠️ The recipe this bullet used to give — create, then `/reorder` — is a wasted call, and the claim it rested on (`position` silently ignored) stopped being true.
 - **A transition returns a body of nulls and nothing changes** → you tried to move a ticket **backwards**, e.g. `prioritized` → `unprioritized` when parking work back to the icebox. `/transition` only walks the state machine forwards. Use a direct field update instead: `PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"state":"unprioritized"}}'`. Forward moves keep using `/transition`.
 - **A create returns a bare `HTTP 500` with `"Internal Server Error"` and nothing else** → check the **case** of an enum value. `ticket_type` is lowercase (`feature`, `bug`, `chore`, `milestone`, `release`, `deadline`, `research`); passing `"Release"` raises `ArgumentError` inside the model and surfaces as a 500 that names no field. Any enum-backed attribute fails the same way, so a 500 on an otherwise well-formed create is a casing bug until proven otherwise — not a server fault to retry.
 - **You set `assignee_ids` / `label_ids` / `stakeholder_id` and the response shows `null`** → the write **succeeded**. `*_ids` fields do not echo back; the response carries the expanded `assignees` / `labels` / `stakeholder` objects instead. Verify against those, not the `*_ids` key, or you will retry a write that already landed.
+
+### Placing a ticket on create
+
+**`POST /tickets` takes the placement with the create — which panel, and where inside it.** One call, not two. Before #2772 `position` and `panel` were permitted and then discarded, so a `201` came back having ignored both; that is no longer the behaviour and the recipe built around it is a wasted call.
+
+| Key         | Accepts                                         | Effect                                                                                                                          |
+| ----------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `panel`     | `icebox` / `backlog` / `current` / `done`       | The list to arrive in. The panel's **entry state** follows — `unprioritized`, `prioritized`, `started`, `accepted` respectively |
+| `state`     | any state name                                  | Sets the panel too, since each state belongs to exactly one                                                                     |
+| `position`  | a number                                        | The exact position                                                                                                              |
+| `insert_at` | `top` / `bottom` / `before:<id>` / `after:<id>` | The position computed server-side, relative to the panel or to a neighbouring ticket                                            |
+
+```sh
+jus api POST /workspaces/{ws}/tickets '{"ticket":{"title":"…","panel":"backlog","insert_at":"top"}}'
+jus api POST /workspaces/{ws}/tickets '{"ticket":{"title":"…","insert_at":"after:2772"}}'
+```
+
+**The defaults are the part worth knowing.** With no placement named at all a ticket lands at the **bottom of the icebox** — `insert_at` defaults to `bottom`, and the panel to `icebox`. An anchor overrides that panel default: `insert_at: "after:<id>"` on its own places the ticket in whichever panel that ticket is already in.
+
+**Contradictions are refused, never settled by precedence.** Each of these is a `422` whose `error` names what disagreed, because a silent winner is the defect this replaced:
+
+- `position` and `insert_at` in the same request — they are alternatives, so give one.
+- `state` and `panel` naming different panels.
+- `before:<id>` / `after:<id>` naming a ticket in a different panel than the one requested, one that is not in the workspace, or one that has no position of its own.
+- `position` or `insert_at` against the `done` panel, which is ordered by completion and reassigns positions on arrival. A `done` create with **no** placement is fine.
+- An unrecognised `state`, `panel` or `insert_at` directive — a bare `after:` with no id gets its own message, because that is a lost id rather than a typo.
+
+⚠️ **`insert_at` is a directive, not a stored attribute, so it does not echo back.** Read the resulting `position` and `panel` instead — the same shape as the `*_ids` gotcha above, where nothing coming back does not mean nothing happened.
+
+**Moving an EXISTING ticket is still its own call**, and `/reorder` is the one to use:
+
+```sh
+jus api PATCH /workspaces/{ws}/tickets/{id}/reorder '{"position": 4.5}'
+```
+
+⚠️ Note the bare body — `/reorder` reads `position` at the top level, **not** wrapped in `{"ticket": {…}}`. A plain `PATCH …/tickets/{id}` with a `position` does write the column (measured), but it broadcasts `ticket_updated` rather than `ticket_reordered`, so open boards do not move the card.
+
+### Bulk endpoints
+
+Five collection endpoints act on many tickets in one request, each taking a `tickets` array. Reach for them before writing a `PATCH` loop — one measured sweep relabelled 148 tickets in 6 requests instead of 148.
+
+| Endpoint                               | Body                                                                       | Returns                                             |
+| -------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------- |
+| `POST …/tickets/bulk_create`           | full ticket attributes per item                                            | `results` — one entry per item                      |
+| `PATCH …/tickets/bulk_update`          | `id` plus attributes: `label_ids`, `assignee_ids`, points, `panel`/`state` | `results` — one entry per item                      |
+| `PATCH …/tickets/bulk_transition`      | `id` and `state`, validated against the state machine per item             | `results` — one entry per item                      |
+| `PATCH …/tickets/bulk_reorder`         | `id` and `position` per item                                               | `results` of `{id, position}` — **one transaction** |
+| `PATCH …/tickets/bulk_sidebar_reorder` | `id` and `sidebar_position` / `bookmarks_position`                         | `204`, no body                                      |
+
+```sh
+jus api PATCH /workspaces/{ws}/tickets/bulk_update '{"tickets":[{"id":"101","points":2},{"id":"102","points":3}]}'
+```
+
+**A failed item fails alone.** The first three return `HTTP 200` whatever happened inside, with `{"success": true, "ticket": {…}}` or `{"success": false, "errors": [...]}` per entry — so the status line tells you nothing and **the `results` array is what you check**. A ticket id that does not exist is one failed entry, not a failed request.
+
+**`bulk_reorder` is the exception, deliberately.** It runs in one transaction and a bad entry rolls the whole move back, because a half-reordered board is worse than an unmoved one.
+
+#### `bulk_create` refuses `position` and `insert_at` — and that is not a limitation to route around
+
+Single create honours both (above); `bulk_create` rejects the item that carries either. The contract of a batch is "create these, **in this order**", and per-item placement contradicts it: two items both asking for the `top` come out in the reverse of the order they were sent, while `bottom` preserves it — the same directive family splitting on order with nothing in the response to say which happened. Two items naming the same `position` simply collide.
+
+`panel` and `state` **are** honoured per item, so a batch can be created straight into the backlog. Ordering within it is the second call:
+
+```sh
+jus api POST /workspaces/{ws}/tickets/bulk_create '{"tickets":[{"title":"first","panel":"backlog"},{"title":"second","panel":"backlog"}]}'
+jus api PATCH /workspaces/{ws}/tickets/bulk_reorder '{"tickets":[{"id":"101","position":12.25},{"id":"102","position":12.5}]}'
+```
+
+⚠️ `bulk_reorder` writes the positions you give it verbatim — it computes no gaps. Read the neighbours you are landing between (`?fields=id,position`) and pick values in the gap, as the second call above does.
+
+**`bulk_create` then `bulk_reorder` is two calls by design, not a workaround** — and `bulk_reorder` exists precisely so the second one is not a loop. Items are appended to their panel in request order, so a batch that only needs to be contiguous at the bottom needs no second call at all.
 
 ### Efficiency toolkit
 
@@ -636,9 +712,11 @@ Panel mapping: `unprioritized→icebox`, `prioritized→backlog`, `started/finis
 > accepted or cancelled. Both are terminal for practical purposes — `converted`
 > has no onward transitions at all, and `archived` can only go to `accepted`.
 
-## Turning a ticket into a project
+## Converting a ticket
 
-**A ticket that grew a multi-ticket design is a project wearing a ticket's clothes.** The signal is concrete: you are about to write acceptance criteria that decompose into separate deliverables with their own dependencies.
+**A research ticket whose finding is a multi-ticket design is a project wearing a ticket's clothes.** The signal is concrete: you are about to write acceptance criteria that decompose into separate deliverables with their own dependencies.
+
+⚠️ **Only a `research` ticket can be converted.** Anything else that has outgrown its type is a **retype** — `PATCH …/tickets/{id} '{"ticket":{"ticket_type":"chore"}}'` — because a feature that grew was always a feature. Conversion exists to preserve a finished investigation and link it to the work it recommends, which is a thing only research has.
 
 There is a dedicated endpoint. **Do not cancel the ticket and hand-create a project** — that is the natural workaround if you do not know this exists, and it throws away the description, the requester, the stakeholder, and the link back.
 
@@ -659,9 +737,29 @@ What it does, in one transaction:
 
 It returns `{ticket, project}`, so the new project's id comes back in the same call.
 
-**It refuses** when the ticket is already `converted`, or when it is `cancelled` — a terminal state cannot become a project. Both return `422` with a message rather than failing silently.
+**It refuses** with a `422` and a message rather than failing silently, in the order the checks fire:
 
-**After converting**, populate the project: create the child tickets with `project_id` set, then order them. Remember that `position` is ignored on create — reordering is always a second call to `/reorder`.
+1. The ticket is already `converted`.
+2. It is `cancelled` — a terminal state cannot become a project.
+3. **It is not a `research` ticket** — `only a research ticket can be converted; this one is a feature`.
+
+⚠️ The source-type check runs **ahead of** the target checks below, deliberately: a feature asking to become a feature is wrong for a more fundamental reason than whatever it named as a target, and hearing about `ticket_type` first sends you to fix the wrong parameter.
+
+**After converting**, populate the project: create the child tickets with `project_id` set and their placement in the same call — `panel` plus `position` or `insert_at`, see [Placing a ticket on create](#placing-a-ticket-on-create). For a whole set, `bulk_create` then `bulk_reorder`.
+
+### Converting into a ticket instead
+
+The same endpoint takes an optional `target`. Absent or `"project"` is the behaviour above; `"ticket"` creates one new ticket of a type you choose.
+
+```sh
+jus api POST /workspaces/{ws}/tickets/{id}/convert '{"target":"ticket","ticket_type":"feature"}'
+```
+
+Reach for it when a research ticket's finding is **one piece of work** rather than a decomposable design — a one-ticket project is the wrong shape for that.
+
+The new ticket carries **title, description, requester, stakeholder, project and labels**, and lands at the **top of the icebox**, `unprioritized`. It does **not** carry points: a research estimate says nothing about the size of the work it recommends, so estimate it yourself before prioritising. Returns `{ticket, converted_ticket}` — the source serializes `converted_ticket_id`, the new one `source_ticket_id`. Unlike the project path, the source **keeps** its `project_id`.
+
+⚠️ **`ticket_type` is required here, and a marker type is refused.** `feature`, `bug`, `chore` and `research` are the choices; `milestone`, `release` and `deadline` are dates on the timeline rather than work, so converting a finding into one loses the finding instead of scheduling it. A missing, unknown or marker `ticket_type` is a `422` naming the field.
 
 ```sh
 jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"started"}'

@@ -22,6 +22,15 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.8] — 2026-08-25
+
+### Changed
+
+- Self-review: the section is no longer only about projects (#2898)
+- Say that only a research ticket can be converted (#2898)
+- Self-review: the create template is where placement is actually found (#2888)
+- The published skill can place a ticket on create, and knows the bulk endpoints (#2888)
+
 ## [1.4.7] — 2026-08-24
 
 ### Changed
