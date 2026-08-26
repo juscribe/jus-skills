@@ -202,6 +202,7 @@ Post comments as you work — at minimum a start comment (see [above](#post-the-
 - **Format for the board, not a terminal** — see [Formatting](#formatting-descriptions-and-comments) below. Descriptions and comments render as markdown; unformatted walls of text are hard for the stakeholder to scan.
 - **References happen by themselves; a prerequisite needs a DEPENDENCY.** These are two different features and this skill used to conflate them, telling you to "create formal References via the API". **There is no such API and nothing to call.** Juscribe parses `#N`/`pN` out of a ticket's **title and description** on save and stores the References itself — writing the reference _is_ the mechanism, and stale rows disappear when you edit the text.
   - ⚠️ **Comments are NOT scanned.** Only title and description feed the parser, so a `#N` written only in a comment creates no Reference. It still autolinks when rendered — that is the client drawing a link, not a stored relationship.
+  - **Read them off the payload — do not re-derive them from the text.** Every ticket and project comes back with both directions already resolved: `references` (what this item points at) and `referenced_by` (what points at it). Each entry is `{type, id, title, ticket_type, color}`, with `id` the `#N` / `pN` you would write. Regexing the description instead is the bug this replaced: it renders a bare `#1705` for anything the reader has not already loaded, and it cannot see `referenced_by` at all. A target that has since been deleted comes back with a `null` id rather than vanishing, so check before you follow one.
   - **When a ticket genuinely gates another** ("requires #752 complete"), the mechanism that makes it real on the board — `blocked: true`, a row in `active_dependencies_summary` — is a dependency:
     ```sh
     jus api POST /workspaces/{ws}/tickets/{blocked}/dependencies '{"dependency":{"blocker_type":"Ticket","blocker_id":{blocker},"blocked_type":"Ticket","blocked_id":{blocked}}}'
@@ -514,7 +515,18 @@ jus init      # first-time setup (token + workspace + symlink)
 jus login     # authenticate with API token
 jus whoami    # show authenticated user
 jus cleanup   # remove all files from .jus/tmp/
+jus version   # the CLI version — what the server sees in the X-Jus-Version header
+jus switch    # change which AI coding CLI runs dispatched work (multi-LLM accounts)
+jus station init | auth | start | logs     # manage the local dispatch station
 ```
+
+#### Three things `jus api` does to your call
+
+Worth knowing because each is invisible in the response, and one of them can send a body you did not write.
+
+- **`{ws}` is substituted for you.** `jus init` stores the workspace id and `jus api` replaces a literal `{ws}` in the path with it — so every path in this skill is copy-pastable as written. With no workspace configured the call stops and names `jus init`; it never requests the literal.
+- **The `/api/v1` prefix is added only when the path does not already start with `/api/`.** So a path you write in full reaches whatever namespace it names, unprefixed.
+- ⚠️ **A malformed JSON body is auto-repaired, and only stderr says so.** When the shell has eaten quotes or truncated the body, `jus api` tries several recoveries, prints `Warning: Body was not valid JSON — auto-repaired.` and sends the repaired version. It is a rescue for a mangled call, not a licence to build bodies loosely — the repair may not be what you meant, and the request succeeds either way. Pass anything you did not type by hand through `@file` or a quoted heredoc, and read stderr.
 
 ### Request-shape gotchas
 
@@ -644,6 +656,35 @@ jus api GET '/workspaces/{ws}/tickets?label=security&panel=backlog&fields=id,tit
 
 ⚠️ **`label` matches two representations, and only one of them renders.** A ticket carries labels twice: the `ticket_labels` join (serialized as `label_objects`, and what the board draws as badges) and a legacy string mirror on the ticket itself. The filter unions both, so it never under-returns — but a name living only in the mirror **shows no badge on the card**, has no `Label` record, and will never colour or appear in the label picker. Labelling still goes through `label_ids`, which writes both representations. `jus api GET '/workspaces/{ws}/labels'` is the vocabulary; a name outside it is history, not a label.
 
+## Subtasks — a ticket's checklist
+
+A ticket carries an ordered checklist of its own. Each item has a **title, an optional description, an optional single assignee**, a `completed` flag and a `position` — so the steps of a multi-step ticket are data the board can render and count, rather than lines in the description that nothing can query.
+
+They are not returned by default. `subtasks_count` is on every ticket payload; `include_subtasks=true` inlines them, or fetch the collection.
+
+```sh
+jus api GET '/workspaces/{ws}/tickets/{id}/subtasks'
+jus api POST /workspaces/{ws}/tickets/{id}/subtasks '{"subtask":{"title":"…","description":"…","assignee_id":2}}'
+jus api PATCH /workspaces/{ws}/tickets/{id}/subtasks/{subtask_id} '{"subtask":{"title":"…","completed":true}}'
+jus api PATCH /workspaces/{ws}/tickets/{id}/subtasks/{subtask_id}/toggle '{}'
+jus api PATCH /workspaces/{ws}/tickets/{id}/subtasks/{subtask_id}/reorder '{"position":2.5}'
+jus api DELETE /workspaces/{ws}/tickets/{id}/subtasks/{subtask_id}
+```
+
+Writable: `title` (required), `description`, `completed`, `position`, `assignee_id`. `position` defaults to the end of the list, and `created_by` is the caller. The response expands `assignee` and `created_by` as user objects rather than bare ids, the way a ticket expands its own.
+
+⚠️ **`assignee_id` must be a member of the workspace's organization** — anyone else is a `422` reading `must belong to this workspace`. Send `null` or `""` to clear it.
+
+⚠️ **Three shape traps in those six lines, all of them silent:**
+
+- **`/toggle` takes no body — send `'{}'` anyway**, or the CLI sits waiting on stdin. Same rule as every other body-less write.
+- **`/reorder` reads `position` at the top level**, not wrapped in `{"subtask": …}` — the same bare shape as a ticket's own `/reorder`.
+- **`{subtask_id}` is a plain row id, not an `#N`.** The ticket segment of that URL _is_ an external id, so one path carries two kinds of id that look alike. Take the subtask's `id` from the response; never assume it reads like a ticket reference.
+
+**A subtask is not a small ticket.** It has no state machine, no points, no labels, no comments and no dependencies. Reach for one when the steps only make sense together and none is separately deliverable; file a second ticket otherwise.
+
+⚠️ **A mixed-actor checklist stays in the description.** Its ordering and its `**[Actor]**` tags are the contract there (see [Description conventions](#description-conventions)), and subtasks carry neither. The two are different tools, not two ways to do one thing.
+
 ## Dependency Handling Protocol
 
 When a ticket has `blocked: true` or `active_dependencies_count > 0`, fetch `GET .../dependencies` and evaluate each blocker:
@@ -656,6 +697,8 @@ When a ticket has `blocked: true` or `active_dependencies_count > 0`, fetch `GET
 | `started` + unassigned                | Pick up if small (≤2pt, same project), otherwise skip + flag |
 | `prioritized` / `unprioritized`       | **Skip** — prerequisite hasn't started, flag to stakeholder  |
 | `External`                            | Check description; resolve if met, otherwise skip + ask      |
+
+**A date on the blocker answers _when_, and the table above only answers _whether_.** Read `earliest_blocker_due_on` / `earliest_blocker_due_kind` off the ticket before deciding — a `wait_until` still in the future is a hard stop whatever the blocker's own state says, while an `expected_by` is a forecast you may work alongside. The three kinds are in [Blocker dates](#blocker-dates) below.
 
 In batch work: skip blocked tickets (don't transition to `started`), post a comment, continue in position order. Respect dependency order over position order (topological sort).
 
@@ -678,6 +721,41 @@ jus api DELETE /workspaces/{ws}/dependencies/{dep_id}
 ```
 
 Constraints: valid `blocker_type` = `Ticket` / `Project` / `External`; valid `blocked_type` = `Ticket` / `Project`; External blockers require a `description` (no `blocker_id` to point at); all entities must belong to the same workspace.
+
+**Both sides can be a project**, and the same endpoints hang off `projects/{id}` — so `Project` → `Ticket`, `Ticket` → `Project` and `Project` → `Project` are all expressible. A whole project waiting on one ticket is a `Project` blocked by a `Ticket`, not an External blocker describing it in prose.
+
+**Recording it from the blocker's side.** `POST /tickets/{id}/dependencies` reads as "this ticket is blocked by …". Add `"direction":"blocks"` and the ticket you posted to becomes the **blocker**, with `blocked_type` / `blocked_id` naming what it holds up — the natural shape when you have just finished something and know what it unblocks:
+
+```sh
+jus api POST /workspaces/{ws}/tickets/809/dependencies \
+  '{"dependency":{"direction":"blocks","blocked_type":"Ticket","blocked_id":874}}'
+```
+
+### Blocker dates
+
+A blocker can carry a date, and the date carries a **kind**, because the same calendar day means three different things and only the kind distinguishes them.
+
+| `due_kind`    | Reads as        | What it means when you are deciding whether to pick the ticket up |
+| ------------- | --------------- | ----------------------------------------------------------------- |
+| `wait_until`  | "Blocked until" | Do not start before this date. A hard stop                        |
+| `review_on`   | "Review on"     | Revisit and decide on this date. Not a stop                       |
+| `expected_by` | "Expected by"   | When the blocker is forecast to clear. Informational              |
+
+`due_on` (`YYYY-MM-DD`) and `due_kind` can be set on create, or afterwards:
+
+```sh
+jus api POST /workspaces/{ws}/tickets/100/dependencies \
+  '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":100,"description":"Vendor countersignature","due_on":"2026-11-30","due_kind":"expected_by"}}'
+
+jus api PATCH /workspaces/{ws}/dependencies/{dep_id} '{"dependency":{"due_on":"2026-11-30","due_kind":"wait_until"}}'
+jus api PATCH /workspaces/{ws}/dependencies/{dep_id} '{"dependency":{"due_on":null,"due_kind":null}}'   # clear both
+```
+
+⚠️ **Neither half works alone.** A date with no kind cannot be worded and a kind with no date says nothing, so each without the other is a `422`. Both absent is fine and is the common case. Clearing them means sending both as `null`.
+
+⚠️ **`due_on` and `due_kind` are the ONLY editable fields on a dependency.** The update endpoint permits nothing else, so a `blocker_id` in the body is dropped rather than repointing the row — and it answers `200`, having changed only the date. **Repointing a blocker is a delete plus a create**, because a different blocker is a different dependency.
+
+**Reading a date back.** Every ticket and project payload carries the soonest one as a scalar pair, `earliest_blocker_due_on` / `earliest_blocker_due_kind`, alongside the per-blocker `due_on` / `due_kind` inside `active_dependencies_summary`. Read the pair to decide; read the summary to say which blocker it was.
 
 ### Creating dependencies
 

@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.9] — 2026-08-26
+
+### Changed
+
+- Name the subtask assignee's membership constraint (#2691)
+- Document blocker dates, subtasks, references and the CLI's own behaviour (#2691)
+
 ## [1.4.8] — 2026-08-25
 
 ### Changed
