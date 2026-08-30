@@ -7,7 +7,9 @@ license: MIT
 
 # Ticket Workflow — Juscribe Lifecycle SOP
 
-> Read this when working any ticket. This is the **single load-bearing skill** for Juscribe work: it defines the full lifecycle (session start → pickup → investigate → label → code → commit → self-review → finish → deliver), the batch-work rules, the dependency-blocker protocol, **and** the operational reference an agent needs along the way — estimation, ticket types, labels, metadata, the testing gates, and the `jus` CLI / API. The companion [`hard-rules`](#related-skills) skill carries the non-negotiable must/must-not; on harnesses that run the jus enforcement hooks (Claude Code today — Codex/Kimi adapters tracked under #1818) the most painful of those are enforced deterministically, and everywhere else they are prompt-level only.
+> **This skill and `.jus/SOP.md` overlap deliberately.** That file is the standalone SOP, appended to your AI context by `jus init` so a project with no plugin still has one. This skill covers the same lifecycle in more depth and is kept more current — where the two differ, this one wins.
+>
+> Read this when working any ticket. This is the **single load-bearing skill** for Juscribe work: it defines the full lifecycle (session start → pickup → investigate → label → code → commit → self-review → finish → deliver), the batch-work rules, the dependency-blocker protocol, **and** the operational reference an agent needs along the way — estimation, ticket types, labels, metadata, the testing gates, and the `jus` CLI / API. The companion [`hard-rules`](#related-skills) skill carries the non-negotiable must/must-not; on harnesses that run the jus enforcement hooks (Claude Code today, with Codex and Kimi adapters) the most painful of those are enforced deterministically, and everywhere else they are prompt-level only.
 
 The lifecycle, in one line:
 
@@ -115,7 +117,7 @@ After starting, investigate the codebase. Then apply 1–3 labels before writing
 
 ### Investigation guidelines
 
-- **Limit codebase exploration to 2–3 direct file reads** for frontend UI tickets. Don't deploy deep exploration agents for straightforward features.
+- **Match the exploration to the ticket.** A small, well-understood change wants a couple of direct file reads, not a fan-out of exploration agents. Calibrate what "small" means to your own codebase — any figure quoted here would be someone else's.
 - **Skip deep architecture analysis for familiar domains** — for routine UI or styling work, read the target files + 1–2 neighbors. Don't trace the full state-management chain unless the fix requires it.
 - **Time-box investigation to ~3 minutes** for tickets ≤ 2 points. If you're still reading code after 3 files, start implementing and adjust as you go.
 - **Document what you learn in code comments** — when you decode an animation flow, state pattern, or WebSocket dance, leave explanatory comments in the source. Focus on "why" and "how the pieces connect" rather than obvious "what".
@@ -178,12 +180,12 @@ What does **not** vary, whatever the policy says: a change ships with tests, a b
 
 #### What to test, where
 
-| Layer                | Coverage target                                                           |
-| -------------------- | ------------------------------------------------------------------------- |
-| HTTP endpoints       | Happy path + validation errors + **authorization**                        |
-| Domain / data models | Validations, scopes, callbacks, business-logic methods                    |
-| Client-side logic    | Hooks, store actions, utility functions, component behaviour              |
-| Concurrent code      | Business logic, exercised under the race detector if the language has one |
+| Layer | Coverage target |
+| --- | --- |
+| HTTP endpoints | Happy path + validation errors + **authorization** |
+| Domain / data models | Validations, scopes, callbacks, business-logic methods |
+| Client-side logic | Hooks, store actions, utility functions, component behaviour |
+| Concurrent code | Business logic, exercised under the race detector if the language has one |
 
 **Put each test where the project already puts that kind of test** — mirror the neighbours rather than inventing a location. If a layer has no existing home, ask; a test in the wrong tree often does not run at all, which looks identical to passing.
 
@@ -191,7 +193,8 @@ What does **not** vary, whatever the policy says: a change ships with tests, a b
 
 - **Every ticket must have a description and effort estimate.** A title alone is not sufficient.
 - **Stakeholder text verbatim; agent text kept current.** Fetch the ticket BEFORE patching. A stakeholder's description is preserved word-for-word — prepend it plus a `\n\n---\n\n` separator before your additions; their one-sentence request is the source of truth. Your own prior additions are living documentation: when facts change, edit them in place rather than appending dated update layers — the description should always read as one coherent, current spec.
-- **Mixed-actor tickets: one timeline, both assigned.** When some steps are only the stakeholder's (vendor consoles, secrets, purchases, hardware) and others are the agent's, assign BOTH parties and write a single numbered checklist in execution order, each step prefixed with its actor — `- [ ] 2. **[Stakeholder]** …` — checkboxes kept current as steps complete. Never separate "Stakeholder does: / Agent does:" sections: they hide the interleaving, and the first unchecked box must show whose move it is. When the next unchecked step is the stakeholder's, apply the External-blocker protocol (leave `started`, comment naming the awaited step, add the dependency). Full rule + example: [`hard-rules`](#related-skills) → Mixed-Actor Tickets.
+- **Steps someone performs are SUBTASKS, not description checkboxes.** A runbook, a migration sequence, a mixed-actor procedure — those are subtasks on the ticket, because the board can render, count, order, assign and broadcast them and a `- [ ]` is only prose. Acceptance criteria are the exception and stay in the description: they are claims about done-ness, not things anyone performs. See [Subtasks](#subtasks--a-tickets-checklist).
+- **Mixed-actor tickets: one timeline, both assigned.** When some steps are only the stakeholder's (vendor consoles, secrets, purchases, hardware) and others are the agent's, assign BOTH parties on the ticket and give each subtask its own `assignee_id`, in execution order. Never separate "Stakeholder does: / Agent does:" sections: they hide the interleaving, and the first untoggled subtask must show whose move it is. Tick each the turn its step completes. When the next untoggled subtask is the stakeholder's, apply the External-blocker protocol (leave `started`, comment naming the awaited step, add the dependency). Full rule + example: [`hard-rules`](#related-skills) → Steps Are Subtasks.
 
 ### Comment conventions
 
@@ -202,7 +205,7 @@ Post comments as you work — at minimum a start comment (see [above](#post-the-
 - **Format for the board, not a terminal** — see [Formatting](#formatting-descriptions-and-comments) below. Descriptions and comments render as markdown; unformatted walls of text are hard for the stakeholder to scan.
 - **References happen by themselves; a prerequisite needs a DEPENDENCY.** These are two different features and this skill used to conflate them, telling you to "create formal References via the API". **There is no such API and nothing to call.** Juscribe parses `#N`/`pN` out of a ticket's **title and description** on save and stores the References itself — writing the reference _is_ the mechanism, and stale rows disappear when you edit the text.
   - ⚠️ **Comments are NOT scanned.** Only title and description feed the parser, so a `#N` written only in a comment creates no Reference. It still autolinks when rendered — that is the client drawing a link, not a stored relationship.
-  - **Read them off the payload — do not re-derive them from the text.** Every ticket and project comes back with both directions already resolved: `references` (what this item points at) and `referenced_by` (what points at it). Each entry is `{type, id, title, ticket_type, color}`, with `id` the `#N` / `pN` you would write. Regexing the description instead is the bug this replaced: it renders a bare `#1705` for anything the reader has not already loaded, and it cannot see `referenced_by` at all. A target that has since been deleted comes back with a `null` id rather than vanishing, so check before you follow one.
+  - **Read them off the payload — do not re-derive them from the text.** Every ticket and project comes back with both directions already resolved: `references` (what this item points at) and `referenced_by` (what points at it). Each entry is `{type, id, title, ticket_type, color}`, with `id` the `#N` / `pN` you would write. Regexing the description instead is the bug this replaced: it renders a bare `#123` for anything the reader has not already loaded, and it cannot see `referenced_by` at all. A target that has since been deleted comes back with a `null` id rather than vanishing, so check before you follow one.
   - **When a ticket genuinely gates another** ("requires #752 complete"), the mechanism that makes it real on the board — `blocked: true`, a row in `active_dependencies_summary` — is a dependency:
     ```sh
     jus api POST /workspaces/{ws}/tickets/{blocked}/dependencies '{"dependency":{"blocker_type":"Ticket","blocker_id":{blocker},"blocked_type":"Ticket","blocked_id":{blocked}}}'
@@ -228,7 +231,7 @@ Ticket descriptions and comments render as **markdown on the board**. Write them
 - **Bold section labels** open each part of the story: `**Root cause:**`, `**Plan:**`, `**What shipped:**`, `**To verify:**`, `**Acceptance criteria:**`. The stakeholder should locate any section at a glance.
 - **Bullets and numbered lists** over paragraph runs — one idea per bullet; numbered steps for anything the stakeholder will follow in order (verification steps especially).
 - **Fenced code blocks** for every command, path list, or output the stakeholder might copy (`sh`-fenced for commands); **inline backticks** for file paths, method names, flags, and states in prose.
-- **`#N` / `pN` references** wherever you mention tickets or projects — they autolink (see above).
+- **`#N` / `pN` references** wherever you mention tickets or projects — they autolink (see above). ⚠️ **`#N` is RESERVED for ticket ids. Never write a bare `#` in front of any other number** — a workspace id, a comment id, a row id, a port, a count. A ticket's `title` and `description` are **parsed**, and a `#N` there creates a real reference row pointing at whatever ticket carries that id, so the ticket ends up formally linked to unrelated work and they show it back. Write `workspace 12`, `comment 6079`, `port 5432`. Comments are not parsed, but they still autolink in the UI and read as ticket refs.
 - **Bold the verdict, not everything** — emphasize the load-bearing words (`**no mount**`, `does **not** retry`), not entire sentences. Over-bolding reads as noise.
 
 A start comment shaped this way:
@@ -246,6 +249,24 @@ reachability check the dispatch button uses.
 **Tests:** failing job specs first (no station → no dispatch; station
 registered elsewhere → no dispatch; reachable → dispatch as before).
 ```
+
+⚠️ **A fence inside ANY list item must sit at the list's CONTENT column** — two spaces under a `- ` marker, not lined up under the text. Indent it further and CommonMark reads it as a lazy paragraph continuation, because an indented code block cannot interrupt a paragraph; inline parsing then treats the fence as a triple-backtick **code span**, collapses the newline, and the language tag becomes content. A step meant to read as a copyable command renders as `sh my-command` instead, with the `sh` glued to the front.
+
+````text
+WRONG — 6 spaces. Renders as one code span: `sh my-command --flag`
+- [ ] 2. Run the thing:
+      ```sh
+      my-command --flag
+      ```
+
+RIGHT — 2 spaces. Renders as a code block.
+- [ ] 2. Run the thing:
+  ```sh
+  my-command --flag
+  ```
+````
+
+**The source looks correct either way**, which is why this needs stating rather than trusting a re-read. Check the rendered output, not the markdown.
 
 And a delivery comment: `**Commit:**` line, a short `**What shipped:**` block, then a numbered `**To verify:**` list — see [Post finished comment](#post-finished-comment-before-transitioning). The same conventions apply to description flesh-outs (root cause, acceptance criteria) and dependency/blocker comments.
 
@@ -306,16 +327,18 @@ Most projects wrap this in a single command; find it rather than assembling one.
 
 **Coverage strategy for stubborn lines** — analyze case by case: a **reachable** line means write the test that exercises it (don't skip "edge cases" or "error branches" — those are the most likely to break in production); **unreachable / dead code** means refactor the source to eliminate it rather than gaming coverage with `:nocov:` / `/* istanbul ignore */` markers. Do all uncovered lines in one pass; don't accumulate coverage debt across commits.
 
-### Mobile pre-delivery checklist
+### A second client surface needs its own pre-delivery check
 
-**Code + passing tests is NOT sufficient for mobile work.** Multiple mobile tickets (#1526, #1535) shipped "delivered" but completely broken because these checks were skipped. **Hard gate.** Before finishing any mobile ticket, run through `.jus/docs/mobile.md` → "Mobile Pre-Delivery Checklist". The four critical checks:
+**Where a project ships more than one client — a mobile app, a CLI, a public API, an embedded widget — code plus passing tests is NOT sufficient.** Work verified entirely against the primary client can be delivered completely broken on the second one, because the two do not share a surface. Treat this as a hard gate whenever a ticket touches the second client.
 
-1. **Mobile API namespace exposes every route action your feature uses** — the mobile API is a separate namespace (`/api/mobile/v1/`) from the web API (`/api/v1/`). A route that exists on web does not automatically exist on mobile.
-2. **Sparse fieldset constants include every field your UI reads** — mobile responses are aggressively sparse-fielded; missing fields silently return `undefined` at runtime.
-3. **`KeyboardAvoidingView` wraps any `TextInput` in modals** — keyboards cover inputs without it.
-4. **Request specs under `spec/requests/api/mobile/v1/`** — not just web specs.
+The four checks, in the order they bite:
 
-Always state in the delivery comment whether the mobile change requires a native rebuild or is JS-only.
+1. **The client's own API namespace exposes every action the feature calls.** A second client usually has its own namespace, and a route existing on the primary surface does **not** mean it exists on the other. This is the one that produces a 404 at runtime with a green test suite.
+2. **The serializer or sparse-fieldset constants include every field the UI reads.** Second clients are often more aggressively field-limited; a missing field returns **undefined at runtime rather than erroring**, so it looks like a rendering bug and gets debugged in the wrong layer.
+3. **The platform's own interaction constraints are exercised, not inherited by assumption.** Anything the primary client gets for free from its runtime — input focus, keyboard occlusion, back-navigation, offline state — has to be handled explicitly on the other.
+4. **Request specs against the client's own namespace**, not only the primary one's.
+
+**Find the project's own version of this list** — where a second client exists, the specifics (namespace paths, the field constants, the platform affordance that bites) belong in that project's own docs. This is the obligation; the project supplies the checks.
 
 ## Phase 6: Finish & Deliver
 
@@ -390,7 +413,7 @@ Guidelines:
 ## Batch Work & Special Workflows
 
 - **Respect ticket ordering** — work tickets in their assigned `position` order. Do not reorder or cherry-pick.
-- **"backlog please" = pick up ALL backlog tickets** — work every ticket in the backlog, in position order. Don't ask for confirmation.
+- **A stakeholder may have a shorthand for "work the whole backlog"** — if yours does, it means every ticket in the backlog, in position order, without asking for confirmation between them. Record the phrase in the project's own instructions; it is a convention between you and them, not a Juscribe feature.
 - **Every ticket gets the FULL lifecycle, even in batch mode.** Each gets: start → investigate → code → commit → self-review → **delivery comment with verification steps** → finish → deliver. Do not skip the delivery comment to save time. Do not combine delivery comments across tickets — the stakeholder reviews tickets individually.
 - **Do not force-deliver tickets that aren't fully done.** If a batch ticket has questions, blockers, or incomplete work, leave it in `started` with a comment and move to the next. Delivering partial work to "clear the batch" is strictly prohibited.
 - **Research ticket workflow** — start the ticket, do the research (web searches, codebase analysis, reading docs), capture findings in the ticket description, then finish and deliver. No code commits needed — the deliverable is the description content itself.
@@ -399,14 +422,14 @@ Guidelines:
 
 Effort is captured in `points`. **Valid values: `0`, `1`, `2`, `3`, `5`, `8`** — no other values, no half-points.
 
-| Points | Calibration                                                                       |
-| ------ | --------------------------------------------------------------------------------- |
-| `0`    | Trivial config change, typo fix — no real engineering effort                      |
-| `1`    | Single-file change, simple bug fix                                                |
-| `2`    | Small feature or multi-file change with clear scope                               |
-| `3`    | Medium feature — new endpoint + frontend, multiple specs                          |
-| `5`    | Large feature spanning backend + frontend + tests, or a complex refactor          |
-| `8`    | Epic-scale work — usually a sign the ticket should be broken into smaller tickets |
+| Points | Calibration |
+| --- | --- |
+| `0` | Trivial config change, typo fix — no real engineering effort |
+| `1` | Single-file change, simple bug fix |
+| `2` | Small feature or multi-file change with clear scope |
+| `3` | Medium feature — new endpoint + frontend, multiple specs |
+| `5` | Large feature spanning backend + frontend + tests, or a complex refactor |
+| `8` | Epic-scale work — usually a sign the ticket should be broken into smaller tickets |
 
 - **Every ticket gets points, including chores and bugs.** Chores are NOT automatically `0`; a chore that requires real work gets real points (chores affect velocity too). `0` is reserved for genuinely trivial / no-effort items.
 - **Research tickets are typically `1`–`2` points** — the deliverable is description content, not code.
@@ -421,12 +444,12 @@ jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"points":2}}'
 
 The `ticket_type` field controls which icon renders on the board and signals intent to the stakeholder.
 
-| Type     | API value  | Icon | Meaning                                                                                     |
-| -------- | ---------- | ---- | ------------------------------------------------------------------------------------------- |
-| Feature  | `feature`  | ★    | New functionality or enhancement to existing behavior                                       |
-| Bug      | `bug`      | ●    | Something that worked before is now broken                                                  |
-| Chore    | `chore`    | ⚙    | Maintenance, refactoring, config, CI — no user-visible behavior change                      |
-| Research | `research` | ⚗    | Investigation, analysis, answering questions — deliverable is description content, not code |
+| Type | API value | Icon | Meaning |
+| --- | --- | --- | --- |
+| Feature | `feature` | ★ | New functionality or enhancement to existing behavior |
+| Bug | `bug` | ● | Something that worked before is now broken |
+| Chore | `chore` | ⚙ | Maintenance, refactoring, config, CI — no user-visible behavior change |
+| Research | `research` | ⚗ | Investigation, analysis, answering questions — deliverable is description content, not code |
 
 ### Choosing the right type
 
@@ -444,29 +467,29 @@ Common miscalibrations to avoid: "document how X works" → `research`, not `cho
 
 Markers render as horizontal bars on the board, not cards. They are timeline-planning artifacts and are excluded from API responses by default — pass `include_markers=true` to include them when listing.
 
-| Type      | API value   | Icon | Use for                                |
-| --------- | ----------- | ---- | -------------------------------------- |
-| Milestone | `milestone` | ◆    | Significant project checkpoint or goal |
-| Release   | `release`   | ⚑    | Version cut or deployment boundary     |
-| Deadline  | `deadline`  | ⚑    | Hard date constraint (renders red)     |
+| Type | API value | Icon | Use for |
+| --- | --- | --- | --- |
+| Milestone | `milestone` | ◆ | Significant project checkpoint or goal |
+| Release | `release` | ⚑ | Version cut or deployment boundary |
+| Deadline | `deadline` | ⚑ | Hard date constraint (renders red) |
 
 **Marker titles name the thing itself** — the vehicle + payload for a release, the checkpoint for a milestone. No "Pending …" or type-word prefixes ("Release:", "Milestone:") and no leading icon characters: the board renders every marker with its type icon (and a type-colored bar), so a prefixed or icon-led title states the type twice.
 
 ## Ticket Metadata
 
-| Field                                        | Default / convention                                                                                                                                                                                                                                                                                                                                                                            |
-| -------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `requester_id`                               | **Auto-set** to `current_user` by the API — not settable. The agent that creates the ticket is the requester.                                                                                                                                                                                                                                                                                   |
-| `stakeholder_id`                             | **Set to the workspace owner's user ID** for all tickets. In workspace 1 that's user `1` (Caleon).                                                                                                                                                                                                                                                                                              |
-| `assignee_ids`                               | Set to your agent user ID (`2` for `caleon-claude`) when you are doing the coding. **Mixed-actor tickets (some steps only the stakeholder can perform): assign BOTH** — and write the actor-tagged chronological checklist (see [Description conventions](#description-conventions)). **Omit or leave empty** when creating tickets you won't immediately work on — let the stakeholder assign. |
-| `description`                                | **Append-only.** Fetch first; if non-null, prepend existing content + `\n\n---\n\n` before your additions. See [`hard-rules`](#related-skills).                                                                                                                                                                                                                                                 |
-| `points`                                     | Required for features to leave icebox. Valid values: `0, 1, 2, 3, 5, 8`. See [Estimation](#estimation).                                                                                                                                                                                                                                                                                         |
-| `ticket_type`                                | One of `feature`, `bug`, `chore`, `research` (or marker types). See [Ticket Types](#ticket-types).                                                                                                                                                                                                                                                                                              |
-| `label_ids`                                  | Array of integers, 1–3 entries. See [Label conventions](#label-conventions).                                                                                                                                                                                                                                                                                                                    |
-| `project_id`                                 | Scope a ticket under a project when one applies — improves board organization and unlocks project-level rollups.                                                                                                                                                                                                                                                                                |
-| `panel` / `state` / `position` / `insert_at` | The placement, honoured on create since #2772. See [Placing a ticket on create](#placing-a-ticket-on-create); `bulk_create` takes only the first two.                                                                                                                                                                                                                                           |
-| `comments_count`                             | Counter-cached integer. Check before fetching comments.                                                                                                                                                                                                                                                                                                                                         |
-| `blocked` / `active_dependencies_count`      | If `true` / `> 0`, fetch dependencies before deciding to start.                                                                                                                                                                                                                                                                                                                                 |
+| Field | Default / convention |
+| --- | --- |
+| `requester_id` | **Auto-set** to `current_user` by the API — not settable. The agent that creates the ticket is the requester. |
+| `stakeholder_id` | **Set to the workspace owner's user ID** for all tickets. Look it up once per workspace rather than hardcoding it. |
+| `assignee_ids` | Set to your agent user ID when you are doing the coding. **Mixed-actor tickets (some steps only the stakeholder can perform): assign BOTH** — and give each subtask its own `assignee_id` (see [Subtasks](#subtasks--a-tickets-checklist)). **Omit or leave empty** when creating tickets you won't immediately work on — let the stakeholder assign. |
+| `description` | **Append-only.** Fetch first; if non-null, prepend existing content + `\n\n---\n\n` before your additions. See [`hard-rules`](#related-skills). |
+| `points` | Required for features to leave icebox. Valid values: `0, 1, 2, 3, 5, 8`. See [Estimation](#estimation). |
+| `ticket_type` | One of `feature`, `bug`, `chore`, `research` (or marker types). See [Ticket Types](#ticket-types). |
+| `label_ids` | Array of integers, 1–3 entries. See [Label conventions](#label-conventions). |
+| `project_id` | Scope a ticket under a project when one applies — improves board organization and unlocks project-level rollups. |
+| `panel` / `state` / `position` / `insert_at` | The placement, honoured on create since 2026-08. See [Placing a ticket on create](#placing-a-ticket-on-create); `bulk_create` takes only the first two. |
+| `comments_count` | Counter-cached integer. Check before fetching comments. |
+| `blocked` / `active_dependencies_count` | If `true` / `> 0`, fetch dependencies before deciding to start. |
 
 ### Creating a ticket with full metadata
 
@@ -533,21 +556,22 @@ Worth knowing because each is invisible in the response, and one of them can sen
 Five behaviours that present as a hang, a no-op, a bare 500, or a silent success rather than an error. Each is listed by the **symptom you will actually be looking at**.
 
 - **The command hangs and never returns** → you ran `jus api PATCH <path>` with **no body argument**. It does not error and does not default to `{}` — it waits on stdin forever. Body-less endpoints still need an explicit empty object: `jus api PATCH /workspaces/{ws}/dependencies/{id}/resolve '{}'`.
-- **A newly created ticket is in the wrong panel, or at the wrong end of it** → you named no placement, and the default is the **bottom of the icebox** — not the panel you were looking at. Create takes `panel`, `state`, `position` and `insert_at` and honours all four (#2772); see [Placing a ticket on create](#placing-a-ticket-on-create). ⚠️ The recipe this bullet used to give — create, then `/reorder` — is a wasted call, and the claim it rested on (`position` silently ignored) stopped being true.
+- **A newly created ticket is in the wrong panel, or at the wrong end of it** → you named no placement, and the default is the **bottom of the icebox** — not the panel you were looking at. Create takes `panel`, `state`, `position` and `insert_at` and honours all four; see [Placing a ticket on create](#placing-a-ticket-on-create). ⚠️ The recipe this bullet used to give — create, then `/reorder` — is a wasted call, and the claim it rested on (`position` silently ignored) stopped being true.
+- **A transition is rejected as invalid** → `/transition` walks the state machine **one state at a time**. `unprioritized` straight to `started` is a 422, not a shortcut; go through `prioritized`. The error names the valid next states, so read it rather than guessing again.
 - **A transition returns a body of nulls and nothing changes** → you tried to move a ticket **backwards**, e.g. `prioritized` → `unprioritized` when parking work back to the icebox. `/transition` only walks the state machine forwards. Use a direct field update instead: `PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"state":"unprioritized"}}'`. Forward moves keep using `/transition`.
 - **A create returns a bare `HTTP 500` with `"Internal Server Error"` and nothing else** → check the **case** of an enum value. `ticket_type` is lowercase (`feature`, `bug`, `chore`, `milestone`, `release`, `deadline`, `research`); passing `"Release"` raises `ArgumentError` inside the model and surfaces as a 500 that names no field. Any enum-backed attribute fails the same way, so a 500 on an otherwise well-formed create is a casing bug until proven otherwise — not a server fault to retry.
 - **You set `assignee_ids` / `label_ids` / `stakeholder_id` and the response shows `null`** → the write **succeeded**. `*_ids` fields do not echo back; the response carries the expanded `assignees` / `labels` / `stakeholder` objects instead. Verify against those, not the `*_ids` key, or you will retry a write that already landed.
 
 ### Placing a ticket on create
 
-**`POST /tickets` takes the placement with the create — which panel, and where inside it.** One call, not two. Before #2772 `position` and `panel` were permitted and then discarded, so a `201` came back having ignored both; that is no longer the behaviour and the recipe built around it is a wasted call.
+**`POST /tickets` takes the placement with the create — which panel, and where inside it.** One call, not two. Before 2026-08 `position` and `panel` were permitted and then discarded, so a `201` came back having ignored both; that is no longer the behaviour and the recipe built around it is a wasted call.
 
-| Key         | Accepts                                         | Effect                                                                                                                          |
-| ----------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `panel`     | `icebox` / `backlog` / `current` / `done`       | The list to arrive in. The panel's **entry state** follows — `unprioritized`, `prioritized`, `started`, `accepted` respectively |
-| `state`     | any state name                                  | Sets the panel too, since each state belongs to exactly one                                                                     |
-| `position`  | a number                                        | The exact position                                                                                                              |
-| `insert_at` | `top` / `bottom` / `before:<id>` / `after:<id>` | The position computed server-side, relative to the panel or to a neighbouring ticket                                            |
+| Key | Accepts | Effect |
+| --- | --- | --- |
+| `panel` | `icebox` / `backlog` / `current` / `done` | The list to arrive in. The panel's **entry state** follows — `unprioritized`, `prioritized`, `started`, `accepted` respectively |
+| `state` | any state name | Sets the panel too, since each state belongs to exactly one |
+| `position` | a number | The exact position |
+| `insert_at` | `top` / `bottom` / `before:<id>` / `after:<id>` | The position computed server-side, relative to the panel or to a neighbouring ticket |
 
 ```sh
 jus api POST /workspaces/{ws}/tickets '{"ticket":{"title":"…","panel":"backlog","insert_at":"top"}}'
@@ -578,13 +602,13 @@ jus api PATCH /workspaces/{ws}/tickets/{id}/reorder '{"position": 4.5}'
 
 Five collection endpoints act on many tickets in one request, each taking a `tickets` array. Reach for them before writing a `PATCH` loop — one measured sweep relabelled 148 tickets in 6 requests instead of 148.
 
-| Endpoint                               | Body                                                                       | Returns                                             |
-| -------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------- |
-| `POST …/tickets/bulk_create`           | full ticket attributes per item                                            | `results` — one entry per item                      |
-| `PATCH …/tickets/bulk_update`          | `id` plus attributes: `label_ids`, `assignee_ids`, points, `panel`/`state` | `results` — one entry per item                      |
-| `PATCH …/tickets/bulk_transition`      | `id` and `state`, validated against the state machine per item             | `results` — one entry per item                      |
-| `PATCH …/tickets/bulk_reorder`         | `id` and `position` per item                                               | `results` of `{id, position}` — **one transaction** |
-| `PATCH …/tickets/bulk_sidebar_reorder` | `id` and `sidebar_position` / `bookmarks_position`                         | `204`, no body                                      |
+| Endpoint | Body | Returns |
+| --- | --- | --- |
+| `POST …/tickets/bulk_create` | full ticket attributes per item | `results` — one entry per item |
+| `PATCH …/tickets/bulk_update` | `id` plus attributes: `label_ids`, `assignee_ids`, points, `panel`/`state` | `results` — one entry per item |
+| `PATCH …/tickets/bulk_transition` | `id` and `state`, validated against the state machine per item | `results` — one entry per item |
+| `PATCH …/tickets/bulk_reorder` | `id` and `position` per item | `results` of `{id, position}` — **one transaction** |
+| `PATCH …/tickets/bulk_sidebar_reorder` | `id` and `sidebar_position` / `bookmarks_position` | `204`, no body |
 
 ```sh
 jus api PATCH /workspaces/{ws}/tickets/bulk_update '{"tickets":[{"id":"101","points":2},{"id":"102","points":3}]}'
@@ -613,17 +637,18 @@ jus api PATCH /workspaces/{ws}/tickets/bulk_reorder '{"tickets":[{"id":"101","po
 
 - **Agent state (preferred for session start)**: `agent_state?panels=current,backlog` returns ~2–4 KB markdown; `summary?panels=...` is the structured-JSON variant. Cache TTL 5 minutes; invalidated on ticket/project changes. Never start a session by listing all tickets.
 - **Sparse fieldsets**: `?fields=id,title,state,points` — pick exactly what you need (`id` always included).
+- ⚠️ **`labels` is an array of STRINGS; `label_objects` is the array of objects.** It is the only association on a ticket that is not objects, so `.ticket.labels[].name` fails with `Cannot index string with string "name"` — and a fetch passing `include_label_objects=false` leaves the string array as the only one there.
 - **Opt-out params**: `include_markers` (default `false`), `include_label_objects` (default `true`; `false` omits the array — string `labels` always present), `include_attachments` (default `false`), `include_comments` (default `false`), `include_subtasks` (default `false`), `comments_limit` (caps to N most recent).
 - **`comments_count`**: every ticket response carries it — check before fetching comments; if `0`, skip `include_comments` entirely.
 
-| Task                          | Approach                                                                                  |
-| ----------------------------- | ----------------------------------------------------------------------------------------- |
-| Session start                 | `agent_state?panels=current,backlog`                                                      |
-| Fetch a ticket to work on     | `tickets/{id}?include_comments=true&include_attachments=true&include_label_objects=false` |
-| Bulk state check across panel | `tickets?fields=id,title,state&panel=current`                                             |
-| Everything with a label       | `tickets?label=security&fields=id,title,state` — one request, not a paging loop           |
-| Project ticket list           | `projects/{id}/tickets?fields=id,title,state,points`                                      |
-| Create / update / transition  | Normal endpoints — write paths return full data                                           |
+| Task | Approach |
+| --- | --- |
+| Session start | `agent_state?panels=current,backlog` |
+| Fetch a ticket to work on | `tickets/{id}?include_comments=true&include_attachments=true&include_label_objects=false` |
+| Bulk state check across panel | `tickets?fields=id,title,state&panel=current` |
+| Everything with a label | `tickets?label=security&fields=id,title,state` — one request, not a paging loop |
+| Project ticket list | `projects/{id}/tickets?fields=id,title,state,points` |
+| Create / update / transition | Normal endpoints — write paths return full data |
 
 ### Index filter params
 
@@ -631,22 +656,22 @@ The ticket index takes a substantial filter set, and **nothing rejects a name it
 
 ⚠️ **This is why "the tickets API has no text search" circulates as lore.** `query=` and `search=` are silently ignored because neither is the param name. **`q` works** — a case-insensitive substring match on title _or_ description.
 
-| Param                                             | Notes                                                                                                                                    |
-| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `q`                                               | Substring match (`ILIKE`) on title or description                                                                                        |
-| `label`                                           | Matches either label representation — see below                                                                                          |
-| `panel`                                           | `icebox` / `backlog` / `current` / `done`                                                                                                |
-| `state`                                           | Exact state name                                                                                                                         |
-| `ticket_type`                                     | Naming a marker type overrides the `include_markers` default                                                                             |
-| `project_id`                                      | The project's **external** ID, not its database ID. ⚠️ An unknown one does **not** return `[]` — it matches every ticket with NO project |
-| `iteration_id`                                    | Iteration external ID, or `none` for unassigned. ⚠️ An unknown one **404s** the whole request                                            |
-| `external_id`                                     | The `#N` you see on the board                                                                                                            |
-| `requester_id` / `stakeholder_id` / `assignee_id` | User ID                                                                                                                                  |
-| `team_id`                                         | Assignee, unassigned requester, or stakeholder is on the team                                                                            |
-| `points_gt` / `points_lt`                         | Strict, and exclusive of the bound. Non-numeric input reads as `0`                                                                       |
-| `created_after` / `_before`                       | Inclusive timestamps                                                                                                                     |
-| `updated_since`                                   | Strictly after — for polling what changed                                                                                                |
-| `page` / `per_page`                               | Default 50, max 200. The envelope key is `count`, **not** `total_count`                                                                  |
+| Param | Notes |
+| --- | --- |
+| `q` | Substring match (`ILIKE`) on title or description |
+| `label` | Matches either label representation — see below |
+| `panel` | `icebox` / `backlog` / `current` / `done` |
+| `state` | Exact state name |
+| `ticket_type` | Naming a marker type overrides the `include_markers` default |
+| `project_id` | The project's **external** ID, not its database ID. ⚠️ An unknown one does **not** return `[]` — it matches every ticket with NO project |
+| `iteration_id` | Iteration external ID, or `none` for unassigned. ⚠️ An unknown one **404s** the whole request |
+| `external_id` | The `#N` you see on the board |
+| `requester_id` / `stakeholder_id` / `assignee_id` | User ID |
+| `team_id` | Assignee, unassigned requester, or stakeholder is on the team |
+| `points_gt` / `points_lt` | Strict, and exclusive of the bound. Non-numeric input reads as `0` |
+| `created_after` / `_before` | Inclusive timestamps |
+| `updated_since` | Strictly after — for polling what changed |
+| `page` / `per_page` | Default 50, max 200. The envelope key is `count`, **not** `total_count` |
 
 Filters combine with `AND`, so one request usually replaces a paging loop:
 
@@ -689,20 +714,26 @@ Both paths broadcast the same `subtask_updated`, so the explicit form costs noth
 
 **A subtask is not a small ticket.** It has no state machine, no points, no labels, no comments and no dependencies. Reach for one when the steps only make sense together and none is separately deliverable; file a second ticket otherwise.
 
-⚠️ **A mixed-actor checklist stays in the description.** Its ordering and its `**[Actor]**` tags are the contract there (see [Description conventions](#description-conventions)), and subtasks carry neither. The two are different tools, not two ways to do one thing.
+⚠️ **STEPS SOMEONE PERFORMS BELONG HERE, NOT IN THE DESCRIPTION.** A runbook, a migration sequence, a mixed-actor procedure: the board can render, count, order, assign and broadcast a subtask, and the stakeholder can tick one off from their phone. A `- [ ]` line does none of that, and only an agent rewriting the whole description can ever change one — exactly backwards when the steps are the stakeholder's to run. The actor is the `assignee_id`, not an `**[Actor]**` tag in the text.
+
+⚠️ **THE COMMAND GOES IN THE `description`, NOT THE `title`.** The board truncates a subtask title, so one long enough to hold a real command is ellipsised and cannot be copied. Title: `N. ` plus a short imperative label. Description: the fenced command, then the commentary. **One bare command per fence**, copy-pastable as-is — no `#` comment on the command line, and never several steps sharing one fence, because copying a step then drags the commentary with it.
+
+⚠️ **The `N. ` stays in the title.** Neither surface renders an ordinal, so it is the only way anything else can point at a specific step.
+
+**What stays a description checkbox: acceptance criteria.** They are claims about whether the ticket is _done_, not things someone performs, and they are what the stakeholder re-reads at acceptance. If you cannot tell which you are writing, ask whether a person could be **assigned** it — a step has an actor, a criterion does not.
 
 ## Dependency Handling Protocol
 
 When a ticket has `blocked: true` or `active_dependencies_count > 0`, fetch `GET .../dependencies` and evaluate each blocker:
 
-| Blocker state                         | Action                                                       |
-| ------------------------------------- | ------------------------------------------------------------ |
-| `accepted` / `cancelled`              | Stale — resolve manually, comment, proceed                   |
-| `delivered` / `finished`              | Proceed (note in start comment)                              |
-| `started` + assigned to another agent | **Skip** — comment "Blocked by #N", move on                  |
-| `started` + unassigned                | Pick up if small (≤2pt, same project), otherwise skip + flag |
-| `prioritized` / `unprioritized`       | **Skip** — prerequisite hasn't started, flag to stakeholder  |
-| `External`                            | Check description; resolve if met, otherwise skip + ask      |
+| Blocker state | Action |
+| --- | --- |
+| `accepted` / `cancelled` | Stale — resolve manually, comment, proceed |
+| `delivered` / `finished` | Proceed (note in start comment) |
+| `started` + assigned to another agent | **Skip** — comment "Blocked by #N", move on |
+| `started` + unassigned | Pick up if small (≤2pt, same project), otherwise skip + flag |
+| `prioritized` / `unprioritized` | **Skip** — prerequisite hasn't started, flag to stakeholder |
+| `External` | Check description; resolve if met, otherwise skip + ask |
 
 **A date on the blocker answers _when_, and the table above only answers _whether_.** Read `earliest_blocker_due_on` / `earliest_blocker_due_kind` off the ticket before deciding — a `wait_until` still in the future is a hard stop whatever the blocker's own state says, while an `expected_by` is a forecast you may work alongside. The three kinds are in [Blocker dates](#blocker-dates) below.
 
@@ -741,11 +772,11 @@ jus api POST /workspaces/{ws}/tickets/809/dependencies \
 
 A blocker can carry a date, and the date carries a **kind**, because the same calendar day means three different things and only the kind distinguishes them.
 
-| `due_kind`    | Reads as        | What it means when you are deciding whether to pick the ticket up |
-| ------------- | --------------- | ----------------------------------------------------------------- |
-| `wait_until`  | "Blocked until" | Do not start before this date. A hard stop                        |
-| `review_on`   | "Review on"     | Revisit and decide on this date. Not a stop                       |
-| `expected_by` | "Expected by"   | When the blocker is forecast to clear. Informational              |
+| `due_kind` | Reads as | What it means when you are deciding whether to pick the ticket up |
+| --- | --- | --- |
+| `wait_until` | "Blocked until" | Do not start before this date. A hard stop |
+| `review_on` | "Review on" | Revisit and decide on this date. Not a stop |
+| `expected_by` | "Expected by" | When the blocker is forecast to clear. Informational |
 
 `due_on` (`YYYY-MM-DD`) and `due_kind` can be set on create, or afterwards:
 
@@ -812,12 +843,12 @@ jus api POST /workspaces/{ws}/tickets/{id}/convert '{}'
 
 What it does, in one transaction:
 
-|                                           |                                                                         |
-| ----------------------------------------- | ----------------------------------------------------------------------- |
-| Creates a project                         | carrying the ticket's **title, description, requester and stakeholder** |
-| Sets `source_ticket_id`                   | so the project records where it came from                               |
-| Transitions the ticket to **`converted`** | and clears its `project_id`                                             |
-| Records activities on both                | and broadcasts `project_created`                                        |
+|  |  |
+| --- | --- |
+| Creates a project | carrying the ticket's **title, description, requester and stakeholder** |
+| Sets `source_ticket_id` | so the project records where it came from |
+| Transitions the ticket to **`converted`** | and clears its `project_id` |
+| Records activities on both | and broadcasts `project_created` |
 
 It returns `{ticket, project}`, so the new project's id comes back in the same call.
 
@@ -858,4 +889,4 @@ jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"cancelled","re
 
 - `hard-rules` — the non-negotiable must/must-not that overrides everything here (commit immediately, no lint suppression, stakeholder-verbatim descriptions, never deliver incomplete work, no `git push`, document discoveries) and the map of which rules the enforcement hooks back deterministically on harnesses that run them. (Claude Code plugin installs show skill names prefixed with `jus:` — invoke the prefixed form there.)
 
-> **Note:** `ticket-workflow` is the single load-bearing SOP skill — it inlines the estimation, labeling, testing-gate, and `jus` API material that earlier lived in the separate `testing-gates`, `juscribe-api`, and `estimation-labels` skills (retired in #1856 because they never auto-invoked; their content was already resident here). For monumental, the deeper extracted reference also lives in `.jus/sop/` (`api-reference.md`, `workflows.md`, `commands.md`) and `.jus/docs/`.
+> **Note:** `ticket-workflow` is the single load-bearing SOP skill — it inlines the estimation, labeling, testing-gate, and `jus` API material that earlier lived in the separate `testing-gates`, `juscribe-api`, and `estimation-labels` skills (retired because they never auto-invoked; their content was already resident here). For monumental, the deeper extracted reference also lives in `.jus/sop/` (`api-reference.md`, `workflows.md`, `commands.md`) and `.jus/docs/`.

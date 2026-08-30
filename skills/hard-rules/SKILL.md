@@ -15,33 +15,38 @@ license: MIT
 
 Some of these rules are also enforced **deterministically** by the jus enforcement hooks (under `hooks/`) — **when your harness runs them**. Today that is Claude Code (plugin or project-committed install), **OpenAI Codex** (via the `hooks/codex/` adapter), and **Kimi Code** (via the `hooks/kimi-code/` adapter or the bundle's Kimi plugin manifest). **On a harness without the hooks installed — including Codex/Kimi before their adapters are set up, Cursor, and every other tool — every rule below is prompt-level only: nothing blocks you mechanically, which makes following this skill MORE important, not less.** Where they do run, the hooks are a backstop — they fire even if a model "forgot" the rule — but the skill remains the source of truth and the only layer that explains the _why_.
 
-| Rule                                                                                    | Skill (prompt) | Hook (where hooks run)                                                                                                                                                         |
-| --------------------------------------------------------------------------------------- | :------------: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Every piece of work has a ticket                                                        |       ✅       | —                                                                                                                                                                              |
-| Description and effort estimate required                                                |       ✅       | —                                                                                                                                                                              |
-| Transitions at the natural moment                                                       |       ✅       | —                                                                                                                                                                              |
-| Never transition to `accepted` / `rejected`                                             |       ✅       | —                                                                                                                                                                              |
-| **Commit immediately after code changes**                                               |       ✅       | `Stop` blocks if working tree is dirty                                                                                                                                         |
-| Never move on with a dirty working tree                                                 |       ✅       | `PostToolUse` nudge after N uncommitted edits                                                                                                                                  |
-| One commit per ticket, `[#N]` prefix                                                    |       ✅       | —                                                                                                                                                                              |
-| Never amend a delivered commit                                                          |       ✅       | —                                                                                                                                                                              |
-| **Never `git push --force` (any variant)**                                              |       ✅       | `PreToolUse Bash` — blocks the command                                                                                                                                         |
-| Never `git push` (stakeholder pushes manually)                                          |       ✅       | —                                                                                                                                                                              |
-| **Never use `--no-verify`**                                                             |       ✅       | `PreToolUse Bash` — blocks the command                                                                                                                                         |
-| **Never suppress linters inline** (any `disable` / `ignore` / `expect-error` directive) |       ✅       | `PreToolUse Edit/Write` — blocks the edit                                                                                                                                      |
-| Fix all lint warnings in modified files                                                 |       ✅       | —                                                                                                                                                                              |
-| **Lint changed files BEFORE committing**                                                |       ✅       | `PreToolUse Bash(git commit)` — blocks if no lint ran since last code edit                                                                                                     |
-| Run the tests covering the changed files before committing                              |       ✅       | Prompt-only. The commit hook runs linters and whatever tests the project wired into it — **it does not run a full suite**. Do not read a passing commit as a passing test run. |
-| Diff coverage meets the project's bar (100% by default)                                 |       ✅       | —                                                                                                                                                                              |
-| Follow existing standards and conventions                                               |       ✅       | —                                                                                                                                                                              |
-| Reuse existing styles, components, patterns                                             |       ✅       | —                                                                                                                                                                              |
-| **Never overwrite stakeholder description text (agent text stays current)**             |       ✅       | —                                                                                                                                                                              |
-| Never deliver work that defers/skips/deviates                                           |       ✅       | —                                                                                                                                                                              |
-| Re-read ticket before finishing                                                         |       ✅       | —                                                                                                                                                                              |
-| Every delivery comment includes verification steps + git                                |       ✅       | —                                                                                                                                                                              |
-| Add an External dependency when waiting on user input                                   |       ✅       | —                                                                                                                                                                              |
-| Mixed-actor tickets: assign both + one actor-tagged chronological step list             |       ✅       | —                                                                                                                                                                              |
-| Document discoveries immediately                                                        |       ✅       | —                                                                                                                                                                              |
+| Rule | Skill (prompt) | Hook (where hooks run) |
+| --- | :-: | --- |
+| Every piece of work has a ticket | ✅ | — |
+| Description and effort estimate required | ✅ | — |
+| Transitions at the natural moment | ✅ | — |
+| Never transition to `accepted` / `rejected` | ✅ | — |
+| **Commit immediately after code changes** | ✅ | `Stop` blocks if working tree is dirty |
+| Never move on with a dirty working tree | ✅ | `PostToolUse` nudge after N uncommitted edits |
+| One commit per ticket, `[#N]` prefix | ✅ | — |
+| Never amend a delivered commit | ✅ | — |
+| **Never `git push --force` (any variant)** | ✅ | `PreToolUse Bash` — blocks the command |
+| Never `git push` (stakeholder pushes manually) | ✅ | — |
+| **Never use `--no-verify`** | ✅ | `PreToolUse Bash` — blocks the command |
+| **Never suppress linters inline** (any `disable` / `ignore` / `expect-error` directive) | ✅ | `PreToolUse Edit/Write` — blocks the edit |
+| Fix all lint warnings in modified files | ✅ | — |
+| **Lint changed files BEFORE committing** | ✅ | `PreToolUse Bash(git commit)` — blocks if no lint ran since last code edit |
+| Run the tests covering the changed files before committing | ✅ | Prompt-only. The commit hook runs linters and whatever tests the project wired into it — **it does not run a full suite**. Do not read a passing commit as a passing test run. |
+| Diff coverage meets the project's bar (100% by default) | ✅ | — |
+| Follow existing standards and conventions | ✅ | — |
+| Reuse existing styles, components, patterns | ✅ | — |
+| **Never overwrite stakeholder description text (agent text stays current)** | ✅ | — |
+| Never deliver work that defers/skips/deviates | ✅ | — |
+| Re-read ticket before finishing | ✅ | — |
+| Every delivery comment includes verification steps + git | ✅ | — |
+| Add an External dependency when waiting on user input | ✅ | — |
+| Steps are subtasks, never description checkboxes; mixed-actor tickets assign both | ✅ | — |
+| Tick every checkbox and subtask before delivering — and never tick an unmet one | ✅ | — |
+| Never inline prose into a shell command; never hand over a wrapping command | ✅ | — |
+| Check the ticket's own claims and state what the approach assumes | ✅ | — |
+| New tickets to the bottom of the backlog unless urgent or deliberately placed | ✅ | — |
+| Blocked on a third party: split at the boundary, deliver your half | ✅ | — |
+| Document discoveries immediately | ✅ | — |
 
 ### What hooks can and can't do
 
@@ -108,7 +113,17 @@ jus api PATCH /workspaces/{ws}/tickets/{id} "{\"ticket\":{\"description\":$(jq -
 
 - **NEVER deliver work that defers, skips, or deviates from what the ticket prescribes.** If the ticket says to do X and you didn't do X (or did a partial version of X), do **NOT** mark the ticket finished/delivered. Delivering incomplete or deviated work forces a rejection cycle that wastes everyone's time. When in doubt, ask — don't deliver.
 - **Re-read the ticket description before finishing.** Did you implement what was prescribed? If you deferred something, skipped a requirement, chose not to do something the ticket specifies, or deviated from the described scope — leave the ticket in `started` and post a comment.
-- **"Comprehensive" / "100%" / "thorough" mean exactly that.** No "good enough" exits. Code + passing tests is NOT sufficient for mobile work — see the mobile pre-delivery checklist in `ticket-workflow` → Phase 5.
+- **"Comprehensive" / "100%" / "thorough" mean exactly that.** No "good enough" exits. And where a project ships **more than one client**, code plus passing tests is not sufficient on its own: work verified entirely against the primary surface can deliver completely broken on the other. See [`ticket-workflow`](#related-skills) → Phase 5, "A second client surface needs its own pre-delivery check".
+- **TICK THE BOXES BEFORE YOU DELIVER — state is not decoration.** Any `- [ ]` left in a description, and any untoggled subtask, is a live claim about what has **not** happened yet. Delivering while the acceptance criteria still read unchecked tells the stakeholder the opposite of what the delivery comment says, and the description is what they re-read at acceptance. **Sweep every checkbox and every subtask as the last action before the `finished` transition.**
+
+  Measured: seven delivered tickets carrying **47** unchecked boxes between them — every criterion actually satisfied and documented in the delivery comments, while the descriptions said none of it was done. It reads as seven abandoned tickets.
+
+  ⚠️ **Tick a subtask the turn its step completes, not in a sweep at delivery.** That is the whole point of it being data; a ten-step ticket left untouched for days is the board lying for days.
+
+- ⚠️ **AND THE INVERSE, WHICH BOTH GATES ABOVE PASS BY CONSTRUCTION.** Ticking a criterion you have **not** met is the same lie the other way round, and it is the worse one: an unticked box is visible and gets asked about, while a wrongly ticked one looks exactly like success, so nobody goes back. The sweep finds no unticked box, and the pre-delivery re-read confirms criteria you have already marked satisfied.
+
+  **The check is one question: what evidence would I cite?** A command, a query, an output, a file, a commit. A criterion you cannot answer that for is not met, whatever the diff shows — and "it will be true once this ships" is a forecast, not evidence.
+
 - **Every delivery comment includes verification steps** (the "To verify" section) AND git information (commit SHA + `git show` for direct commits on main; nothing for dispatched work — the dispatch UI appends branch info; explicit "no code changes" for research/docs tickets). Even in batch work — never skip or batch delivery comments to save time.
 
 ## External Blocker Rule — Always Track What Needs User Input
@@ -123,24 +138,97 @@ jus api PATCH /workspaces/{ws}/tickets/{id} "{\"ticket\":{\"description\":$(jq -
 jus api POST /workspaces/{ws}/tickets/{id}/dependencies '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":{id},"description":"User input: <what you need>"}}'
 ```
 
-## Mixed-Actor Tickets — One Timeline, Both Assigned
+## The Ticket Is a Claim, Not a Contract
 
-Some tickets interleave agent work with steps only the stakeholder can perform (signing in to a vendor console, typing a secret, approving a purchase, touching hardware). Two rules keep the board and the ticket honest:
+Every other gate here asks whether you **obeyed** the ticket. None asks whether the ticket is **right** — so a wrong prescription gets implemented faithfully and the process reports success.
 
-- **Assign both.** `assignee_ids` includes the stakeholder AND the agent. A mixed ticket assigned only to the agent reads as in-progress while it is actually waiting on a human; assigned only to the stakeholder, it hides the agent's remaining work. (If NO step is agent-executable, assign the stakeholder alone and open the description saying why.)
-- **One chronological checklist, every step actor-tagged.** Number the steps in execution order and prefix each with its actor. Do NOT write separate "Stakeholder does: / Agent does:" sections — per-actor sections hide the interleaving. The sequence is the contract, and the first unchecked box shows whose move it is.
+**Before you start, check the ticket's own statements, and say what the prescribed approach assumes.** Both go in the start comment. This is a sentence, not a review pass.
 
-```markdown
-**Steps:**
+- **Stated measurements** — re-run them if they are cheap. A ticket citing a file mode, a rate, or a volume is citing someone's reading from some earlier day.
+- **What the prescribed approach depends on being true** — the expensive one. A ticket prescribing "add it as an eighth entry to that file" assumes the file exists at the moment the code runs. If the tool that creates it runs later, the append silently does nothing, and you find out after the spec, the commit and the documentation have all been built against it.
 
-- [x] 1. **[Agent]** Generate the CSR and stage the config change
-- [ ] 2. **[Stakeholder]** Paste the CSR into the vendor console, download the cert
-- [ ] 3. **[Agent]** Install the cert, run the verification probe
-- [ ] 4. **[Stakeholder]** Confirm the padlock on the production domain
+**Raising it early is cheaper than raising it late, and that is the whole point.** Flagging a deviation is not the same as asking — but a prescription questioned **before** implementation costs one message, and the same prescription questioned **after** costs the rebuild. Ask at the moment the doubt forms.
+
+## Ticket Placement — Filing Is Not Prioritising
+
+**A new ticket goes to the BOTTOM of the backlog by default**, whether you filed it yourself or were asked to. Set it on the create rather than reordering afterwards.
+
+The middle of the backlog is a sequencing decision the stakeholder has already made. Dropping a new ticket into it silently claims everything below matters less than something they have not read yet. **An unprioritized ticket goes to the top of the icebox** by the same reasoning.
+
+**It is a default, not an absolute. Three things override it:**
+
+1. **The stakeholder specified a position.** Do what they said.
+2. **The work is genuinely urgent** — a live outage, an exposed credential, a security hole being actively reachable, or anything gating work already in flight. Then the top is correct: the window in which it is live is the whole cost.
+3. **It is not urgent, but it plainly belongs before things already queued.** This is the common case and the one the two above mishandle. **Filing it at the bottom is not the neutral choice it looks like** — it asserts that everything above it matters more. Reaching for the top is the same error inverted.
+
+   So **read the backlog before choosing**, pick a position between the two neighbours it belongs between, and **say which two in the delivery message**. A middle position chosen without listing the backlog is a guess wearing a number.
+
+## Blocked on a Third Party — Split at the Boundary, Deliver Your Half
+
+⚠️ **A ticket whose remaining acceptance criteria depend on an outside party must never sit in `started`.** Marketplace acceptance, vendor approval, an upstream release, a support ticket, a domain transfer — none of it moves because someone is assigned. `started` claims a person is working on it, which is precisely what hides that the ball is entirely elsewhere.
+
+**This is distinct from the External Blocker Rule above.** That one is for work _you own_ and cannot continue — you stay `started` because you resume the moment the answer arrives. This one is for a ticket whose completion is **not yours to reach**.
+
+⚠️ **"Third party" is this section's title, not its test.** The test is at the end, and reading the title as the test is how the section gets skipped: **waiting on your own deploy plus elapsed time fails it too**, and nothing about that reads as an outside party.
+
+**The procedure, in order:**
+
+1. **Re-scope the original to what you actually own.** Move the dependent criteria out of its acceptance list and say where they went. Do not delete them.
+2. **Deliver the original** against that re-scoped list, naming the commit that shipped it. ⚠️ **Do not cancel it** — the work was done, and cancelling erases that.
+3. **Create a successor** carrying the moved criteria, in the **icebox**: it cannot be scheduled, so it must not sit in a backlog that implies it can.
+4. **Add an External dependency to the successor** naming the awaited event specifically, not "waiting on vendor".
+5. **Cross-reference both ways** — the original says where the rest went, the successor says what already shipped and under which commit.
+6. **Give the successor a closing condition.** "If they reject, or never answer: close this too, record why, and keep the artefact." A successor with no way to end is the original's problem with a new number.
+
+**The test:** _could anyone here complete this ticket today, given unlimited effort?_ If no, and the reason is someone else's decision or the passage of time, split it. If yes but you need an answer first, that is the External Blocker Rule and you stay `started`.
+
+## Steps Are Subtasks, Never Description Checkboxes
+
+If a ticket tells someone to _do_ things in order — a runbook, a migration sequence, a mixed-actor procedure — those steps are **subtasks on the ticket**, not `- [ ]` lines in the description.
+
+**Why, in one line: a description checkbox is prose, a subtask is data.** The board renders subtasks, counts them, orders them, assigns each to one person, broadcasts each change, and lets the stakeholder tick one off from their phone. A `- [ ]` can do none of that, and only an agent editing the whole description can ever change one — which is exactly backwards when the steps are the stakeholder's to run.
+
+```sh
+jus api POST /workspaces/{ws}/tickets/{id}/subtasks '{"subtask":{"title":"2. Approve the certificate","description":"…","assignee_id":1}}'
+jus api PATCH /workspaces/{ws}/tickets/{id}/subtasks/{subtask_id} '{"subtask":{"completed":true}}'
 ```
 
-- **Keep the checkboxes current** — check steps off as they complete, editing the description in place (agent additions are living documentation).
-- **Blocker integration:** whenever the next unchecked step is the stakeholder's, the External Blocker Rule above applies — leave the ticket `started`, post a comment naming exactly which step you are waiting on, and add the External dependency. Resolve it and continue when your next step unblocks.
+| Field | Carries |
+| --- | --- |
+| `title` | `N. ` plus a short imperative label. **Not the command** — see the truncation note below |
+| `description` | the fenced command, then the commentary and the trap warnings |
+| `assignee_id` | who runs it. This replaces an `**[Actor]**` tag in the text |
+| `position` | execution order. Unset it is the end of the list, so create them in order |
+| `completed` | whether it has been run. **Set it; never `/toggle`, which flips** |
+
+⚠️ **THE COMMAND GOES IN THE DESCRIPTION, NOT THE TITLE.** The board truncates a subtask's title, so a title long enough to hold a real command is cut off with an ellipsis and cannot be copied. A short label fits; the command belongs in a fence in the description, which both the web and mobile clients render as a code block.
+
+⚠️ **Each fence holds ONLY the bare command — copy-pastable as-is.** No `#` comment on the command line, and never several steps packed into one fence with aligned commentary: copying a step then drags the commentary along. The commentary is still required; it follows the fence in the same description.
+
+⚠️ **The number stays in the title.** Neither surface displays an ordinal, so `N. ` is the only thing that lets anything else — a table, a comment, a delivery note — point at a specific step.
+
+### Mixed-actor tickets: one timeline, both assigned
+
+Some tickets interleave agent work with steps only the stakeholder can perform (signing in to a vendor console, typing a secret, approving a purchase, touching hardware).
+
+- **Assign both.** The ticket's `assignee_ids` includes the stakeholder AND the agent. A mixed ticket assigned only to the agent reads as in-progress while it is actually waiting on a human; assigned only to the stakeholder, it hides the agent's remaining work. (If NO step is agent-executable, assign the stakeholder alone and open the description saying why.)
+- **One chronological subtask list**, each with its own `assignee_id`. Do NOT write separate "Stakeholder does: / Agent does:" sections — per-actor sections hide the interleaving. The sequence is the contract, and the first untoggled subtask shows whose move it is.
+- **Tick each subtask the turn its step completes**, not in a sweep at delivery. That is the whole point of it being data; a ten-step ticket left untouched for days is the board lying for days.
+- **Blocker integration:** whenever the next untoggled subtask is the stakeholder's, the External Blocker Rule above applies — leave the ticket `started`, post a comment naming exactly which step you are waiting on, and add the External dependency. Resolve it and continue when your next step unblocks.
+
+### What stays a description checkbox: acceptance criteria
+
+They are claims about whether the ticket is _done_, not things someone performs, and they are what the stakeholder re-reads at acceptance. Keep them in the description and keep them swept. If you cannot tell which you are writing, ask whether a person could be **assigned** it — a step has an actor, a criterion does not.
+
+## Shell Safety — Prose and Commands
+
+- **NEVER build a shell command by inlining prose you wrote.** Ticket comments, descriptions and commit bodies go through a **file plus a quoted heredoc** (`<<'EOF'`), then get passed as `"$(cat file)"` or piped in. This is not a formatting preference; it is an **arbitrary-command-execution** risk, because agent prose is full of the two characters that break shell quoting.
+
+  Measured: an apostrophe in a possessive (`the hook's`) terminated a single-quoted argument, which left the rest of the sentence unquoted, which meant the **backticks around a command name in the prose were evaluated** — and the command ran. Nothing shipped only because a preflight refused on an unset variable. **One apostrophe ends a single-quoted string**; never assume prose is safe to interpolate.
+
+- **NEVER hand a person a command long enough to wrap.** If it does not fit comfortably on one line, put it in a script that takes one short argument. A wrapped paste is not a cosmetic problem: a shell continues a line that _ends_ with `&&` and rejects one that _begins_ with it, so wrapping alone turns a working chain into a parse error — one that names neither the real cause nor the thing that failed to happen.
+
+  Secret entry is the usual offender. **Never ask for a token to be pasted into a chat**; hand over a one-argument script that reads it without echoing. ⚠️ The hidden-input read is shell-specific and the forms are not interchangeable — check which shell the line will actually run under, since a script runs under its shebang and not the person's login shell.
 
 ## Document Discoveries
 
@@ -165,19 +253,19 @@ A discovery missed once is a learning lost; a discovery missed across a session 
 
 If any of these are true at the moment you're about to act, stop and reset:
 
-| Reflex                                                                     | Stop and…                                                                    |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Working tree is dirty and you're typing a response                         | **Commit first.**                                                            |
-| About to PATCH `description` without fetching first                        | **Fetch first.** Append, don't overwrite.                                    |
-| About to silence a lint warning with a suppression comment                 | **Fix the smell or escalate to the stakeholder.**                            |
-| About to mark `finished`/`delivered` with a deferred or skipped item       | **Leave in `started`** + comment + External blocker.                         |
-| About to ask the user a blocking question without an External dependency   | **Create the dependency** before asking.                                     |
-| About to `git push`                                                        | **Don't.** The stakeholder pushes.                                           |
-| About to write code without a ticket                                       | **Create the ticket first.**                                                 |
-| About to edit a source file on a `started` ticket, no start comment yet    | **Post the start comment first** (root cause + plan + test intent).          |
-| About to transition to `accepted` or `rejected`                            | **Don't.** Only the stakeholder owns those transitions.                      |
-| Hit an error or learned something non-obvious                              | **Document it now** (ticket comment + docs/code as applicable).              |
-| About to write "Stakeholder does: / Agent does:" sections in a description | **Rewrite as ONE numbered, actor-tagged step list** and assign both parties. |
+| Reflex | Stop and… |
+| --- | --- |
+| Working tree is dirty and you're typing a response | **Commit first.** |
+| About to PATCH `description` without fetching first | **Fetch first.** Append, don't overwrite. |
+| About to silence a lint warning with a suppression comment | **Fix the smell or escalate to the stakeholder.** |
+| About to mark `finished`/`delivered` with a deferred or skipped item | **Leave in `started`** + comment + External blocker. |
+| About to ask the user a blocking question without an External dependency | **Create the dependency** before asking. |
+| About to `git push` | **Don't.** The stakeholder pushes. |
+| About to write code without a ticket | **Create the ticket first.** |
+| About to edit a source file on a `started` ticket, no start comment yet | **Post the start comment first** (root cause + plan + test intent). |
+| About to transition to `accepted` or `rejected` | **Don't.** Only the stakeholder owns those transitions. |
+| Hit an error or learned something non-obvious | **Document it now** (ticket comment + docs/code as applicable). |
+| About to write "Stakeholder does: / Agent does:" sections in a description | **Rewrite as ONE numbered subtask list in execution order**, each with its own `assignee_id`, and assign both parties on the ticket. |
 
 ## Related Skills
 

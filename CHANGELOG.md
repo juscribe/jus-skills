@@ -22,6 +22,16 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.11] — 2026-08-30
+
+### Changed
+
+- A stale description, a probe that proved nothing, and two guards that do not work (#3234)
+- The bundle described this project as though it were everyone's (#3229)
+- Ten board rules the bundle never had (#3228)
+- The bundle documented subtasks, then told everyone not to use them (#3224)
+- 45,740 bytes of the agent context were column-alignment whitespace (#3225)
+
 ## [1.4.10] — 2026-08-29
 
 ### Changed
