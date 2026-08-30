@@ -22,6 +22,12 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.10] — 2026-08-29
+
+### Changed
+
+- Setting a subtask complete, rather than flipping it (#3138)
+
 ## [1.4.9] — 2026-08-26
 
 ### Changed

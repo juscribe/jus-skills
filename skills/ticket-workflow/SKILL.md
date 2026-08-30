@@ -666,7 +666,6 @@ They are not returned by default. `subtasks_count` is on every ticket payload; `
 jus api GET '/workspaces/{ws}/tickets/{id}/subtasks'
 jus api POST /workspaces/{ws}/tickets/{id}/subtasks '{"subtask":{"title":"…","description":"…","assignee_id":2}}'
 jus api PATCH /workspaces/{ws}/tickets/{id}/subtasks/{subtask_id} '{"subtask":{"title":"…","completed":true}}'
-jus api PATCH /workspaces/{ws}/tickets/{id}/subtasks/{subtask_id}/toggle '{}'
 jus api PATCH /workspaces/{ws}/tickets/{id}/subtasks/{subtask_id}/reorder '{"position":2.5}'
 jus api DELETE /workspaces/{ws}/tickets/{id}/subtasks/{subtask_id}
 ```
@@ -675,9 +674,16 @@ Writable: `title` (required), `description`, `completed`, `position`, `assignee_
 
 ⚠️ **`assignee_id` must be a member of the workspace's organization** — anyone else is a `422` reading `must belong to this workspace`. Send `null` or `""` to clear it.
 
-⚠️ **Three shape traps in those six lines, all of them silent:**
+⚠️ **`completed` IS HOW YOU TICK A STEP — there is a `/toggle` endpoint, and it is not it.**
 
-- **`/toggle` takes no body — send `'{}'` anyway**, or the CLI sits waiting on stdin. Same rule as every other body-less write.
+`PATCH …/subtasks/{subtask_id}` with `{"subtask":{"completed":true}}` sets the state you asked for, and setting it to the value it already holds is a no-op answering `200`. `PATCH …/subtasks/{subtask_id}/toggle` **flips whatever it finds** (`completed: !completed`), so it is right only when you already know the current state — and a ticket is a surface a person writes to as well. An agent "ticking" a step the stakeholder ticked already silently **un**ticks it, and both calls answer `200` with a subtask in the body, so nothing distinguishes them. Measured: three steps a stakeholder had checked off from their phone, turned back off by an agent recording its own work.
+
+Both paths broadcast the same `subtask_updated`, so the explicit form costs nothing. Reach for `/toggle` only when flipping the current state is genuinely the intent — a person clicking a checkbox, which is what the web and mobile clients do.
+
+⚠️ **Comment and ticket REACTION toggles are a DIFFERENT endpoint and are correct as toggles.** `POST …/comments/{id}/reactions/toggle '{"emoji":"👍"}'` adds or removes _your own_ reaction, which is exactly the intent, and there is no desired-state form. Do not "fix" those.
+
+⚠️ **Two shape traps in those five lines, both of them silent:**
+
 - **`/reorder` reads `position` at the top level**, not wrapped in `{"subtask": …}` — the same bare shape as a ticket's own `/reorder`.
 - **`{subtask_id}` is a plain row id, not an `#N`.** The ticket segment of that URL _is_ an external id, so one path carries two kinds of id that look alike. Take the subtask's `id` from the response; never assume it reads like a ticket reference.
 
