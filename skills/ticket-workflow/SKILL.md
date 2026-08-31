@@ -790,7 +790,7 @@ jus api PATCH /workspaces/{ws}/dependencies/{dep_id} '{"dependency":{"due_on":nu
 
 ⚠️ **Neither half works alone.** A date with no kind cannot be worded and a kind with no date says nothing, so each without the other is a `422`. Both absent is fine and is the common case. Clearing them means sending both as `null`.
 
-⚠️ **`due_on` and `due_kind` are the ONLY editable fields on a dependency.** The update endpoint permits nothing else, so a `blocker_id` in the body is dropped rather than repointing the row — and it answers `200`, having changed only the date. **Repointing a blocker is a delete plus a create**, because a different blocker is a different dependency.
+⚠️ **`blocker_id`, `blocker_type`, `blocked_id` and `blocked_type` are NOT editable — but `title`, `description`, `due_on` and `due_kind` ARE** (`DependencyParams::EDITABLE`, `app/services/dependency_params.rb:21`). A `blocker_id` in the update body is dropped rather than repointing the row, and the call still answers `200` — so a repoint that looks like it worked did not. **Repointing a blocker is a DELETE plus a create**, because a different blocker is a different dependency. ⚠️ **Rewording one is NOT.** This passage said only the two date fields were editable until #3293, and following that destroys a dependency's history to change a sentence — #3199 added the two text fields precisely so a badly derived title could be fixed in place.
 
 **Reading a date back.** Every ticket and project payload carries the soonest one as a scalar pair, `earliest_blocker_due_on` / `earliest_blocker_due_kind`, alongside the per-blocker `due_on` / `due_kind` inside `active_dependencies_summary`. Read the pair to decide; read the summary to say which blocker it was.
 

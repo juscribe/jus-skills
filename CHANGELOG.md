@@ -22,6 +22,12 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.12] — 2026-08-31
+
+### Changed
+
+- A blocker's description IS editable, and the guard that should have caught it was vacuous (#3293)
+
 ## [1.4.11] — 2026-08-30
 
 ### Changed
