@@ -40,7 +40,7 @@ Some of these rules are also enforced **deterministically** by the jus enforceme
 | Re-read ticket before finishing | ✅ | — |
 | Every delivery comment includes verification steps + git | ✅ | — |
 | Add an External dependency when waiting on user input | ✅ | — |
-| Steps are subtasks, never description checkboxes; mixed-actor tickets assign both | ✅ | — |
+| A SEQUENCE of steps is subtasks, never description checkboxes (one step needs none); mixed-actor tickets assign both | ✅ | — |
 | Tick every checkbox and subtask before delivering — and never tick an unmet one | ✅ | — |
 | Never inline prose into a shell command; never hand over a wrapping command | ✅ | — |
 | Check the ticket's own claims and state what the approach assumes | ✅ | — |
@@ -187,6 +187,8 @@ The middle of the backlog is a sequencing decision the stakeholder has already m
 If a ticket tells someone to _do_ things in order — a runbook, a migration sequence, a mixed-actor procedure — those steps are **subtasks on the ticket**, not `- [ ]` lines in the description.
 
 **Why, in one line: a description checkbox is prose, a subtask is data.** The board renders subtasks, counts them, orders them, assigns each to one person, broadcasts each change, and lets the stakeholder tick one off from their phone. A `- [ ]` can do none of that, and only an agent editing the whole description can ever change one — which is exactly backwards when the steps are the stakeholder's to run.
+
+⚠️ **ONE THING TO DO NEEDS NO SUBTASK — the rule fires on a SEQUENCE.** A ticket with a single step does not owe a subtask for it: put the command in the ticket's own description, leave the actor in the ticket's `assignee_ids`, and let the ticket's state say whether it happened. A lone subtask restates its ticket — same actor, same one thing, two places to tick — and hands the board nothing to render, count or order, which is the entire argument above. **Two or more steps and you are back in the rule**, because that is where ordering, per-step actors and partial progress start to exist; a second step turning up later is the moment to create both. This is permission rather than prohibition — a single subtask is not an error, and a tool that writes one for you is not to be second-guessed. It is simply not something to manufacture.
 
 ```sh
 jus api POST /workspaces/{ws}/tickets/{id}/subtasks '{"subtask":{"title":"2. Approve the certificate","description":"…","assignee_id":1}}'
