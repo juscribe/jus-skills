@@ -20,13 +20,20 @@
 #
 # The map is PROJECT data, never bundled: tab-separated, one rule per line,
 # in `.jus/docs-nudges.tsv` at the project root:
-#   <project-relative path prefix>\t<doc path>\t<when-to-read hint>
-#   label:<name>\t<doc path>\t<when-to-read hint>   # ticket label, case-insensitive
-#   kw:<word>\t<doc path>\t<when-to-read hint>      # title substring, case-insensitive
+#   <project-relative path prefix>\t<doc path>[\t<when-to-read hint>]
+#   label:<name>\t<doc path>[\t<when-to-read hint>]   # ticket label, case-insensitive
+#   kw:<word>\t<doc path>[\t<when-to-read hint>]      # title substring, case-insensitive
 # Path rows fire on edits; label:/kw: rows fire at pickup. No map file → this
 # hook is a silent no-op, so shipping it in the bundle is safe for projects
 # that keep no docs directory. A path-only map costs the pickup path nothing:
 # with no trigger rows there is no fetch.
+#
+# THE HINT IS OPTIONAL (#3393). Omit the third column and the hint is read
+# from the docs index beside the doc — see docs_index_hint below. A row is two
+# kinds of work and only one is expensive: the trigger is a judgement nothing
+# can derive, while the hint needs someone to have read the doc, and a project
+# that keeps an index has already written it. Hand-duplicating it is what left
+# 50 of this project's 81 deep-dives with no row at all.
 #
 # UserPromptSubmit was considered as a third trigger for work that never gets
 # a ticket, and DECLINED (#2487): the SOP requires a ticket for every piece
@@ -63,6 +70,47 @@ state_dir=$(juscribe_sop_state_dir "$session_id")
 docs_nudge_flag() {
   local scope="$1" doc="$2"
   printf '%s/docs_nudged_%s_%s' "$state_dir" "$scope" "$(tr -c 'a-zA-Z0-9' '_' <<<"$doc")"
+}
+
+# The hint for a row that omitted its third column, read from the docs index
+# that sits BESIDE the doc — `docs/css.md` looks in `docs/INDEX.md`. Resolved
+# relative to the doc rather than the project, because a bundled hook cannot
+# assume any one docs directory. One entry per line, in the shape the index
+# already uses:
+#
+#   - [css.md](css.md) — When to read: adding or modifying any styles — and …
+#
+# Only the FIRST CLAUSE is taken, cut at the first em-dash clause break or the
+# first sentence end. The full entries run long — measured over this project's
+# 81 docs, a median of 398 characters and one at 4718 — and the systemMessage
+# below is one line built with no truncation, so interpolating a whole entry
+# would bury the doc name the message exists to deliver. The first clause is a
+# median of 116 characters with 2 over 250.
+#
+# A cut that lands INSIDE a parenthetical drops the rest of it rather than
+# leaving the bracket open: 4 of those 81 end mid-aside, and `(#2870` hanging
+# off the end of a one-line reminder reads as the truncation being a bug.
+#
+# EVERY failure is an empty result, and the callers read that as "no nudge":
+# no index file, no entry for this doc, an index in some other format. That is
+# the property that makes a two-column row safe to ship to a project that keeps
+# no index at all — the row degrades to silence, never to an error and never to
+# a half-written message with an empty hint dangling off it.
+docs_index_hint() {
+  local doc="$1" index_file
+  index_file="${project_dir}/$(dirname "$doc")/INDEX.md"
+  [[ -f "$index_file" ]] || return 0
+  jq -Rrs --arg name "$(basename "$doc")" '
+    ($name | gsub("[.]"; "[.]")) as $q
+    | ((split("\n")
+        | map(select(test("^[[:space:]]*-[[:space:]]*\\[" + $q + "\\]")))
+        | first) // "")
+    | (capture("When to read:[[:space:]]*(?<h>.+)$") // {h: ""}).h
+    | split("\\s+\u2014\\s+|[.]\\s+"; null)[0]
+    | (if ([scan("[(]")] | length) > ([scan("[)]")] | length)
+       then sub("[[:space:]]*[(][^()]*$"; "") else . end)
+    | sub("^[[:space:]]+"; "") | sub("[[:space:]]+$"; "")
+  ' < "$index_file" 2>/dev/null || return 0
 }
 
 # ---- pickup trigger (Bash) --------------------------------------------------
@@ -118,6 +166,11 @@ if [[ "$tool_name" == "Bash" ]]; then
       *) continue ;;
     esac
     [[ -n "$hit" ]] || continue
+    # A row with no hint of its own takes one from the index; one that cannot
+    # is skipped rather than marked seen, so a later row naming the same doc
+    # with an explicit hint still gets its chance.
+    [[ -n "$hint" ]] || hint=$(docs_index_hint "$doc")
+    [[ -n "$hint" ]] || continue
     [[ "$seen_docs" == *$'\n'"$doc"$'\n'* ]] && continue
     [[ -f "$(docs_nudge_flag "$ticket_id" "$doc")" ]] && continue
     seen_docs+="$doc"$'\n'
@@ -174,6 +227,12 @@ while IFS=$'\t' read -r prefix doc hint; do
 done < "$map_file"
 
 [[ -n "$matched_doc" ]] || exit 0
+
+# Resolved BEFORE the dedup flag is written: a row whose hint cannot be
+# resolved produces no nudge, and must not burn the one nudge this doc gets
+# for this ticket on a message that was never sent.
+[[ -n "$matched_hint" ]] || matched_hint=$(docs_index_hint "$matched_doc")
+[[ -n "$matched_hint" ]] || exit 0
 
 # Dedup scope: once per doc per ACTIVE TICKET, not per session — the limit is
 # on the reminder, never on reading. Long sessions span many tickets, and

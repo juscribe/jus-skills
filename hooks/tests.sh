@@ -768,6 +768,24 @@ assert_stdout() {
   fi
 }
 
+# The mirror of assert_stdout, and #3393 is why it exists: that change is
+# defined by what the message leaves OUT. An INDEX hint truncated to its first
+# clause still CONTAINS that clause when the truncation silently does nothing,
+# so every positive assertion passes over a message running to 457 characters.
+assert_stdout_lacks() { # <name> <unwanted> <got>
+  local name="$1" unwanted="$2" got="$3"
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if [[ "$got" != *"$unwanted"* ]]; then
+    printf '  \033[32m✓\033[0m %s\n' "$name"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILURES+=("$name")
+    printf '  \033[31m✗\033[0m %s\n' "$name"
+    printf '      unwanted: %s\n' "$unwanted"
+    printf '      got:      %s\n' "${got:0:300}"
+  fi
+}
+
 SID_NUDGE="test-nudge-$$"
 REPO_UNDER=$(nudge_repo 4 "$SID_NUDGE")
 assert_stdout "stays quiet below the threshold (4 dirty files)" "" \
@@ -1002,6 +1020,105 @@ else
   printf '  \033[31m✗\033[0m %s (exit=%s, got: %s)\n' "$TEST_NAME" "$rc_nojus" "$out_nojus"
 fi
 rm -rf "$NOJUS_STUB" "$PICKUP_STUB"
+
+# #3393: a row may omit its hint and take it from the doc's own INDEX.md.
+#
+# A nudge row is two kinds of work and only one is expensive. The TRIGGER is a
+# judgement nothing can derive; the HINT is a clause on why the doc matters
+# now, and the docs index already carries one per doc. Duplicating it by hand
+# is what left 50 of this project's 81 deep-dives with no row at all.
+#
+# The index is resolved relative to the DOC, not the project: `docs/css.md`
+# looks in `docs/INDEX.md`. A bundled hook cannot assume `.jus/docs/`.
+INDEX_PROJECT=$(mktemp -d)
+mkdir -p "$INDEX_PROJECT/.jus" "$INDEX_PROJECT/docs"
+cat > "$INDEX_PROJECT/docs/INDEX.md" <<'IDX'
+# Documentation Index
+
+- [css.md](css.md) — When to read: adding or modifying any styles — and before touching the build pipeline, a much longer story that nobody needs at this moment
+- [threat.md](threat.md) — When to read: what a compromised container can reach. The networks, the accessory options and the blast-radius rules all live in there.
+- [silent.md](silent.md) — this entry has no When to read line at all
+- [aside.md](aside.md) — When to read: touching the retry policy (it is almost never the retries — measured) and nothing else
+IDX
+
+nudge_edit() { # <session id> <project> <relative file> [extra PATH entry]
+  printf '{"tool_name":"Edit","session_id":"%s","tool_input":{"file_path":"%s/%s"}}' \
+    "$1" "$2" "$3" | CLAUDE_PROJECT_DIR="$2" "$SCRIPTS/jus-docs-nudge.sh"
+}
+
+printf 'app/styles/\tdocs/css.md\n' > "$INDEX_PROJECT/.jus/docs-nudges.tsv"
+t "two-column row takes its hint from INDEX.md"
+out_idx=$(nudge_edit "test-idx-a-$$" "$INDEX_PROJECT" "app/styles/a.css")
+assert_stdout "two-column row reads the INDEX hint" "adding or modifying any styles" "$out_idx"
+t "the hint stops at the first clause"
+assert_stdout_lacks "INDEX hint is cut at the em-dash" "longer story" "$out_idx"
+
+printf 'app/threat/\tdocs/threat.md\n' > "$INDEX_PROJECT/.jus/docs-nudges.tsv"
+t "a sentence-terminated INDEX entry is cut at the sentence"
+out_sent=$(nudge_edit "test-idx-b-$$" "$INDEX_PROJECT" "app/threat/model.rb")
+assert_stdout "sentence clause survives" "what a compromised container can reach" "$out_sent"
+assert_stdout_lacks "sentence clause is cut at the period" "blast-radius" "$out_sent"
+
+# 4 of this project's 81 entries end their first clause inside a parenthetical,
+# and `(#2870` left hanging off a one-line reminder reads as the truncation
+# being a bug rather than the point.
+printf 'app/aside/\tdocs/aside.md\n' > "$INDEX_PROJECT/.jus/docs-nudges.tsv"
+t "a clause cut inside a parenthetical drops the unclosed aside"
+out_aside=$(nudge_edit "test-idx-h-$$" "$INDEX_PROJECT" "app/aside/x.rb")
+assert_stdout "the aside is dropped whole" "touching the retry policy" "$out_aside"
+assert_stdout_lacks "no bracket is left open" "almost never" "$out_aside"
+
+printf 'app/styles/\tdocs/css.md\tthe hand-written hint wins\n' > "$INDEX_PROJECT/.jus/docs-nudges.tsv"
+t "a three-column row still overrides the INDEX"
+out_override=$(nudge_edit "test-idx-c-$$" "$INDEX_PROJECT" "app/styles/a.css")
+assert_stdout "third column overrides INDEX" "the hand-written hint wins" "$out_override"
+assert_stdout_lacks "INDEX hint is not appended to an override" "adding or modifying" "$out_override"
+
+# The property that makes this safe to ship to every project: a two-column row
+# in a project with no index, or an index this parser does not understand, is
+# a silent no-op — exactly like a missing map file. Never an error, and never
+# a half-written message with an empty hint dangling off it.
+printf 'app/styles/\tdocs/css.md\n' > "$INDEX_PROJECT/.jus/docs-nudges.tsv"
+t "a two-column row whose doc has no INDEX entry is silent"
+printf 'app/other/\tdocs/unlisted.md\n' >> "$INDEX_PROJECT/.jus/docs-nudges.tsv"
+assert_stdout "no INDEX entry means no nudge" "" \
+  "$(nudge_edit "test-idx-d-$$" "$INDEX_PROJECT" "app/other/x.rb")"
+
+t "a two-column row whose INDEX entry has no When to read line is silent"
+printf 'app/silent/\tdocs/silent.md\n' >> "$INDEX_PROJECT/.jus/docs-nudges.tsv"
+assert_stdout "an unparseable INDEX entry means no nudge" "" \
+  "$(nudge_edit "test-idx-e-$$" "$INDEX_PROJECT" "app/silent/x.rb")"
+
+NOINDEX_PROJECT=$(mktemp -d)
+mkdir -p "$NOINDEX_PROJECT/.jus"
+printf 'app/styles/\tdocs/css.md\n' > "$NOINDEX_PROJECT/.jus/docs-nudges.tsv"
+t "a two-column row in a project with no INDEX.md is silent and exits 0"
+assert_stdout "no INDEX.md means no nudge" "" \
+  "$(nudge_edit "test-idx-f-$$" "$NOINDEX_PROJECT" "app/styles/a.css")"
+export CLAUDE_PROJECT_DIR="$NOINDEX_PROJECT"
+assert_exit 0 "$SCRIPTS/jus-docs-nudge.sh" \
+  "{\"tool_name\":\"Edit\",\"session_id\":\"test-idx-g-$$\",\"tool_input\":{\"file_path\":\"$NOINDEX_PROJECT/app/styles/a.css\"}}"
+unset CLAUDE_PROJECT_DIR
+rm -rf "$NOINDEX_PROJECT"
+
+# The pickup path builds its message from the same column, so it resolves the
+# same way. This matters more than the edit path here: most of the rows this
+# change made writable are `kw:` rows, which only ever fire at pickup.
+IDX_STUB=$(mktemp -d)
+ln -s "$(command -v jq)" "$IDX_STUB/jq"
+cat > "$IDX_STUB/jus" <<STUB
+#!/bin/bash
+printf '%s' '{"ticket":{"title":"Container hardening pass","labels":["docker"]}}'
+STUB
+chmod +x "$IDX_STUB/jus"
+printf 'label:docker\tdocs/threat.md\n' > "$INDEX_PROJECT/.jus/docs-nudges.tsv"
+t "a pickup row resolves its hint from INDEX.md too"
+out_pickup_idx=$(jq -n --arg sid "test-idx-pickup-$$" --arg cmd "$STARTED_CMD" \
+        '{tool_name:"Bash", session_id:$sid, tool_input:{command:$cmd}}' \
+      | CLAUDE_PROJECT_DIR="$INDEX_PROJECT" PATH="$IDX_STUB:/usr/bin:/bin" \
+        "$SCRIPTS/jus-docs-nudge.sh")
+assert_stdout "pickup reads the INDEX hint" "what a compromised container can reach" "$out_pickup_idx"
+rm -rf "$IDX_STUB" "$INDEX_PROJECT"
 
 rm -rf "$DOCS_PROJECT"
 
@@ -1533,7 +1650,19 @@ assert_match() {
   fi
 }
 
-for skill_file in "$PLUGIN_ROOT/skills/ticket-workflow/SKILL.md" "$PLUGIN_ROOT/skills/hard-rules/SKILL.md"; do
+# ⚠️ GLOBBED, NOT ENUMERATED (#3403). This loop named its two skills, so
+# adding a third left it outside every check below — no license assertion, no
+# namespaced-ref check — while the harness still reported a clean run. A
+# hardcoded list of the things you ship is a walk that gets shorter than the
+# tree without ever failing.
+skill_files=("$PLUGIN_ROOT"/skills/*/SKILL.md)
+if [[ ${#skill_files[@]} -lt 2 || ! -f "${skill_files[0]}" ]]; then
+  TESTS_RUN=$((TESTS_RUN + 1)); TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("skill bodies: the glob found no skills to check")
+  printf '  \033[31m✗\033[0m %s\n' "skill bodies: the glob found no skills to check"
+fi
+
+for skill_file in "${skill_files[@]}"; do
   skill_name="$(basename "$(dirname "$skill_file")")"
   assert_no_match "$skill_name: no plugin-namespaced ticket-workflow refs" "$skill_file" "jus:ticket-workflow"
   assert_no_match "$skill_name: no plugin-namespaced hard-rules refs" "$skill_file" "jus:hard-rules"

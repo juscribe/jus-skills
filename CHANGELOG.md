@@ -22,6 +22,14 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.13] — 2026-09-01
+
+### Changed
+
+- The activity feed already answers what #3404 wanted serialized (#3403)
+- Three traps the skill's first real run walked into (#3403)
+- Self-review: the bundle's own harness enumerated its two skills (#3403)
+
 ## [1.4.12] — 2026-08-31
 
 ### Changed
