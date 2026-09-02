@@ -465,7 +465,7 @@ Common miscalibrations to avoid: "document how X works" → `research`, not `cho
 
 ### Marker types (timeline, not work items)
 
-Markers render as horizontal bars on the board, not cards. They are timeline-planning artifacts and are excluded from API responses by default — pass `include_markers=true` to include them when listing.
+Markers render as horizontal bars on the board, not cards. They are timeline-planning artifacts and are excluded from API responses by default — pass `include_markers=true` to include them when listing, and read `.meta.excluded_markers` to see how many a query without it dropped.
 
 | Type | API value | Icon | Use for |
 | --- | --- | --- | --- |
@@ -638,7 +638,7 @@ jus api PATCH /workspaces/{ws}/tickets/bulk_reorder '{"tickets":[{"id":"101","po
 - **Agent state (preferred for session start)**: `agent_state?panels=current,backlog` returns ~2–4 KB markdown; `summary?panels=...` is the structured-JSON variant. Cache TTL 5 minutes; invalidated on ticket/project changes. Never start a session by listing all tickets.
 - **Sparse fieldsets**: `?fields=id,title,state,points` — pick exactly what you need (`id` always included).
 - ⚠️ **`labels` is an array of STRINGS; `label_objects` is the array of objects.** It is the only association on a ticket that is not objects, so `.ticket.labels[].name` fails with `Cannot index string with string "name"` — and a fetch passing `include_label_objects=false` leaves the string array as the only one there.
-- **Opt-out params**: `include_markers` (default `false`), `include_label_objects` (default `true`; `false` omits the array — string `labels` always present), `include_attachments` (default `false`), `include_comments` (default `false`), `include_subtasks` (default `false`), `comments_limit` (caps to N most recent).
+- **Opt-out params**: `include_markers` (default `false`; the response says how many it removed in `.meta.excluded_markers`), `include_label_objects` (default `true`; `false` omits the array — string `labels` always present), `include_attachments` (default `false`), `include_comments` (default `false`), `include_subtasks` (default `false`), `comments_limit` (caps to N most recent).
 - **`comments_count`**: every ticket response carries it — check before fetching comments; if `0`, skip `include_comments` entirely.
 
 | Task | Approach |
@@ -653,6 +653,12 @@ jus api PATCH /workspaces/{ws}/tickets/bulk_reorder '{"tickets":[{"id":"101","po
 ### Index filter params
 
 The ticket index takes a substantial filter set, and **nothing rejects a name it does not recognise, and nothing logs it either** — the index never puts the query string through strong parameters, so there is no `Unpermitted parameter` line to go looking for. A misspelled filter returns the unfiltered list with `HTTP 200`, which reads exactly like a filter that matched everything. Check `.pagination.count` against what you expected.
+
+⚠️ **`.pagination.count` cannot tell you the list is SHORT, and `.meta.excluded_markers` is the field that can.** The count describes what came back, so it agrees with a thinned list exactly as readily as with a complete one — there is no internal inconsistency to notice. Markers are the thinning that happens by default, and `.meta.excluded_markers` says how many the exclusion removed from your own filter's population. It is **always present**, `0` when `include_markers=true` or a `ticket_type` meant nothing was withheld, so a zero is an answer rather than a silence.
+
+```sh
+jus api GET '/workspaces/{ws}/tickets?iteration_id={iteration}&per_page=200' | jq '.meta.excluded_markers'
+```
 
 ⚠️ **This is why "the tickets API has no text search" circulates as lore.** `query=` and `search=` are silently ignored because neither is the param name. **`q` works** — a case-insensitive substring match on title _or_ description.
 

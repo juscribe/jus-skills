@@ -22,6 +22,18 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.15] — 2026-09-01
+
+### Changed
+
+- Placeholders in the copies that leave this workspace (#3434)
+- Tell the two shipped references that the field exists (#3434)
+- Carry the decision into the app's own copy of the claim (#3415)
+- The testimony is on the tickets, so read it there (#3415)
+- Name the field that answers this, and say when it is absent (#3414)
+- Count the whole iteration, and check the count against a second source (#3414)
+- Hold the retrospective report, and serve it (#3427)
+
 ## [1.4.14] — 2026-09-01
 
 ### Changed
