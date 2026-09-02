@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.16] — 2026-09-02
+
+### Changed
+
+- Retrain the retrospective on what the reader actually wants (#3472)
+- A retrospective suggests follow-ups; a reply is what files them (#3451)
+
 ## [1.4.15] — 2026-09-01
 
 ### Changed
