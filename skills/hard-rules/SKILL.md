@@ -1,6 +1,6 @@
 ---
 name: hard-rules
-description: Non-negotiable behavioral guardrails for Juscribe work — every-ticket lifecycle, COMMIT-IMMEDIATELY rule, no lint/test suppression, stakeholder-verbatim ticket descriptions (agent additions kept current), no false deliveries, external blockers when waiting on user input, no `git push`, and the document-discoveries protocol. Auto-invoke at the start of any session and whenever about to write code, run linters, edit a ticket description, transition state to finished/delivered, ask the stakeholder a blocking question, or hit an unfamiliar error or workaround. In a Juscribe-wired project, generic ticket and board language means Juscribe — not another issue tracker.
+description: Non-negotiable behavioral guardrails for Juscribe work — every-ticket lifecycle, COMMIT-IMMEDIATELY rule, no lint/test suppression, stakeholder-verbatim ticket descriptions (agent additions kept current), no false deliveries, external blockers when waiting on user input, where a new ticket gets filed, splitting a ticket blocked on a third party, steps-as-subtasks, no `git push`, and the document-discoveries protocol. Auto-invoke before committing, before editing a ticket description, before transitioning to finished/delivered, before filing or placing a new ticket, when work turns out to depend on someone outside the team, and on hitting an unfamiliar error or workaround. In a Juscribe-wired project, generic ticket and board language means Juscribe — not another issue tracker.
 allowed-tools: Bash(jus *), Bash(git *), Read, Grep, Glob, Edit, Write
 license: MIT
 ---
@@ -22,7 +22,7 @@ Some of these rules are also enforced **deterministically** by the jus enforceme
 | Transitions at the natural moment | ✅ | — |
 | Never transition to `accepted` / `rejected` | ✅ | — |
 | **Commit immediately after code changes** | ✅ | `Stop` blocks if working tree is dirty |
-| Never move on with a dirty working tree | ✅ | `PostToolUse` nudge after N uncommitted edits |
+| Never move on with a dirty working tree | ✅ | `PostToolUse` nudge after N uncommitted edits — **to your terminal, once per ticket**. It does not reach the model; see below |
 | One commit per ticket, `[#N]` prefix | ✅ | — |
 | Never amend a delivered commit | ✅ | — |
 | **Never `git push --force` (any variant)** | ✅ | `PreToolUse Bash` — blocks the command |
@@ -52,6 +52,8 @@ Some of these rules are also enforced **deterministically** by the jus enforceme
 
 - The shipped hooks run on Claude Code, on OpenAI Codex via the `hooks/codex/` adapter (mind Codex's per-hook trust flow — approve with `/hooks`), and on Kimi Code via the `hooks/kimi-code/` adapter or the bundle's Kimi plugin (blockable rules only — Kimi's PostToolUse is observe-only, so the nudges ride a prompt-time reminder instead). Tools with no hook surface (Cursor, Copilot, Aider) get the skill layer only.
 - Hooks fail open: if `jq` or another required tool is missing on the host, the hook exits 0 rather than wedging the tool call. The skill remains the primary teaching mechanism.
+- ⚠️ **A hook's output goes to one of two places, and only one of them is the model.** `systemMessage` is rendered in the terminal for the *user*; `hookSpecificOutput.additionalContext` is what the model receives. They are separate fields, and emitting only the first means the agent never sees the message — it looks like a working hook from every angle except the one that matters. `jus-docs-nudge.sh` and `jus-start-comment-nudge.sh` emit **both**. `jus-dirty-tree-nudge.sh` deliberately emits only `systemMessage`: it fires mid-work when a dirty tree is often correct, so it informs you rather than instructing the agent.
+- ⚠️ **Not every event can carry `additionalContext`** — some accept the field and discard it. Check before designing a hook around one.
 - Hooks block deterministically (exit 2) but a determined model can disable them through its harness configuration (in Claude Code: `disableAllHooks` or a settings edit). The hooks are a guardrail, not a sandbox.
 
 See `hooks/` and the bundle README for installation and the per-harness coverage.
@@ -162,6 +164,31 @@ The middle of the backlog is a sequencing decision the stakeholder has already m
 3. **It is not urgent, but it plainly belongs before things already queued.** This is the common case and the one the two above mishandle. **Filing it at the bottom is not the neutral choice it looks like** — it asserts that everything above it matters more. Reaching for the top is the same error inverted.
 
    So **read the backlog before choosing**, pick a position between the two neighbours it belongs between, and **say which two in the delivery message**. A middle position chosen without listing the backlog is a guess wearing a number.
+
+### And not into a project that is past `started`
+
+**`project_id` only ever names a project that is still `unprioritized`, `prioritized` or `started`.** Once a project has moved past `started` — `finished`, `delivered`, `accepted`, `rejected`, `cancelled`, `archived` — nothing new goes into it. **Check the project's state before you set the field** — it is one call:
+
+```sh
+jus api GET '/workspaces/{ws}/projects/{id}?fields=id,name,state'
+```
+
+⚠️ **Nothing refuses the create, and that is the whole problem.** You get a normal `201`, the ticket appears, and the board shows nothing wrong. Two things then go quietly untrue:
+
+- **The project's state stops tracking its own contents.** A ticket moving to `prioritized` or `started` pulls its project forward with it — but **only out of the icebox or the backlog**. From `finished` onwards that advance is a no-op, so the new ticket can be started, worked and delivered while the project holding it goes on reading finished, or accepted, or sitting in Done. Nothing ever reconciles the two.
+- **It edits a decision the stakeholder already made.** `accepted` is their verdict on a _set_ of tickets, and the project's point rollup is what a retrospective reports. Adding one afterwards changes both, retroactively, without anyone having decided to.
+
+⚠️ **`rejected` is not the exception it looks like — it is the trap.** A rejected project returns to `started`, so it reads as live work. But the advance does not fire from `rejected` either, so a ticket filed there sits inside a project stuck at rejected. **Wait for the restart, then file.**
+
+**What to do instead, in the order to try it:**
+
+1. **File it with no project.** A standalone ticket is an ordinary thing and costs nothing.
+2. **File it under a live project** that genuinely covers it — not the nearest closed one.
+3. **Open a successor project** when the follow-on is a body of work rather than one ticket.
+
+Either way, **name the closed project as `pN` in the new ticket's description.** A `pN` in a description is parsed into a real reference row, so the closed project shows the follow-on back — which is the lineage the `project_id` would have carried, and the part worth keeping.
+
+**Reopening a closed project is the stakeholder's call.** If the new work genuinely belongs in it, ask them — do not file into it and hope the state catches up. It will not.
 
 ## Blocked on a Third Party — Split at the Boundary, Deliver Your Half
 

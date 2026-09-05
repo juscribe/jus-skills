@@ -63,13 +63,13 @@ jus api GET '/workspaces/{ws}/iterations/{iteration}'
 jus api GET '/workspaces/{ws}/tickets?iteration_id={iteration}&per_page=200&include_markers=true'
 ```
 
-**Fetch the zone first and hold it**, because every date you bucket and every time you render depends on it — see **EVERY TIMESTAMP** in step 3 for why the summary endpoint is the one to ask and the workspace row is not.
+**Fetch the zone first and hold it**, because every date you bucket and every time you render depends on it — see **EVERY TIMESTAMP** in [references/reporting-traps.md](references/reporting-traps.md) for why the summary endpoint is the one to ask and the workspace row is not.
 
 The iteration row carries the committed and accepted point totals. The ticket list carries everything else — state, type, points, labels, project, requester, stakeholder, assignees, `rejections_count`, and the timestamps the board exposes.
 
 ⚠️ **`include_markers=true` IS LOAD-BEARING.** The ticket index drops release, milestone and deadline markers by default, and `pagination.count` reports the reduced number — it describes the rows the filter let through, so it is internally consistent with the thinned page you were handed and every check you can run on the list passes. Measured on a real iteration: **102 without the flag, 112 with it.**
 
-**The ten it dropped were the release markers**, which is precisely the population section 9 exists to examine — so the query is blind in the one place the analysis has to look. A retrospective run without the flag is not slightly incomplete; it is confidently wrong about what shipped.
+**The ten it dropped were the release markers**, which is precisely the population section 10 exists to examine — so the query is blind in the one place the analysis has to look. A retrospective run without the flag is not slightly incomplete; it is confidently wrong about what shipped.
 
 ⚠️ **`.meta.excluded_markers` answers this directly, WHERE THE SERVER HAS IT.** Newer Juscribe returns it on every ticket index — always present, `0` when nothing was withheld, so a zero is an answer rather than a silence. Read it and you know at once:
 
@@ -114,7 +114,7 @@ about the wrong answer looks wrong.
 
 ## Step 3 — What the retrospective owes
 
-**A headline and nine sections. Scale the depth to the iteration, not to this list** — a one-day iteration with four tickets gets a short report, and saying "there is not enough here to retrospect on" is a legitimate finding. A hundred-ticket iteration gets all nine.
+**A headline and ten sections. Scale the depth to the iteration, not to this list** — a one-day iteration with four tickets gets a short report, and saying "there is not enough here to retrospect on" is a legitimate finding. A hundred-ticket iteration gets all ten.
 
 ### The headline is three to five numbers, and no more
 
@@ -128,7 +128,28 @@ Points closed, tickets closed, the rank against the whole series, and at most tw
 
 3. **Where the effort went** — by kind of work: user-facing features, bug fixing, performance, internal tooling and plumbing, research, documentation. **In points, not ticket counts**, so it reads as effort rather than volume.
 
-4. **When the work happened** — the hours of the day work was actually being done, per day of the iteration, in the board's zone. **Distinct active hours, the span from first to last, and where the gaps fall.** This is the section that answers "what did the week actually look like", and it is invisible in every other cut.
+4. **How good the estimates turned out** — whether the points the board committed to matched the work the iteration actually took. This is the section that turns an estimate into a measurement instead of a ritual.
+
+   **Three questions, and only the first is arithmetic:**
+
+   | Ask | From |
+   | --- | --- |
+   | Did the estimates hold in aggregate — committed against accepted | the iteration's own totals |
+   | Which tickets were sized wrong, and in which direction | each ticket's points against how long it actually took (the activity feeds from step 2) |
+   | **Why** they were wrong | the ticket's own comments. Nothing else answers it |
+
+   ⚠️ **POINTS ARE NOT HOURS, so "the 3-pointer took four hours" is not a finding.** What makes one is a comparison **between tickets of the same size**: if the 3-pointers ran from twenty minutes to a full day, the scale is not measuring what it claims to. Group by point value, and report where the spread is widest.
+
+   **Name the direction, and keep the three causes apart — they have different remedies:**
+   - **Mis-estimated.** The work was what everyone thought it was and the size was called wrong. A calibration problem, and the only one that corrects by moving the scale.
+   - **Unforeseen complexity.** The work turned out to be a different shape once opened. The ticket's comments almost always contain the sentence where somebody found out — quote it rather than paraphrasing.
+   - **An unknown unknown.** Nobody could have estimated it, because nobody knew it was there. **Not a calibration failure**, and counting it as one makes the estimates look worse than they are. The useful figure is how many there were and what they had in common.
+
+   ⚠️ **A ticket created without an estimate has no opening value to drift from** — a real state, not missing data. Count those separately and give the number.
+
+   ⚠️ **Do not report a single accuracy percentage.** Committed against accepted is dominated by scope entering and leaving, not by estimation, so one number attributes to the estimator what the week actually did. Give the per-ticket picture instead — and if the estimates simply held, say so in a line. That is a legitimate finding and usually the true one.
+
+5. **When the work happened** — the hours of the day work was actually being done, per day of the iteration, in the board's zone. **Distinct active hours, the span from first to last, and where the gaps fall.** This is the section that answers "what did the week actually look like", and it is invisible in every other cut.
 
    The cheapest complete source is the commit log, which needs no API and covers every day at once:
 
@@ -143,7 +164,7 @@ Points closed, tickets closed, the rank against the whole series, and at most tw
 
    **What to actually report:** how many of the 24 hours carried work, the span, the longest gap inside it, and whether any of that changed from the previous iteration. Not a count of events per hour, which is throughput wearing a clock.
 
-5. **How production behaved** — the iteration's effect on the running system, from whatever the project already has: an APM, an error tracker, a log store, an uptime check.
+6. **How production behaved** — the iteration's effect on the running system, from whatever the project already has: an APM, an error tracker, a log store, an uptime check.
 
    | Ask | Because |
    | --- | --- |
@@ -156,21 +177,21 @@ Points closed, tickets closed, the rank against the whole series, and at most tw
 
    ⚠️ **Bound the window from the board's local dates, converted.** A query language's time literal is machine input and is usually UTC — that is the one place UTC is correct, and the report says so where it shows the query.
 
-   ⚠️ **If the project has no such tooling, that is one clause and no section.** Do not substitute something that looks like it — CI duration, test counts, a log line count — for a production signal.
+   ⚠️ **If the project has no such tooling, or this run cannot reach it, that is one clause and NO SECTION.** Not a heading, not a table of what could not be read, not the query you would have run. See _A source you cannot reach_ below for where the clause goes. Do not substitute something that looks like a production signal either — CI duration, test counts, a log line count.
 
-6. **What debt stands** — the standing cost the iteration inherited, and whether it moved.
+7. **What debt stands** — the standing cost the iteration inherited, and whether it moved.
 
    | Ask | Typical source |
    | --- | --- |
-   | How far behind are the direct dependencies, and for how long | `bundle outdated`, `pnpm outdated`, `go list -m -u all` |
-   | What is known-vulnerable right now | `bundler-audit`, `pnpm audit`, `govulncheck`, the platform's own advisories |
+   | How far behind are the direct dependencies, and for how long | whatever the project's package manager answers this with |
+   | What is known-vulnerable right now | the project's audit tool, plus the platform's own advisories |
    | What upgrades are pending and blocked, and on what | the board, plus whatever the project already records |
 
    ⚠️ **"Is what we have vulnerable?" and "how far behind are we?" are different questions, and a clean scan is not evidence of currency.** A library can sit six releases behind for four months and emit no vulnerability signal at all, because none of those releases fixed a CVE. Report both, and never let one stand in for the other.
 
    **The interesting figure is the direction, not the level.** Debt that is flat is a fact about the project; debt that grew or shrank this iteration is a fact about the iteration, which is what a retrospective is for.
 
-7. **What went wrong** — difficulties, reversals, work that shipped and was then found wrong, and the rejections.
+8. **What went wrong** — difficulties, reversals, work that shipped and was then found wrong, and the rejections.
 
    ⚠️ **CLASSIFY THE REJECTIONS BEFORE ANY RATE IS REPORTED.** A rejection count is not a rejection rate: the counter tallies transitions, and several of them are not the thing the number is read as meaning. **Read each one** — the ticket's comments and its activity feed — and split them:
 
@@ -182,9 +203,9 @@ Points closed, tickets closed, the rank against the whole series, and at most tw
 
    Measured on a real iteration: **5 events across 4 tickets, of which 3 were real and sat on 2 tickets.** Reported raw, the rate is nearly double. Give the classified figure, say how many events you excluded and why, and name the tickets — the reader can then disagree with your calls, which they cannot do with a bare number.
 
-   **Scope churn and estimate drift live here too, and only when they moved.** What entered and left mid-flight, and where the first estimate and the final one diverged. ⚠️ **A ticket created without an estimate has no opening value to drift from** — that is a real state, not missing data. Count those and say how many rather than treating the first later estimate as the original. If drift was a point or two across the whole iteration, that is one sentence, not a table.
+   **Scope churn lives here, and only when it moved** — what entered and left mid-flight, and at whose instigation. ⚠️ **Estimate drift does NOT: it belongs in section 4**, which is about the estimates themselves. Two sections reporting on the same points is how a reader ends up holding two different accuracy figures and no way to reconcile them.
 
-8. **What the data says that nobody asked for** — the section the rest of the report exists to make possible, and the one most likely to come out as filler.
+9. **What the data says that nobody asked for** — the section the rest of the report exists to make possible, and the one most likely to come out as filler.
 
    **A finding here is a claim someone could disagree with.** "Velocity was 82 points" is not one. "Every ticket that took more than a day had its estimate raised, and none that took less did" is.
 
@@ -194,72 +215,11 @@ Points closed, tickets closed, the rank against the whole series, and at most tw
    - **Distinguish a trend from a step change.** A gradual drift and a clean jump at one instant have different causes, and a jump that lands exactly on a boundary — a deploy, a month, a schema change — is a measurement artefact until proven otherwise. ⚠️ **Check the population before believing the number**: an instrument working perfectly can be counting something other than what you think it is counting.
    - **"Nothing unusual this iteration" is a legitimate finding.** Say it in a line. It is far better than four manufactured ones, and a reader who has seen you say it will believe the next section that is not empty.
 
-9. **What shipped, and what has not** — work that is merged but not yet released is not delivered value. If the board tracks releases, say what is sitting behind an unrun one.
+10. **What shipped, and what has not** — work that is merged but not yet released is not delivered value. If the board tracks releases, say what is sitting behind an unrun one.
 
    ⚠️ **Split that figure by state before you report it.** A release's list of pending work mixes accepted tickets with ones merely delivered or since cancelled, so a single point total silently overstates what the iteration actually accepted and has not shipped. Give the accepted number as the headline and the rest beside it. Measured on a real run: 37 points on the marker, of which **25** were accepted — the draft led with 37 and called them accepted.
 
-### ⚠️ A RANK CLAIM IS COMPUTED OVER EVERY ITERATION, NOT THE ONES YOU FETCHED
-
-**"The second-best iteration on the board" is a claim about the whole series**, and the reflex is to rank against whatever window happened to be in front of you — the rolling velocity average, the last dozen columns of your own chart, the page the API returned. That window is chosen for a chart's legibility, and it is not the population the sentence describes.
-
-```
-jus api GET '/workspaces/{ws}/iterations'
-```
-
-**Rank over all of it, and name the ones above.** Measured on a real run: an iteration called "the second-highest on the board" was **4th of 196**, and the three above it were nowhere near the fetched window. Nothing about the wrong claim looked wrong, and a superlative is the sentence a reader is most likely to repeat.
-
-⚠️ **Say which metric the rank is over.** Accepted points, tickets done and committed points give different orders, and a rank with no named metric cannot be checked by anyone.
-
-### ⚠️ Section 3 is the one that gets faked
-
-**Ticket type alone does not answer "where did the effort go", and using it as the answer is the trap.** A feature can be a user-facing capability or an internal developer tool. A chore can be a performance fix, a dependency bump or deployment plumbing.
-
-**Cross three signals:** the ticket type, the labels, and the project the ticket sits under — the project usually carries the intent outright. Where they disagree, the classification is a **judgement**, and the report should show it rather than bury it: name the tickets you were unsure about and say which way you called them.
-
-This is the cut that answers *did we spend the month on what we meant to*, which a type distribution cannot.
-
-### ⚠️ EVERY TIMESTAMP THE REPORT RENDERS IS IN THE BOARD'S ZONE, AND CARRIES IT
-
-**Not UTC. Not a bare number.** `14:05 PDT`, not `21:05 UTC` and not `14:05`. Times are read by people who work in one zone, and a report full of UTC asks every one of them to do arithmetic before they can picture the day.
-
-**Get the zone from the board, not from the machine you are running on** — and not from the field that looks like it:
-
-```sh
-jus api GET '/workspaces/{ws}/summary' | jq -r '.workspace.timezone'
-```
-
-⚠️ **The workspace's own row can carry a null there and the summary never does.** One serialises the stored column, the other the **effective** zone — the stored one falls back to a default that only the server knows. Measured on a real board: `GET /workspaces/1` answered `"timezone": null` while `/summary` answered `America/Los_Angeles` at the same moment. A report built from the first one falls back to UTC and looks entirely correct.
-
-**Two places UTC is still right, and both are machine input rather than prose:**
-
-- A query language's time literal — an APM's `SINCE`, a SQL `AT TIME ZONE`. Convert the board's local dates into it, show the query as you ran it, and say in one clause that the literal is UTC.
-- A raw identifier you are quoting verbatim from a log or an API payload. Quote it as it came, and give the local time beside it.
-
-⚠️ **Bucketing is the same rule and it is the one that silently moves work between days.** An iteration's start and end are local dates; comparing raw UTC strings against them puts an evening's work on the following day. Measured on one run: **19 of 102 tickets moved**, turning "90% of this iteration was filed the day it was worked" into a much weaker claim, with nothing about the wrong answer looking wrong.
-
-### ⚠️ NAME PEOPLE. DO NOT WRITE "the stakeholder"
-
-A retrospective is read by the people it is about — a handful of them, all of whom are named in the data you just fetched. Writing `"the stakeholder"`, "a teammate", "the agent" or "the author" where a name is available is anonymisation with no beneficiary: it makes the report harder to read and signals a caution that nobody asked for.
-
-Measured on a real run: the report carried a section headed *"What the stakeholder wrote, in their own hand"* about a board with exactly one human member, whose name appeared in every payload it had read.
-
-**Use the display name the board gives you**, and the handle beside it on first mention if the two differ. The same applies to agents — an agent with a name is a participant with a name.
-
-**The one exception is a report you are about to publish outside the board**, which is a different decision and covered in step 6. That is a reason to ask before publishing, not a reason to write the report anonymously.
-
-### ⚠️ A SOURCE YOU CANNOT REACH IS A CLAUSE, NOT A SILENCE
-
-Some of what sections 5 and 6 want lives behind credentials, a VPN, or a machine you are not on. **A retrospective run from a sandbox routinely cannot reach the APM** — a token held in an operating system keychain does not exist on a Linux runner, and a local check-run log is on somebody's laptop.
-
-**Three ways to handle that, and only one is acceptable:**
-
-|  |  |
-| --- | --- |
-| Leave the section out | ✗ The reader cannot tell an absent signal from a healthy one |
-| Substitute something reachable that resembles it | ✗ Worse — it is quotable and wrong |
-| Say which source you could not reach, and what it would have answered | ✓ |
-
-**Never fabricate a figure, and never round one you did not measure.** A sentence naming the gap costs the reader nothing and tells the next run exactly what to fix.
+**Five traps in the prose of those sections — a rank claim computed over the wrong set, the section that gets faked, the board's timezone, naming people, and an unreachable source: [references/reporting-traps.md](references/reporting-traps.md).**
 
 ## ⚠️ What NOT to report
 
@@ -284,7 +244,7 @@ They were named by the person the reports are written for, after reading one tha
 
 ### Anonymising is on this list too
 
-See **NAME PEOPLE** in step 3. It appears here as well because it is the same instinct — writing around the specific because the general feels safer — and because it was the first thing noticed in the report that produced this list.
+See **NAME PEOPLE** in [references/reporting-traps.md](references/reporting-traps.md). It appears here as well because it is the same instinct — writing around the specific because the general feels safer — and because it was the first thing noticed in the report that produced this list.
 
 ## Step 4 — Draw the charts
 
@@ -294,56 +254,13 @@ This is not a stylistic preference. The report has to work as a hosted page **an
 
 **If a chart needs a library to be worth drawing, make it a table instead.** A retrospective's charts are bars, columns and a distribution; all three are a dozen lines of SVG.
 
-### Which cuts earn a chart
-
-| Chart | For |
-| --- | --- |
-| Horizontal bars | Effort by kind of work (section 3) |
-| Column series | Velocity against the preceding iterations; **hours of the day carrying work** (section 4), one column per hour |
-| Strip or dot plot | Cycle-time distribution — where the tail is, which a mean hides |
-| Nothing | Everything else |
-
-**A chart of four values is a table with extra steps.** Committed vs accepted is two numbers; write them large and move on.
-
-### A bar row, complete
-
-```html
-<svg viewBox="0 0 600 24" role="img" aria-label="Bug fixing: 34 points, 27% of the iteration">
-  <rect x="0" y="4" width="600" height="16" rx="3" fill="var(--track)" />
-  <rect x="0" y="4" width="162" height="16" rx="3" fill="var(--accent)" />
-  <text x="170" y="16" font-size="12" fill="var(--ink)">Bug fixing — 34 pts (27%)</text>
-</svg>
-```
-
-**Compute the width yourself** — `width = 600 * value / max` — and round to one decimal. Nothing in the page does arithmetic at render time, which is what makes the numbers checkable in step 5.
-
-⚠️ **Every chart carries its numbers in text as well.** A bar whose value appears only as a length is unreadable when printed, screenshotted small, or read aloud. The `aria-label` is not optional either.
-
-### Colour that survives both themes
-
-Define the palette once as custom properties, then override it for dark. Do not put a colour's only definition inside the media query.
-
-```css
-:root {
-  --bg: #fbfbf9; --ink: #1c1c1a; --muted: #6b6b66;
-  --track: #e7e7e2; --accent: #3b6ea5; --rule: #dcdcd6;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14140f; --ink: #ebebe5; --muted: #9a9a92;
-    --track: #2a2a24; --accent: #7aa7d4; --rule: #33332c;
-  }
-}
-body { background: var(--bg); color: var(--ink); }
-```
-
-⚠️ **Give `body` an explicit background.** A transparent one borrows whatever is behind the page, and a light report on a dark ground is unreadable in exactly the place you will not test it.
+**Which cuts earn a chart, the bar-row markup, the `viewBox` rule and a palette that survives both themes: [references/charts.md](references/charts.md).**
 
 ## Step 5 — Verify the numbers before you hand it over
 
 ⚠️ **A RETROSPECTIVE COMPUTES, SO LOOKING AT IT IS NOT CHECKING IT.** A wrong figure in a report is worse than no report: it is quotable, it gets carried into the next planning conversation, and nothing downstream will ever re-derive it.
 
-**Check these eight, every time. They are the ones that go wrong:**
+**Check these nine, every time. They are the ones that go wrong:**
 
 1. **The parts sum to the whole.** Effort by kind of work must total the iteration's points. If it does not, some tickets fell out of your classification — find them and add an "unclassified" row rather than letting the shortfall hide.
 2. **Percentages total 100**, allowing for rounding, and say which way you rounded.
@@ -352,7 +269,8 @@ body { background: var(--bg); color: var(--ink); }
 5. **The list agrees with the ITERATION ROW, which is a second source.** ⚠️ Check 4 alone cannot catch a filtered list — `pagination.count` describes the rows the filter let through, so it agrees with itself no matter what was withheld. The iteration's own `done_tickets_count` counts accepted and cancelled tickets **including markers**, and is computed by a different query, so compare the two: **your list must not be smaller than it.** A list of 102 under a `done_tickets_count` of 106 is the tell. Where the server returns `.meta.excluded_markers` (step 2) that says it outright, but this check needs no particular server version, so run it either way. If your list is smaller, re-fetch with `include_markers=true` before going any further.
 6. **Excluded rows are declared.** Nulls, cancelled tickets, tickets that moved out mid-iteration — every exclusion appears in the report with its count.
 7. **Every rendered timestamp carries a zone, and it is the board's.** Grep the finished HTML for `UTC` and for a bare `\d\d:\d\d` with no zone beside it. Each hit is either a machine-input literal you are deliberately showing — an APM `SINCE`, a quoted log line — or a defect. This is the cheapest check in the list and it caught nothing for as long as it did not exist.
-8. **Every figure you could not measure is named as unmeasured.** Walk the sections that depend on an outside source — production health, standing debt — and confirm each either carries a number you actually ran, or a clause saying which source you could not reach. A section that is simply absent fails this check.
+8. **Every figure you could not measure is named as unmeasured — as a line, not as a section.** Walk the sections that depend on an outside source (production health, standing debt) and confirm each either carries a number you actually ran, or appears in the closing "What this could not measure" list. A source absent from both fails this check — and so does one that got a heading and a table in order to say that nothing was read.
+9. **Nothing is drawn outside its own `viewBox`.** For every chart, take the minimum and maximum `x` and `y` you actually emitted — axis labels and value labels included, not just the bars — and confirm each falls inside `minX … minX + width` and `minY … minY + height`, with room under a text baseline for its descenders. This is a clip, so it produces no error and the chart still renders; the only way to catch it is to check the numbers. See step 4.
 
 **Do it by re-deriving, not by re-reading.** Recompute a figure from the raw list in a scratch calculation and compare it to what the page says. Two independent paths to the same number is the check; reading the number twice is not.
 

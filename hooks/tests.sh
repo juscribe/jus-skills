@@ -37,6 +37,64 @@ trap 'rm -rf "$CLAUDE_PLUGIN_DATA"' EXIT
 
 # ---- helpers ---------------------------------------------------------------
 
+# ⚠️ THESE THREE LIVED AT LINE ~1250 UNTIL #3507, WHICH IS WHY THEY MOVED.
+# bash resolves a function at call time, so a test block placed ABOVE the
+# definition died with "assert_no_nudge: command not found" — and, because the
+# harness only tallies what an assert_* helper reports, that test simply did not
+# exist. Three no-fire assertions read as passing while asserting nothing.
+# Helpers belong here, with the others.
+# Assert a hook produces NO systemMessage (a quiet/no-op nudge) and exits 0.
+assert_no_nudge() { # <script> <input_json>
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local out ec; out=$(printf '%s' "$2" | "$1" 2>&1); ec=$?
+  if [[ $ec -eq 0 && "$out" != *systemMessage* ]]; then
+    printf '  \033[32m✓\033[0m %s\n' "${TEST_NAME:-test}"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("${TEST_NAME:-test}")
+    printf '  \033[31m✗\033[0m %s (exit=%s, out=%s)\n' "${TEST_NAME:-test}" "$ec" "${out:0:160}"
+  fi
+}
+# Assert a state file equals an expected value.
+assert_state_eq() { # <file> <expected>
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local got; got=$(cat "$1" 2>/dev/null || echo "__missing__")
+  if [[ "$got" == "$2" ]]; then printf '  \033[32m✓\033[0m %s\n' "${TEST_NAME:-test}"
+  else TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("${TEST_NAME:-test}"); printf '  \033[31m✗\033[0m %s (want=%s got=%s)\n' "${TEST_NAME:-test}" "$2" "$got"; fi
+}
+# Assert a state file is absent.
+assert_state_absent() { # <file>
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if [[ ! -e "$1" ]]; then printf '  \033[32m✓\033[0m %s\n' "${TEST_NAME:-test}"
+  else TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("${TEST_NAME:-test}"); printf '  \033[31m✗\033[0m %s (exists)\n' "${TEST_NAME:-test}"; fi
+}
+
+# assert_reaches_agent <name> <hook_output>
+#
+# #3498. A nudge that emits only `systemMessage` is rendered in the terminal and
+# NOWHERE ELSE — the attachment map that builds the model's prompt carries
+# `hook_additional_context` and has no entry for `hook_system_message`. So a hook
+# meant to change what the agent does must emit BOTH, and this asserts both.
+#
+# ⚠️ Asserts the terminal half too, deliberately. The fix is additive: the user
+# keeps seeing the message. A future edit that "simplifies" by dropping
+# `systemMessage` would otherwise pass.
+assert_reaches_agent() { # <name> <hook_output>
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local name="$1" out="$2" missing=""
+  jq -e '.systemMessage | type == "string" and length > 0' >/dev/null 2>&1 <<<"$out" \
+    || missing="systemMessage"
+  jq -e '.hookSpecificOutput.hookEventName == "PostToolUse"' >/dev/null 2>&1 <<<"$out" \
+    || missing="${missing:+$missing, }hookSpecificOutput.hookEventName"
+  jq -e '.hookSpecificOutput.additionalContext | type == "string" and length > 0' >/dev/null 2>&1 <<<"$out" \
+    || missing="${missing:+$missing, }hookSpecificOutput.additionalContext"
+  if [[ -z "$missing" ]]; then
+    printf '  \033[32m✓\033[0m %s\n' "$name"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$name")
+    printf '  \033[31m✗\033[0m %s (missing: %s)\n' "$name" "$missing"
+  fi
+}
+
 # assert_exit <expected_code> <script> <input_json> [<must_contain>]
 assert_exit() {
   local expected="$1" script="$2" input="$3" must_contain="${4:-}"
@@ -805,8 +863,28 @@ SID_TWICE="test-nudge-twice-$$"
 REPO_TWICE=$(nudge_repo 5 "$SID_TWICE")
 first=$(nudge_out "$SID_TWICE" "$REPO_TWICE")
 second=$(nudge_out "$SID_TWICE" "$REPO_TWICE")
-assert_stdout "double delivery reports the same count, not double" "5 files" "$second"
-assert_stdout "double delivery is identical to single delivery" "$first" "$second"
+# #2353's concern was the COUNT going wrong when one event is delivered twice by
+# two registrations — a counter reached 5 in 3 edits and then said "5 file edits".
+# The count is derived, so it is still right however many times it is asked, and
+# that is what the first assertion below pins.
+#
+# ⚠️ WHAT CHANGED IN #3507: the second delivery is now SILENT rather than
+# identical. The per-ticket dedup flag is written by the first, so the duplicate
+# is suppressed — which is the outcome #2353 wanted anyway (one message, correct
+# number) rather than two identical ones. The old assertion was `$first ==
+# $second`; do not restore it without also removing the dedup.
+assert_stdout "double delivery reports the same count, not double" "5 files" "$first"
+assert_stdout "the duplicate delivery is suppressed, not repeated" "" "$second"
+
+# The flag is per-ticket, not permanent: a clean tree clears it, so the next
+# batch of uncommitted work is nudged again. Without this the hook speaks once
+# per ticket for the ticket's whole life, which is the opposite failure from
+# firing 32 times.
+( cd "$REPO_TWICE" && git add -A && git commit -q -m "committed" )
+nudge_out "$SID_TWICE" "$REPO_TWICE" >/dev/null
+for i in 1 2 3 4 5; do echo "again $i" > "$REPO_TWICE/g$i.txt"; done
+assert_stdout "a clean tree rearms the nudge for the next batch" "5 files" \
+  "$(nudge_out "$SID_TWICE" "$REPO_TWICE")"
 rm -rf "$REPO_TWICE"
 
 # Editing ONE file repeatedly is not five files. edits.log records a path per
@@ -875,6 +953,7 @@ else
   FAILURES+=("$TEST_NAME")
   printf '  \033[31m✗\033[0m %s (got: %s)\n' "$TEST_NAME" "$out"
 fi
+assert_reaches_agent "docs-nudge (edit) reaches the agent, not just the terminal" "$out"
 
 t "stays quiet on the second edit for the same doc and ticket scope"
 out2=$(printf '{"tool_name":"Edit","session_id":"%s","tool_input":{"file_path":"%s/app/styles/b.css"}}' \
@@ -941,6 +1020,7 @@ out_pickup=$(jq -n --arg sid "$SID_PICKUP" --arg cmd "$STARTED_CMD" \
         '{tool_name:"Bash", session_id:$sid, tool_input:{command:$cmd}}' \
       | CLAUDE_PROJECT_DIR="$DOCS_PROJECT" PATH="$PICKUP_STUB:/usr/bin:/bin" \
         "$SCRIPTS/jus-docs-nudge.sh")
+assert_reaches_agent "docs-nudge (pickup) reaches the agent, not just the terminal" "$out_pickup"
 TESTS_RUN=$((TESTS_RUN + 1))
 if [[ "$out_pickup" == *"systemMessage"* && "$out_pickup" == *"docs/threat.md"* \
       && "$out_pickup" == *"#501"* ]]; then
@@ -1171,30 +1251,6 @@ NUDGE="$SCRIPTS/jus-start-comment-nudge.sh"
 mk_bash() { jq -nc --arg cmd "$1" --arg sid "$2" '{tool_name:"Bash",tool_input:{command:$cmd},tool_response:{interrupted:false},session_id:$sid}'; }
 mk_edit() { jq -nc --arg fp "$1" --arg sid "$2" '{tool_name:"Edit",tool_input:{file_path:$fp},session_id:$sid}'; }
 
-# Assert a hook produces NO systemMessage (a quiet/no-op nudge) and exits 0.
-assert_no_nudge() { # <script> <input_json>
-  TESTS_RUN=$((TESTS_RUN + 1))
-  local out ec; out=$(printf '%s' "$2" | "$1" 2>&1); ec=$?
-  if [[ $ec -eq 0 && "$out" != *systemMessage* ]]; then
-    printf '  \033[32m✓\033[0m %s\n' "${TEST_NAME:-test}"
-  else
-    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("${TEST_NAME:-test}")
-    printf '  \033[31m✗\033[0m %s (exit=%s, out=%s)\n' "${TEST_NAME:-test}" "$ec" "${out:0:160}"
-  fi
-}
-# Assert a state file equals an expected value.
-assert_state_eq() { # <file> <expected>
-  TESTS_RUN=$((TESTS_RUN + 1))
-  local got; got=$(cat "$1" 2>/dev/null || echo "__missing__")
-  if [[ "$got" == "$2" ]]; then printf '  \033[32m✓\033[0m %s\n' "${TEST_NAME:-test}"
-  else TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("${TEST_NAME:-test}"); printf '  \033[31m✗\033[0m %s (want=%s got=%s)\n' "${TEST_NAME:-test}" "$2" "$got"; fi
-}
-# Assert a state file is absent.
-assert_state_absent() { # <file>
-  TESTS_RUN=$((TESTS_RUN + 1))
-  if [[ ! -e "$1" ]]; then printf '  \033[32m✓\033[0m %s\n' "${TEST_NAME:-test}"
-  else TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("${TEST_NAME:-test}"); printf '  \033[31m✗\033[0m %s (exists)\n' "${TEST_NAME:-test}"; fi
-}
 
 # Scenario A — started, no comment yet → tracker arms, nudge fires on a source edit, then fires once.
 SID_A="sc-a-$$"; DIR_A="$CLAUDE_PLUGIN_DATA/sessions/$SID_A"
@@ -1205,6 +1261,13 @@ assert_state_eq "$DIR_A/active_ticket" "1852"
 
 t "nudge fires on the first source-file edit when no start comment exists"
 assert_exit 0 "$NUDGE" "$(mk_edit /repo/app/models/foo.rb "$SID_A")" "start comment"
+# Its own session: this nudge is fire-once per ticket, so re-invoking it for
+# SID_A would correctly return nothing and the assertion would fail on the
+# dedup rather than on the fields.
+SID_FIELDS="sc-fields-$$"
+mk_bash "jus api PATCH /workspaces/1/tickets/1852/transition '{\"state\":\"started\"}'" "$SID_FIELDS" | "$TRACK" >/dev/null
+assert_reaches_agent "start-comment nudge reaches the agent, not just the terminal" \
+  "$(mk_edit /repo/app/models/foo.rb "$SID_FIELDS" | "$NUDGE")"
 
 t "nudge fire-once: a second source edit stays silent"
 assert_no_nudge "$NUDGE" "$(mk_edit /repo/app/models/bar.rb "$SID_A")"
@@ -1249,9 +1312,21 @@ section "fail-open on malformed JSON input (all hooks)"
 
 # A hook must never break a tool call because the harness handed it unexpected
 # stdin: malformed JSON → silent no-op (exit 0), via juscribe_sop_require_valid_json.
-for hook in jus-block-force-push jus-block-no-verify jus-pre-commit-gate \
-            jus-block-lint-suppression jus-track-edits jus-dirty-tree-nudge \
-            jus-start-comment-nudge jus-post-bash-tracker jus-stop-uncommitted; do
+#
+# ⚠️ THE LIST IS DERIVED FROM hooks.json, NOT TYPED (#3507). It was a literal
+# list of nine names, and two registered hooks — jus-docs-nudge and
+# jus-block-accepted-manifest-edit — had silently never been in it. A hand-kept
+# list of "every hook" drifts the moment a hook is added, and the drift is
+# invisible: the sweep still passes, on the hooks it happens to name. Both were
+# already failing open when this was derived, so nothing was broken — but
+# nothing was checking either.
+HOOK_SCRIPTS=$(jq -r '.hooks | to_entries[] | .value[] | .hooks[] | .command' "$HOOKS_DIR/hooks.json" \
+                 | sed 's|.*/||; s|\.sh$||' | sort -u)
+if [[ -z "$HOOK_SCRIPTS" ]]; then
+  printf '  \033[31m✗\033[0m could not read hook names from hooks.json — the sweep would be vacuous\n'
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("hooks.json hook-name extraction")
+fi
+for hook in $HOOK_SCRIPTS; do
   TEST_NAME="$hook fails open (exit 0, silent) on malformed JSON"
   TESTS_RUN=$((TESTS_RUN + 1))
   out=$(printf '%s' 'this is not valid json {' | "$SCRIPTS/$hook.sh" 2>&1); ec=$?

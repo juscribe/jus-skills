@@ -188,9 +188,13 @@ if [[ "$tool_name" == "Bash" ]]; then
     docs_list+="\`${doc}\` — ${hint}"
   done <<<"$matched"
 
-  jq -n --arg ticket "$ticket_id" --arg docs "$docs_list" '{
-    systemMessage: ("[jus:docs] Picking up ticket #" + $ticket + " — this project maps docs to areas it touches: " + $docs + ". Read them before planning the work; the project docs index maps the rest.")
-  }'
+  jq -n --arg ticket "$ticket_id" --arg docs "$docs_list" '
+    ("[jus:docs] Picking up ticket #" + $ticket + " — this project maps docs to areas it touches: " + $docs + ". Read them before planning the work; the project docs index maps the rest.") as $msg |
+    {
+      systemMessage: $msg,
+      hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: $msg }
+    }
+    '
   exit 0
 fi
 
@@ -247,8 +251,12 @@ flag="$(docs_nudge_flag "$scope" "$matched_doc")"
 mkdir -p "$state_dir"
 date +%s > "$flag"
 
-jq -n --arg doc "$matched_doc" --arg hint "$matched_hint" '{
-  systemMessage: ("[jus:docs] You are editing files this project documents in `" + $doc + "` — " + $hint + ". Read it before going further; the project docs index maps the rest.")
-}'
+jq -n --arg doc "$matched_doc" --arg hint "$matched_hint" '
+  ("[jus:docs] You are editing files this project documents in `" + $doc + "` — " + $hint + ". Read it before going further; the project docs index maps the rest.") as $msg |
+  {
+    systemMessage: $msg,
+    hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: $msg }
+  }
+  '
 
 exit 0

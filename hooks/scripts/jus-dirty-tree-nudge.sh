@@ -40,6 +40,26 @@
 #
 # The end-of-turn case is covered separately and harder by
 # jus-stop-uncommitted.sh, which blocks rather than nudges.
+#
+# ── AND IT FIRES ONCE PER TICKET, NOT ONCE PER EDIT (#3507) ──────────────────
+#
+# Measured before this dedup: 288 fires across 52 sessions — median 4, and 32 in
+# the worst single session. Every one said the same thing. A message repeated 32
+# times is a message read zero times, and the cost lands on the occasion the tree
+# is genuinely dirty because attention drifted.
+#
+# The dedup scope is the active ticket, falling back to the session, matching
+# jus-docs-nudge.sh exactly — including the reason for the fallback: work that
+# never picked up a ticket still gets one nudge rather than none. The flag is
+# cleared when the tree goes clean, so a second unrelated batch of uncommitted
+# work in the same ticket is nudged again. That is the point: it tracks
+# "you have work sitting" rather than "you have been told once, ever".
+#
+# ⚠️ THIS HOOK WAS ONCE SLATED FOR DELETION AND SHOULD NOT BE (#3507). The
+# argument was that jus-stop-uncommitted.sh covers the same ground. It does not:
+# Stop runs on ONE of the four ways a turn ends, and an interrupted or errored
+# turn never dispatches it. This hook fires during the turn, so it is the only
+# thing that speaks at all on those paths. See .jus/docs/skill-triggering.md.
 
 set -euo pipefail
 
@@ -74,13 +94,31 @@ if [[ -z "$toplevel" ]]; then
   exit 0
 fi
 
+# Dedup scope: the active ticket, or "session" when no ticket has been picked
+# up. Same scheme as jus-docs-nudge.sh, so the two behave alike.
+active_ticket=$(cat "${state_dir}/active_ticket" 2>/dev/null | tr -d '[:space:]' || echo "")
+nudge_flag="${state_dir}/dirty_tree_nudged_${active_ticket:-session}"
+
 # Unscoped — see juscribe_sop_dirty_lines. The per-session ownership scoping was
 # removed in #2392; worktrees are the isolation strategy.
 count=$(juscribe_sop_dirty_lines "$toplevel" | grep -c . || true)
 
+# A clean tree clears the flag, so the NEXT batch of uncommitted work is nudged
+# again. Without this the hook speaks once per ticket for the ticket's lifetime,
+# which is the opposite failure from firing 32 times.
+if (( count == 0 )); then
+  rm -f "$nudge_flag"
+  exit 0
+fi
+
 if (( count < NUDGE_THRESHOLD )); then
   exit 0
 fi
+
+# Already spoke for this ticket, and the tree has not been clean since.
+[[ -e "$nudge_flag" ]] && exit 0
+mkdir -p "$state_dir"
+: > "$nudge_flag"
 
 # Emit a system message via JSON output. Exit 0 with valid JSON on stdout
 # is processed by Claude Code as structured hook output.

@@ -22,6 +22,23 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.17] — 2026-09-04
+
+### Changed
+
+- Give hard-rules the state check it was telling people to run (#3575)
+- Refuse a project past `started` as a home for a new ticket (#3575)
+- Make jus init install the plugin, not describe an install that never happens (#3565)
+- Split the retrospective skill — 549 lines to 401 (#3516)
+- Bind each nudge message once, so the two channels cannot drift (#3498)
+- Make the two soft nudges reach the agent (#3498)
+- Remove the idle-detection pair, and give the dirty-tree nudge per-ticket dedup (#3507)
+- Nudge the agent to commit work it left dirty across an idle pause (#3507)
+- The two rules an adopting project never received, and a trigger claim we do not have (#3509)
+- Two failures the merge created, and one it only exposed (#3501)
+- Move the reference half of ticket-workflow into files beside it (#3501)
+- Fix eight defects in the generated retrospective and its pane (#3479)
+
 ## [1.4.16] — 2026-09-02
 
 ### Changed

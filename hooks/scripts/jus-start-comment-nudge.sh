@@ -62,8 +62,12 @@ if ! juscribe_sop_is_code_file "$file_path" "$base_dir"; then exit 0; fi
 mkdir -p "$state_dir"
 date +%s > "${state_dir}/start_nudged"
 
-jq -n --arg ticket "$active" '{
-  systemMessage: ("[jus:hard-rules] You are editing a source file on ticket #" + $ticket + " but have not posted a start comment yet. The Juscribe SOP wants a \"Starting\" comment — root cause + plan + test intent — on the ticket BEFORE the first code edit. Post it now (jus api POST /workspaces/{ws}/tickets/" + $ticket + "/comments ...), then continue.")
-}'
+jq -n --arg ticket "$active" '
+  ("[jus:hard-rules] You are editing a source file on ticket #" + $ticket + " but have not posted a start comment yet. The Juscribe SOP wants a \"Starting\" comment — root cause + plan + test intent — on the ticket BEFORE the first code edit. Post it now (jus api POST /workspaces/{ws}/tickets/" + $ticket + "/comments ...), then continue.") as $msg |
+  {
+    systemMessage: $msg,
+    hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: $msg }
+  }
+  '
 
 exit 0

@@ -115,9 +115,13 @@ the repo name — they happen to match here by design. The version is pinned by
 > you stand: `Plugin is now active.` means you're done, while
 > `Run /reload-plugins to activate.` means the skills wait for that command
 > (Claude Code before v2.1.221 always needs it). Hooks from a newly installed
-> plugin need `/reload-plugins` either way, and a plugin enabled declaratively
-> via a project's checked-in `.claude/settings.json` only takes effect on the
-> next trusted launch.
+> plugin need `/reload-plugins` either way.
+>
+> ⚠️ **A plugin "enabled" declaratively via a project's checked-in
+> `.claude/settings.json` is not installed by that alone** — not on the next
+> trusted launch, not on any launch. Measured on Claude Code 2.1.259:
+> `extraKnownMarketplaces` is honoured (the marketplace clones), while
+> `installed_plugins.json` stays empty and no skill loads. Run the install.
 
 ### Option C — manual skills copy (skills only, no hooks)
 
