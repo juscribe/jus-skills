@@ -1,15 +1,23 @@
 # jus enforcement hooks — OpenAI Codex adapter
 
 Runs the same nine shared hook scripts (`../scripts/`) under Codex's native
-hooks system (#1976). Codex's wire contract matches Claude Code's closely —
-JSON payload on stdin with `tool_name` / `tool_input` / `session_id` /
-`stop_hook_active`, exit `2` blocks with stderr as the reason — so the Bash
-blockers, the pre-commit gate, the Bash tracker, and the Stop gate run
-**unchanged**. The one divergence is file edits: Codex reports them as
-`tool_name "apply_patch"` with `tool_input.command` holding raw patch text,
-so those hooks run behind `scripts/jus-codex-adapt.sh`, which converts the
-patch into the `Edit` shape (added lines → `new_string`, removed →
-`old_string`, first `*** Update|Add File:` path → `file_path`).
+hooks system (#1976).
+
+> ⚠️ **`jus-ticket-claim-nudge.sh` is deliberately NOT registered here (#3674).**
+> It runs on `UserPromptSubmit`, and nothing available when it was added
+> establishes that Codex fires that event — this adapter's contract is
+> described only for `PreToolUse`, `PostToolUse` and `Stop`. It is omitted on
+> the evidence available rather than assumed unsupported: if Codex does carry
+> the event with a `prompt` field, the hook needs no adaptation, because it
+> reads `hook_event_name`, `prompt`, `session_id` and `cwd` and nothing else. Codex's wire contract matches Claude Code's closely —
+> JSON payload on stdin with `tool_name` / `tool_input` / `session_id` /
+> `stop_hook_active`, exit `2` blocks with stderr as the reason — so the Bash
+> blockers, the pre-commit gate, the Bash tracker, and the Stop gate run
+> **unchanged**. The one divergence is file edits: Codex reports them as
+> `tool_name "apply_patch"` with `tool_input.command` holding raw patch text,
+> so those hooks run behind `scripts/jus-codex-adapt.sh`, which converts the
+> patch into the `Edit` shape (added lines → `new_string`, removed →
+> `old_string`, first `*** Update|Add File:` path → `file_path`).
 
 ## Install
 

@@ -41,6 +41,11 @@
 # The end-of-turn case is covered separately and harder by
 # jus-stop-uncommitted.sh, which blocks rather than nudges.
 #
+# ── AND IT COUNTS THE TREE THIS SESSION LOCKED (#3669) ───────────────────────
+#
+# Not the one its cwd names. See juscribe_sop_session_worktree, and the comment
+# at the call site below for what that does to the dedup flag.
+#
 # ── AND IT FIRES ONCE PER TICKET, NOT ONCE PER EDIT (#3507) ──────────────────
 #
 # Measured before this dedup: 288 fires across 52 sessions — median 4, and 32 in
@@ -94,13 +99,31 @@ if [[ -z "$toplevel" ]]; then
   exit 0
 fi
 
+# ⚠️ COUNT THE RIGHT TREE (#3669, the same defect #3667 fixed in the stop hook).
+# A session working in a worktree keeps its cwd at the MAIN checkout and cd's in
+# per command, so `cwd` names a tree it never edits. Telling it to commit
+# IMMEDIATELY is then advice it cannot take: the files are another session's,
+# and the threshold makes this fire on the first edit after checks have run.
+# No worktree locked in this session's name leaves the count exactly as it was.
+#
+# Both things below follow from this one reassignment — including the dedup
+# flag, whose "the tree went clean" is now the WORKTREE going clean. That is the
+# intent: a session whose own work is committed should be nudged again for its
+# next batch, however dirty the checkout it happens to be standing in.
+session_worktree=$(juscribe_sop_session_worktree "$toplevel" "$session_id")
+if [[ -n "$session_worktree" ]]; then
+  toplevel="$session_worktree"
+fi
+
 # Dedup scope: the active ticket, or "session" when no ticket has been picked
 # up. Same scheme as jus-docs-nudge.sh, so the two behave alike.
 active_ticket=$(cat "${state_dir}/active_ticket" 2>/dev/null | tr -d '[:space:]' || echo "")
 nudge_flag="${state_dir}/dirty_tree_nudged_${active_ticket:-session}"
 
 # Unscoped — see juscribe_sop_dirty_lines. The per-session ownership scoping was
-# removed in #2392; worktrees are the isolation strategy.
+# removed in #2392; worktrees are the isolation strategy. Resolving WHICH
+# worktree, above, is not that machinery returning: nothing records which files
+# a session edited, and the whole-tree statement is unchanged.
 count=$(juscribe_sop_dirty_lines "$toplevel" | grep -c . || true)
 
 # A clean tree clears the flag, so the NEXT batch of uncommitted work is nudged

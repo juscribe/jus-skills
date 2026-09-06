@@ -81,6 +81,68 @@ juscribe_sop_dirty_lines() {
   git -C "$toplevel" -c core.quotepath=false status --porcelain -uall 2>/dev/null || true
 }
 
+# Echo the checkout this SESSION is actually working in: the worktree it locked
+# in its own name, or nothing when there is no such worktree.
+#
+# ── why the cwd is not the answer (#3667) ────────────────────────────────────
+#
+# A session following the documented worktree recipe keeps its cwd at the MAIN
+# checkout — `EnterWorktree` is blocked (#2609) and `jus api` has no token
+# inside a worktree (#2809) — and `cd`s into the worktree per command. So the
+# `cwd` a hook receives names a tree the session never edits, and a guard
+# reading it reports somebody else's uncommitted work as yours. Measured 5 Sep:
+# a session with everything committed on its branch was blocked from stopping
+# three times running by another session's in-flight mobile/** edits.
+#
+# The lock reason is the link, and it already exists. The recipe locks with
+# `jus session <session_id> (pid N)`, and that id is the `session_id` the hook
+# receives on stdin — so the worktree list can be searched for it.
+#
+# ⚠️ This is NOT the per-session ownership tracking removed in #2392, and the
+# distinction is the whole reason it is allowed to exist. Nothing here records
+# which files a session edited, and nothing intersects a dirty set against a
+# log. The worktree remains the unit of isolation; this only decides WHICH
+# worktree to ask about, after which "every dirty file in it is mine" is as
+# true as it ever was.
+#
+# Reads `git worktree list --porcelain` rather than globbing
+# `<git-common-dir>/worktrees/*/locked`: it pairs each path with its own lock
+# reason, so there is no arithmetic from an admin directory back to a checkout,
+# and a pruned worktree is never considered. A git too old to print `locked`
+# (pre-2.36) simply matches nothing, which is the unchanged behaviour.
+#
+# Fails open — no session id, no git, no match, or an unreadable list all echo
+# nothing and leave the caller on its original tree.
+#
+# Arguments: $1 = repo toplevel, $2 = session_id
+juscribe_sop_session_worktree() {
+  local toplevel="$1" session_id="${2:-}" line path="" first=""
+  # ⚠️ LOAD-BEARING: an empty session id would substring-match EVERY reason and
+  # hand back an arbitrary worktree — somebody else's, and silently.
+  [[ -n "$toplevel" && -n "$session_id" ]] || return 0
+  command -v git >/dev/null 2>&1 || return 0
+  while IFS= read -r line; do
+    case "$line" in
+      'worktree '*) path="${line#worktree }" ;;
+      # A lock with no reason is the bare word `locked`, which names no session
+      # and must not match — hence the required trailing space in the pattern.
+      'locked '*)
+        [[ -n "$path" ]] || continue
+        [[ "${line#locked }" == *"$session_id"* ]] || continue
+        # A session already running inside one of its own worktrees keeps that
+        # one, rather than being redirected to whichever it locked first.
+        if [[ "$path" == "$toplevel" ]]; then
+          printf '%s' "$path"
+          return 0
+        fi
+        [[ -n "$first" ]] || first="$path"
+        ;;
+    esac
+  done < <(git -C "$toplevel" worktree list --porcelain 2>/dev/null || true)
+  printf '%s' "$first"
+  return 0
+}
+
 # Programs that count as "the shell linter ran".
 #
 # The bare TOOL names are the portable contract: a PUBLISHED bundle cannot know
@@ -333,5 +395,74 @@ juscribe_sop_commented_ticket() {
   if [[ "$cmd" =~ tickets/([0-9]+)/comments([^/]|$) ]]; then
     printf '%s' "${BASH_REMATCH[1]}"
   fi
+  return 0
+}
+
+# Echo the Juscribe workspace id for a working directory, or nothing when none
+# resolves.
+#
+# Mirrors `jus_find_project_jus_dir` (.jus/bin/jus:68): walk UP for a directory
+# holding `.jus/config`, and read `workspace_id` out of it.
+#
+# ⚠️ THIS IS NOT THE GIT TOPLEVEL, and the difference decides whether a hook
+# works in a worktree. `.jus/config` is gitignored, so a worktree holds no copy;
+# resolving from `git rev-parse --show-toplevel` finds the worktree and no
+# config. The walk-up reaches the main checkout's, because worktrees sit inside
+# it. Mirroring the CLI leaves a hook wrong exactly where `jus` is already wrong,
+# and nowhere else.
+#
+# ⚠️ Reads `workspace_id` ONLY. `.jus/config/` is also where `api_token.txt`
+# lives.
+#
+# ⚠️ SILENCE RATHER THAN A DEFAULT (#3674). Returning a fallback id from here
+# would have a hook in the published bundle reach a REAL ticket in somebody
+# else's workspace and mutate it. An unresolvable workspace means this is not a
+# jus project, which is not an error worth saying anything about.
+#
+# Argument: $1 = the directory to start from (defaults to $PWD).
+juscribe_sop_workspace_id() {
+  local dir="${1:-$PWD}"
+  while :; do
+    if [[ -r "$dir/.jus/config/workspace_id" ]]; then
+      tr -d "[:space:]" < "$dir/.jus/config/workspace_id"
+      return 0
+    fi
+    [[ "$dir" == "/" || -z "$dir" ]] && return 1
+    dir="$(dirname "$dir")"
+  done
+}
+
+# Echo the ticket id of every `/tickets/{id}/transition` PATCH in a command
+# string, deduplicated, one per line. Always echoes (empty when nothing matches)
+# and returns 0, so callers under `set -e` are safe.
+#
+# Distinct from juscribe_sop_started_ticket, which answers a narrower question:
+# that one reads the state out of the command body to spot a `started`
+# transition. This one reports the id and says NOTHING about the state, because
+# its caller re-reads the ticket and decides from the API. A PATCH that 422'd
+# still matches here — and correctly produces no action, because the ticket did
+# not move.
+#
+# Two guards, and both are load-bearing:
+#
+#   PATCH        — a GET of the same path is a read, not a transition.
+#   heredoc-free — the SOP mandates that agent prose reach the API through a
+#                  quoted heredoc, so a delivery comment naming ANOTHER
+#                  ticket's transition URL is the normal shape here, not an
+#                  exotic one. Acting on it would touch a ticket the session
+#                  never worked.
+#
+# juscribe_sop_command_segments additionally drops quoted regions, so a URL
+# inside a quoted string cannot match either. The transition path is unquoted in
+# every form the SOP prescribes; being conservative costs a missed release,
+# while a false positive mutates the wrong ticket.
+juscribe_sop_transitioned_tickets() {
+  local cmd="$1" seg
+  while IFS= read -r seg; do
+    [[ "$seg" =~ (^|[[:space:]])PATCH([[:space:]]|$) ]] || continue
+    [[ "$seg" =~ tickets/([0-9]+)/transition ]] || continue
+    printf '%s\n' "${BASH_REMATCH[1]}"
+  done < <(juscribe_sop_command_segments "$(juscribe_sop_strip_heredocs "$cmd")") \
+    | awk '!seen[$0]++'
   return 0
 }

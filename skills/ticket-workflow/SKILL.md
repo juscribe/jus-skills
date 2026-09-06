@@ -104,18 +104,28 @@ jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"started"}'
 jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"assignee_ids":[{your_user_id}]}}'
 ```
 
-Sequence: fetch ticket → transition to started → assign yourself → react with 👀 → THEN investigate. **NEVER reverse this order.**
+Sequence: fetch ticket → transition to started → assign yourself → THEN investigate. **NEVER reverse this order.** The 👀 is not a step — a hook posts it before the model runs (see below).
 
-### Eyes reaction (non-dispatch agents only)
+### Eyes reaction (non-dispatch agents only) — BOTH HALVES ARE HOOKS
 
-When working **outside a dispatch job**, signal active work with the 👀 ticket reaction so the stakeholder sees in-progress status on the board. Inside a dispatch job, skip — the dispatch UI already shows it.
+Outside a dispatch job the 👀 ticket reaction shows the stakeholder that a ticket is being worked. **Two hooks in this bundle maintain it; you do not post or remove it by hand.** Inside a dispatch job neither matters — the dispatch UI already shows the work.
+
+| Half | Hook | Fires on |
+| --- | --- | --- |
+| Adds it | `jus-ticket-claim-nudge.sh` | `UserPromptSubmit`, on a prompt naming `#N` — before the model runs |
+| Removes it | `jus-ticket-release-reaction.sh` | `PostToolUse`/`Bash`, after a `/transition` that left the ticket `finished`, `delivered`, `accepted`, `cancelled`, `converted` or `archived` |
+
+Both were prose rules first, and both were missed often enough to become hooks. The removal half was measured in the originating project at **12 of 34 `delivered` tickets** still carrying the agent's reaction.
+
+⚠️ **`rejected` deliberately keeps the eyes** — a rejection goes back to `started`, so the reaction is still true.
+
+The endpoint, for a case the hooks cannot see (a board mutation that did not go through a Bash `jus api` call):
 
 ```sh
-# Add 👀 (on start)
-jus api POST /workspaces/{ws}/tickets/{id}/ticket_reactions/toggle '{"emoji":"👀"}'
-# Remove 👀 (on finish — same endpoint toggles off)
 jus api POST /workspaces/{ws}/tickets/{id}/ticket_reactions/toggle '{"emoji":"👀"}'
 ```
+
+⚠️ **It is a TOGGLE, not a setter.** It removes your reaction when it is already there and adds one when it is not, so read `reacted_by_me` on the ticket before calling it.
 
 ### Concurrency conflict
 

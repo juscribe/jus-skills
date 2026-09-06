@@ -78,12 +78,16 @@ assert_state_absent() { # <file>
 # ⚠️ Asserts the terminal half too, deliberately. The fix is additive: the user
 # keeps seeing the message. A future edit that "simplifies" by dropping
 # `systemMessage` would otherwise pass.
-assert_reaches_agent() { # <name> <hook_output>
+# <event> defaults to PostToolUse, which is what every caller wanted until
+# #3674 added a UserPromptSubmit hook. `hookEventName` must match the event the
+# hook actually fires on — a mismatch is not cosmetic, it is how the harness
+# decides whether the output is reachable at all.
+assert_reaches_agent() { # <name> <hook_output> [<event>]
   TESTS_RUN=$((TESTS_RUN + 1))
-  local name="$1" out="$2" missing=""
+  local name="$1" out="$2" event="${3:-PostToolUse}" missing=""
   jq -e '.systemMessage | type == "string" and length > 0' >/dev/null 2>&1 <<<"$out" \
     || missing="systemMessage"
-  jq -e '.hookSpecificOutput.hookEventName == "PostToolUse"' >/dev/null 2>&1 <<<"$out" \
+  jq -e --arg e "$event" '.hookSpecificOutput.hookEventName == $e' >/dev/null 2>&1 <<<"$out" \
     || missing="${missing:+$missing, }hookSpecificOutput.hookEventName"
   jq -e '.hookSpecificOutput.additionalContext | type == "string" and length > 0' >/dev/null 2>&1 <<<"$out" \
     || missing="${missing:+$missing, }hookSpecificOutput.additionalContext"
@@ -929,6 +933,77 @@ assert_exit 0 "$SCRIPTS/jus-dirty-tree-nudge.sh" \
 
 rm -rf "$REPO_AT"
 
+# ---- the session's own worktree, not the main checkout (#3669) --------------
+#
+# The same defect #3667 fixed in the stop hook, in the hook that fires DURING a
+# turn rather than at the end of one. A session following
+# .jus/docs/worktree-provisioning.md keeps its cwd at the MAIN checkout and cd's
+# into its worktree per command, so a count taken from `cwd` is another
+# session's dirty files — ones this session cannot commit however loudly it is
+# told to. The lock reason is the link back: the recipe locks with
+# `jus session <session_id> (pid N)`, the same id the hook receives on stdin.
+#
+# The main checkout below stays dirty with SIX files for the whole block and the
+# worktree never holds six, so every count assertion here fails on a hook that
+# reads the wrong tree rather than passing by coincidence.
+
+SID_WT="test-nudge-wt-$$"
+NWT_BASE=$(cd "$(mktemp -d)" && pwd -P)
+NWT_MAIN="$NWT_BASE/main"
+mkdir -p "$NWT_MAIN"
+( cd "$NWT_MAIN" && git init -q && git config user.email t@t && git config user.name t \
+  && touch seed && git add seed && git commit -q -m init \
+  && git worktree add --lock --reason "jus session $SID_WT (pid 1)" \
+       "$NWT_BASE/wt" -b nudge-wt-branch ) >/dev/null 2>&1
+
+# Checks ran since the last edit — the nudge's precondition, and the only state
+# these cases need.
+nudge_wt_state() {
+  local dir="$CLAUDE_PLUGIN_DATA/sessions/$1"
+  mkdir -p "$dir"
+  echo 100 > "$dir/last_modified_at"
+  echo 200 > "$dir/last_linted_at"
+}
+nudge_wt_state "$SID_WT"
+
+for i in 1 2 3 4 5 6; do echo dirty > "$NWT_MAIN/main-only-$i.txt"; done
+
+assert_stdout "a dirty main checkout is silent when this session's worktree is clean" "" \
+  "$(nudge_out "$SID_WT" "$NWT_MAIN")"
+
+for i in 1 2 3 4 5; do echo dirty > "$NWT_BASE/wt/mine-$i.txt"; done
+
+assert_stdout "a dirty session worktree still nudges, at its own count" "5 files" \
+  "$(nudge_out "$SID_WT" "$NWT_MAIN")"
+
+# THE DEDUP FLAG IS THE THING TO THINK ABOUT. It clears when the count reaches
+# zero, so redirecting the count also redirects which tree "clean" refers to.
+# The main checkout is still six files dirty here — a hook counting it would
+# never see zero, would never clear the flag, and this second batch would be
+# silent.
+( cd "$NWT_BASE/wt" && git add -A && git commit -q -m work )
+nudge_out "$SID_WT" "$NWT_MAIN" >/dev/null
+for i in 1 2 3 4 5; do echo again > "$NWT_BASE/wt/next-$i.txt"; done
+assert_stdout "the flag rearms on the WORKTREE going clean, not the main checkout" "5 files" \
+  "$(nudge_out "$SID_WT" "$NWT_MAIN")"
+
+# No lock naming this session: unchanged, which is the whole no-worktree world.
+SID_NOWT="test-nudge-nowt-$$"
+nudge_wt_state "$SID_NOWT"
+assert_stdout "no lock naming this session leaves the main checkout counted" "6 files" \
+  "$(nudge_out "$SID_NOWT" "$NWT_MAIN")"
+
+# An empty session_id must match NOTHING — a substring test against "" matches
+# every lock reason and would silently count an arbitrary worktree, somebody
+# else's. juscribe_sop_session_worktree guards that; assert it from here too,
+# because this hook is where an unguarded call would land.
+assert_stdout "an absent session_id leaves the main checkout counted" "6 files" \
+  "$(printf '{"tool_name":"Edit","cwd":"%s"}' "$NWT_MAIN" \
+     | "$SCRIPTS/jus-dirty-tree-nudge.sh")"
+
+( cd "$NWT_MAIN" && git worktree remove --force "$NWT_BASE/wt" ) >/dev/null 2>&1
+rm -rf "$NWT_BASE"
+
 # ---- jus-docs-nudge.sh --------------------------------------------------------
 
 section "jus-docs-nudge.sh"
@@ -1238,7 +1313,171 @@ assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
 # blocks on the whole tree, which is what it did before any of it, and what
 # worktree isolation makes correct.
 
+# ---- the session's own worktree, not the main checkout (#3667) --------------
+#
+# A session following .jus/docs/worktree-provisioning.md keeps its cwd at the
+# MAIN checkout and cd's into its worktree per command, so `cwd` on stdin names
+# a tree the session never edits. The lock reason is the link back: the recipe
+# locks with `jus session <session_id> (pid N)`, which is the same id the hook
+# receives. Measured 5 Sep — a session with everything committed on its branch
+# was blocked three times running by another session's mobile/** edits.
+
+WT_BASE=$(cd "$(mktemp -d)" && pwd -P)
+WT_MAIN="$WT_BASE/main"
+mkdir -p "$WT_MAIN"
+( cd "$WT_MAIN" && git init -q && git config user.email t@t && git config user.name t \
+  && touch a && git add a && git commit -q -m init \
+  && git worktree add --lock --reason "jus session test-sid (pid 1)" \
+       "$WT_BASE/wt" -b wt-branch ) >/dev/null 2>&1
+echo dirty > "$WT_MAIN/main-only"
+
+t "a worktree locked in this session's name is checked instead of the main checkout"
+assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$WT_MAIN\",\"session_id\":\"test-sid\"}"
+
+echo dirty > "$WT_BASE/wt/mine"
+
+t "a dirty session worktree still blocks the stop"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$WT_MAIN\",\"session_id\":\"test-sid\"}" \
+  "mine"
+
+# The positive assertion above passes on a hook that reports BOTH trees, which
+# is the failure this ticket is about — so the load-bearing half is the absence.
+t "and the files it lists are the worktree's, not the main checkout's"
+assert_stdout_lacks "main-only is not reported to a worktree session" "main-only" \
+  "$(printf '%s' "{\"cwd\":\"$WT_MAIN\",\"session_id\":\"test-sid\"}" \
+     | "$SCRIPTS/jus-stop-uncommitted.sh" 2>&1 || true)"
+
+# The paths in the message are relative to the tree it checked, so a reader
+# standing in the main checkout must be told which tree that was — otherwise
+# `git status` where they are shows a different set and the block reads as
+# spurious.
+t "the block names the worktree when it is not the cwd's tree"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$WT_MAIN\",\"session_id\":\"test-sid\"}" \
+  "worktree this session locked"
+
+t "no lock naming this session leaves the main checkout blocking"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$WT_MAIN\",\"session_id\":\"other-sid\"}" \
+  "main-only"
+
+# An empty session_id must match NOTHING. A substring test against "" matches
+# every reason, which would silently redirect the check to an arbitrary
+# worktree belonging to somebody else.
+t "an absent session_id leaves the main checkout blocking"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$WT_MAIN\"}" \
+  "main-only"
+
+( cd "$WT_MAIN" && git worktree add --lock --reason "jus session test-sid (pid 1)" \
+    "$WT_BASE/wt2" -b wt-branch-2 ) >/dev/null 2>&1
+
+t "a session already running inside one of its own worktrees stays in it"
+assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$WT_BASE/wt2\",\"session_id\":\"test-sid\"}"
+
+echo dirty > "$WT_BASE/wt2/theirs"
+
+t "and its block says nothing about a worktree, because it is already in one"
+assert_stdout_lacks "no redirect note when cwd is the tree checked" "worktree this session locked" \
+  "$(printf '%s' "{\"cwd\":\"$WT_BASE/wt2\",\"session_id\":\"test-sid\"}" \
+     | "$SCRIPTS/jus-stop-uncommitted.sh" 2>&1 || true)"
+rm -f "$WT_BASE/wt2/theirs"
+
+( cd "$WT_MAIN" && git worktree remove --force "$WT_BASE/wt" \
+  && git worktree remove --force "$WT_BASE/wt2" ) >/dev/null 2>&1
+rm -rf "$WT_BASE"
+
 rm -rf "$DIRTY_REPO" "$CLEAN_REPO"
+
+# ---- README.md's worktree lock recipe actually works (#3676) -----------------
+#
+# Both commit guards resolve WHICH tree to read by looking for a worktree
+# locked in the session's own name (#3667, #3669). Nothing in the bundle told
+# anyone to lock one that way: the recipe lived in the producing project's local
+# docs, which `bin/publish-skills` does not ship, so for every installing
+# project both guards silently fell back to the cwd's checkout.
+#
+# ⚠️ THE TEST RUNS THE RECIPE, IT DOES NOT GREP FOR IT. A README documenting a
+# matcher drifts the moment the matcher changes, and a string assertion drifts
+# with it — it would keep passing on a reason string that no longer resolves.
+# So: pull the reason out of README.md, lock a real worktree with it, and ask
+# juscribe_sop_session_worktree whether it finds it.
+
+README="$HOOKS_DIR/../README.md"
+
+t "README.md documents the lock reason the commit guards match on"
+TESTS_RUN=$((TESTS_RUN + 1))
+readme_reason=$(grep -o 'git worktree add --lock --reason "[^"]*"' "$README" | head -1 | sed 's/.*--reason "//; s/"$//')
+if [[ -n "$readme_reason" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+  printf '      no `git worktree add --lock --reason "…"` line in %s\n' "$README"
+fi
+
+# The README writes the reason with shell variables in it. Expand them the way a
+# reader's shell would, against a known session id, and the expansion is what
+# gets locked — so a recipe that drops the id fails here rather than downstream.
+RM_BASE=$(cd "$(mktemp -d)" && pwd -P)
+RM_MAIN="$RM_BASE/main"
+RM_SID="readme-recipe-sid-$$"
+mkdir -p "$RM_MAIN"
+( cd "$RM_MAIN" && git init -q && git config user.email t@t && git config user.name t \
+  && touch seed && git add seed && git commit -q -m init ) >/dev/null 2>&1
+rm_expanded=$(CLAUDE_CODE_SESSION_ID="$RM_SID" CLAUDE_PID=1 \
+  bash -c "printf '%s' \"${readme_reason//\"/\\\"}\"" 2>/dev/null || printf '')
+( cd "$RM_MAIN" && git worktree add --lock --reason "$rm_expanded" "$RM_BASE/wt" -b readme-recipe ) >/dev/null 2>&1
+
+t "the recipe as written resolves to the session's own worktree"
+rm_found=$( source "$SCRIPTS/lib/state.sh"; juscribe_sop_session_worktree "$RM_MAIN" "$RM_SID" )
+assert_stdout "README's --reason makes the guards find this worktree" "$RM_BASE/wt" "$rm_found"
+
+# ⚠️ A reason beginning `claude session ` matches Claude Code's OWN ownership
+# regex, so it releases the lock once the recorded pid is gone (#2889) — the
+# lock silently disappears and another session can remove the tree. The README
+# must not print that spelling, however well it would satisfy the matcher.
+t "and the documented reason is not Claude Code's own lock spelling"
+TESTS_RUN=$((TESTS_RUN + 1))
+# ⚠️ -n first: an ABSENT recipe expands to nothing, which is not "claude
+# session …" either — so without it this assertion passes hardest exactly when
+# the README says nothing at all.
+if [[ -n "$rm_expanded" && "$rm_expanded" != "claude session "* && "$rm_expanded" != "claude agent "* ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+  printf '      reason expands to: %s\n' "$rm_expanded"
+fi
+
+# The substring rule is the actual contract, and the README has to state it
+# rather than leaving readers to infer a required prefix from the example.
+t "README states that the reason must carry the session id"
+TESTS_RUN=$((TESTS_RUN + 1))
+if grep -qi 'session id' "$README" && grep -q 'CLAUDE_CODE_SESSION_ID' "$README"; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+
+# Silence is the failure mode this whole ticket is about, so the README owes the
+# no-lock behaviour too: the guards fall back to the cwd's checkout, correctly
+# and without warning.
+t "README says what happens with no matching lock"
+TESTS_RUN=$((TESTS_RUN + 1))
+if grep -qiE 'falls? back' "$README"; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+
+( cd "$RM_MAIN" && git worktree remove --force "$RM_BASE/wt" ) >/dev/null 2>&1
+rm -rf "$RM_BASE"
 
 # ---- start-comment-nudge.sh + lifecycle tracking --------------------------
 
@@ -1833,6 +2072,196 @@ if head -1 "$PLUGIN_ROOT/AGENTS.md" | grep -q "OpenAI Codex"; then
 else
   printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
 fi
+
+# ---- jus-ticket-claim-nudge.sh -------------------------------------------
+
+section "jus-ticket-claim-nudge.sh"
+
+# #3674. The hook reacts to a ticket named in a prompt BEFORE the model runs.
+# Its rspec spec (spec/scripts/) covers the behaviour in depth; these cases
+# cover what is specific to shipping it — that it cannot fire against somebody
+# else's workspace, and that it never blocks a prompt.
+#
+# ⚠️ UserPromptSubmit IS A BLOCKABLE EVENT on Claude Code and on Kimi. A
+# non-zero exit here swallows the user's message, so every path must exit 0.
+
+CLAIM_HOOK="$SCRIPTS/jus-ticket-claim-nudge.sh"
+CLAIM_TMP=$(mktemp -d)
+
+# A `jus` that logs its argv and answers every GET with one ticket.
+mkdir -p "$CLAIM_TMP/bin"
+cat > "$CLAIM_TMP/bin/jus" <<CLAIMJUS
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$CLAIM_TMP/calls.log"
+[ "\$1" = "api" ] && [ "\$2" = "GET" ] && exec cat <<'JSON'
+{"ticket":{"id":"3668","title":"T","state":"prioritized","points":3,
+ "description":"d","assignees":[],"blocked":false,"ticket_reactions":[]}}
+JSON
+echo '{}'
+CLAIMJUS
+chmod +x "$CLAIM_TMP/bin/jus"
+
+claim_run() { # <cwd> <prompt> [workspace]
+  : > "$CLAIM_TMP/calls.log"
+  local env_args=(PATH="$CLAIM_TMP/bin:$PATH" CLAUDE_PLUGIN_DATA="$CLAIM_TMP/state-$RANDOM")
+  [[ -n "${3:-}" ]] && env_args+=("TICKET_CLAIM_WORKSPACE=$3")
+  printf '{"hook_event_name":"UserPromptSubmit","session_id":"s%s","cwd":"%s","prompt":"%s"}' \
+    "$RANDOM" "$1" "$2" | env "${env_args[@]}" "$CLAIM_HOOK" 2>&1
+}
+
+# A project the walk-up can find: a directory holding .jus/config/workspace_id.
+mkdir -p "$CLAIM_TMP/proj/.jus/config" "$CLAIM_TMP/proj/deep/nested"
+echo "42" > "$CLAIM_TMP/proj/.jus/config/workspace_id"
+
+TEST_NAME="reads the workspace from .jus/config/workspace_id"
+claim_run "$CLAIM_TMP/proj" "please work #3668" >/dev/null
+assert_match "$TEST_NAME" "$CLAIM_TMP/calls.log" "/workspaces/42/tickets/3668"
+
+# The worktree case: .jus/config is gitignored, so a worktree has no copy and
+# the hook must reach the parent checkout's — the same walk the CLI does.
+TEST_NAME="walks up to a parent's config from a subdirectory"
+claim_run "$CLAIM_TMP/proj/deep/nested" "please work #3668" >/dev/null
+assert_match "$TEST_NAME" "$CLAIM_TMP/calls.log" "/workspaces/42/tickets/3668"
+
+TEST_NAME="TICKET_CLAIM_WORKSPACE overrides the config"
+claim_run "$CLAIM_TMP/proj" "please work #3668" "7" >/dev/null
+assert_match "$TEST_NAME" "$CLAIM_TMP/calls.log" "/workspaces/7/tickets/3668"
+
+# ⚠️ THE ONE THAT MATTERS FOR SHIPPING. Until #3674 this defaulted to `1`.
+# In a project that is not a jus project, or before `jus login`, that would
+# have fetched a REAL ticket in somebody else's workspace 1 — and reacted to it.
+TEST_NAME="asks nothing at all when no workspace resolves"
+mkdir -p "$CLAIM_TMP/orphan"
+claim_run "$CLAIM_TMP/orphan" "please work #3668" >/dev/null
+assert_no_match "$TEST_NAME" "$CLAIM_TMP/calls.log" "workspaces"
+
+TEST_NAME="says nothing, and calls nothing, on a prompt naming no ticket"
+out=$(claim_run "$CLAIM_TMP/proj" "what does this use for auth")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ -z "$out" && ! -s "$CLAIM_TMP/calls.log" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (out=%s)\n' "$TEST_NAME" "${out:0:120}"
+fi
+
+# Reaches the AGENT, not just the terminal: systemMessage is rendered to the
+# user and never reaches the model — only additionalContext does (#3498).
+TEST_NAME="feeds the ticket back on additionalContext"
+assert_reaches_agent "$TEST_NAME" "$(claim_run "$CLAIM_TMP/proj" "please work #3668")" "UserPromptSubmit"
+
+rm -rf "$CLAIM_TMP"
+
+# ---- jus-ticket-release-reaction.sh ---------------------------------------
+
+section "jus-ticket-release-reaction.sh"
+
+# #3684 — the other half of the claim hook. It takes our 👀 back off a ticket
+# once a transition has moved it out of active work. Its rspec spec
+# (spec/scripts/) covers the behaviour in depth; these cases cover what is
+# specific to SHIPPING it: that it cannot fire against somebody else's
+# workspace, that it never ADDS a reaction, and that it never fails a command
+# the agent already ran.
+
+RELEASE_HOOK="$SCRIPTS/jus-ticket-release-reaction.sh"
+RELEASE_TMP=$(mktemp -d)
+
+# A `jus` that logs its argv and answers every GET with one delivered ticket
+# carrying OUR 👀 — the shape that should produce exactly one toggle.
+mkdir -p "$RELEASE_TMP/bin"
+cat > "$RELEASE_TMP/bin/jus" <<RELEASEJUS
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$RELEASE_TMP/calls.log"
+[ "\$1" = "api" ] && [ "\$2" = "GET" ] && exec cat <<'JSON'
+{"ticket":{"id":"3684","title":"T","state":"delivered",
+ "ticket_reactions":[{"emoji":"👀","reacted_by_me":true}]}}
+JSON
+echo '{}'
+RELEASEJUS
+chmod +x "$RELEASE_TMP/bin/jus"
+
+release_run() { # <cwd> <command> [workspace]
+  : > "$RELEASE_TMP/calls.log"
+  local env_args=(PATH="$RELEASE_TMP/bin:$PATH" CLAUDE_PLUGIN_DATA="$RELEASE_TMP/state-$RANDOM")
+  [[ -n "${3:-}" ]] && env_args+=("TICKET_RELEASE_WORKSPACE=$3")
+  jq -n --arg cwd "$1" --arg cmd "$2" '
+    { hook_event_name: "PostToolUse", session_id: "s1", cwd: $cwd,
+      tool_name: "Bash", tool_input: { command: $cmd },
+      tool_response: { interrupted: false } }' \
+    | env "${env_args[@]}" "$RELEASE_HOOK" 2>&1
+}
+
+RELEASE_CMD="jus api PATCH /workspaces/1/tickets/3684/transition '{\"state\":\"delivered\"}'"
+
+mkdir -p "$RELEASE_TMP/proj/.jus/config" "$RELEASE_TMP/proj/deep/nested"
+echo "42" > "$RELEASE_TMP/proj/.jus/config/workspace_id"
+
+TEST_NAME="reads the workspace from .jus/config/workspace_id"
+release_run "$RELEASE_TMP/proj" "$RELEASE_CMD" >/dev/null
+assert_match "$TEST_NAME" "$RELEASE_TMP/calls.log" \
+  "/workspaces/42/tickets/3684/ticket_reactions/toggle"
+
+# The worktree case: .jus/config is gitignored, so a worktree holds no copy and
+# the hook must reach the parent checkout's — the same walk the CLI does.
+TEST_NAME="walks up to a parent's config from a subdirectory"
+release_run "$RELEASE_TMP/proj/deep/nested" "$RELEASE_CMD" >/dev/null
+assert_match "$TEST_NAME" "$RELEASE_TMP/calls.log" "/workspaces/42/tickets/3684"
+
+TEST_NAME="TICKET_RELEASE_WORKSPACE overrides the config"
+release_run "$RELEASE_TMP/proj" "$RELEASE_CMD" "7" >/dev/null
+assert_match "$TEST_NAME" "$RELEASE_TMP/calls.log" "/workspaces/7/tickets/3684"
+
+# ⚠️ THE ONE THAT MATTERS FOR SHIPPING, and it is the claim hook's #3674 defect
+# in a hook that MUTATES on the way out rather than on the way in. A hardcoded
+# workspace id would un-react to a real ticket in somebody else's workspace 1.
+TEST_NAME="asks nothing at all when no workspace resolves"
+mkdir -p "$RELEASE_TMP/orphan"
+release_run "$RELEASE_TMP/orphan" "$RELEASE_CMD" >/dev/null
+assert_no_match "$TEST_NAME" "$RELEASE_TMP/calls.log" "workspaces"
+
+TEST_NAME="says nothing, and calls nothing, on a command with no transition"
+out=$(release_run "$RELEASE_TMP/proj" "git status --porcelain")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ -z "$out" && ! -s "$RELEASE_TMP/calls.log" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (out=%s)\n' "$TEST_NAME" "${out:0:120}"
+fi
+
+# ⚠️ NEVER ADDS. `ticket_reactions/toggle` flips whatever it finds, so a ticket
+# we are not reacting to must produce no call at all — otherwise the hook that
+# clears stale eyes becomes the hook that creates them.
+cat > "$RELEASE_TMP/bin/jus" <<RELEASENOTOURS
+#!/usr/bin/env bash
+printf '%s\n' "\$*" >> "$RELEASE_TMP/calls.log"
+[ "\$1" = "api" ] && [ "\$2" = "GET" ] && exec cat <<'JSON'
+{"ticket":{"id":"3684","title":"T","state":"delivered","ticket_reactions":[]}}
+JSON
+echo '{}'
+RELEASENOTOURS
+
+TEST_NAME="never toggles a ticket that is not carrying our reaction"
+release_run "$RELEASE_TMP/proj" "$RELEASE_CMD" >/dev/null
+assert_no_match "$TEST_NAME" "$RELEASE_TMP/calls.log" "ticket_reactions/toggle"
+
+# PostToolUse runs AFTER a command the agent already ran. A non-zero exit here
+# surfaces as a failure on a command that actually succeeded, so every path
+# exits 0 — including a board that is unreachable.
+cat > "$RELEASE_TMP/bin/jus" <<'RELEASEFAIL'
+#!/usr/bin/env bash
+exit 1
+RELEASEFAIL
+
+TEST_NAME="exits 0 when the board call fails"
+assert_exit 0 "$RELEASE_HOOK" "$(jq -n --arg cwd "$RELEASE_TMP/proj" --arg cmd "$RELEASE_CMD" '
+  { hook_event_name: "PostToolUse", session_id: "s1", cwd: $cwd, tool_name: "Bash",
+    tool_input: { command: $cmd }, tool_response: { interrupted: false } }')"
+
+TEST_NAME="exits 0 on stdin that is not JSON"
+assert_exit 0 "$RELEASE_HOOK" "not json at all"
+
+rm -rf "$RELEASE_TMP"
 
 # ---- summary --------------------------------------------------------------
 

@@ -22,6 +22,19 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.18] — 2026-09-06
+
+### Changed
+
+- Point the claim hook's env note at the helper that replaced its function (#3684)
+- Take the eyes back off a ticket once the work is over (#3684)
+- Close a dangling colon in the lock-reason section (#3676)
+- Tell the bundle's readers how to lock a worktree its hooks can find (#3676)
+- Count the worktree this session locked, not the cwd's checkout (#3669)
+- Ship the ticket-claim hook, and stop it guessing the workspace (#3674)
+- Say which worktree the blocked files are in (#3667)
+- The stop hook asks the worktree this session locked (#3667)
+
 ## [1.4.17] — 2026-09-04
 
 ### Changed
