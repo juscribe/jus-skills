@@ -9,7 +9,9 @@ hooks system (#1976).
 > described only for `PreToolUse`, `PostToolUse` and `Stop`. It is omitted on
 > the evidence available rather than assumed unsupported: if Codex does carry
 > the event with a `prompt` field, the hook needs no adaptation, because it
-> reads `hook_event_name`, `prompt`, `session_id` and `cwd` and nothing else. Codex's wire contract matches Claude Code's closely —
+> reads `hook_event_name`, `prompt` and `cwd` and nothing else. Since #3796 it
+> also writes nothing — it fetches the ticket and returns it as context — so
+> registering it here could not touch anyone's board. Codex's wire contract matches Claude Code's closely —
 > JSON payload on stdin with `tool_name` / `tool_input` / `session_id` /
 > `stop_hook_active`, exit `2` blocks with stderr as the reason — so the Bash
 > blockers, the pre-commit gate, the Bash tracker, and the Stop gate run

@@ -54,6 +54,10 @@ A blocker can carry a date, and the date carries a **kind**, because the same ca
 | `review_on` | "Review on" | Revisit and decide on this date. Not a stop |
 | `expected_by` | "Expected by" | When the blocker is forecast to clear. Informational |
 
+⚠️ **IF THE BLOCKER'S TEXT NAMES A TIME, THE ROW CARRIES THE DATE.** Every other blocker rule is about structure and wording, so a row reading _"over a full 7-day window"_ or _"three days after the rollout"_ with a null `due_on` passes all of them — and the board then has nothing that brings anyone back to it, so the ticket reads as blocked forever and is found only when someone goes looking. Set the date at the moment you word the condition, not later. `jus-blocker-date-nudge.sh` says this back when a dependency write names a time and sets no date; it never refuses, because prose that merely mentions a duration and prose that states one are not separable by pattern.
+
+⚠️ **A date you cannot know yet is `review_on`, not an omission.** When the condition is "N days of quiet after something ships" and nothing has shipped, pick the soonest date at which checking is worth anyone's time, say in the description what to do if the count is still wrong on the day, and push the date rather than clearing it. An estimated review date is strictly better than none: none is indistinguishable from a blocker nobody ever intends to revisit.
+
 `due_on` (`YYYY-MM-DD`) and `due_kind` can be set on create, or afterwards:
 
 ```sh

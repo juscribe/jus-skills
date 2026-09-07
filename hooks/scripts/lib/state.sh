@@ -416,8 +416,9 @@ juscribe_sop_commented_ticket() {
 #
 # ⚠️ SILENCE RATHER THAN A DEFAULT (#3674). Returning a fallback id from here
 # would have a hook in the published bundle reach a REAL ticket in somebody
-# else's workspace and mutate it. An unresolvable workspace means this is not a
-# jus project, which is not an error worth saying anything about.
+# else's workspace — read it, and back when the claim hook still reacted,
+# mutate it (#3796). An unresolvable workspace means this is not a jus project,
+# which is not an error worth saying anything about.
 #
 # Argument: $1 = the directory to start from (defaults to $PWD).
 juscribe_sop_workspace_id() {
@@ -432,37 +433,3 @@ juscribe_sop_workspace_id() {
   done
 }
 
-# Echo the ticket id of every `/tickets/{id}/transition` PATCH in a command
-# string, deduplicated, one per line. Always echoes (empty when nothing matches)
-# and returns 0, so callers under `set -e` are safe.
-#
-# Distinct from juscribe_sop_started_ticket, which answers a narrower question:
-# that one reads the state out of the command body to spot a `started`
-# transition. This one reports the id and says NOTHING about the state, because
-# its caller re-reads the ticket and decides from the API. A PATCH that 422'd
-# still matches here — and correctly produces no action, because the ticket did
-# not move.
-#
-# Two guards, and both are load-bearing:
-#
-#   PATCH        — a GET of the same path is a read, not a transition.
-#   heredoc-free — the SOP mandates that agent prose reach the API through a
-#                  quoted heredoc, so a delivery comment naming ANOTHER
-#                  ticket's transition URL is the normal shape here, not an
-#                  exotic one. Acting on it would touch a ticket the session
-#                  never worked.
-#
-# juscribe_sop_command_segments additionally drops quoted regions, so a URL
-# inside a quoted string cannot match either. The transition path is unquoted in
-# every form the SOP prescribes; being conservative costs a missed release,
-# while a false positive mutates the wrong ticket.
-juscribe_sop_transitioned_tickets() {
-  local cmd="$1" seg
-  while IFS= read -r seg; do
-    [[ "$seg" =~ (^|[[:space:]])PATCH([[:space:]]|$) ]] || continue
-    [[ "$seg" =~ tickets/([0-9]+)/transition ]] || continue
-    printf '%s\n' "${BASH_REMATCH[1]}"
-  done < <(juscribe_sop_command_segments "$(juscribe_sop_strip_heredocs "$cmd")") \
-    | awk '!seen[$0]++'
-  return 0
-}

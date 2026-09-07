@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
-# UserPromptSubmit hook (#3668): the moment a prompt names a ticket, put the
-# 👀 on it and hand the agent the ticket it would otherwise go and fetch.
+# UserPromptSubmit hook (#3668): the moment a prompt names a ticket, hand the
+# agent the ticket it would otherwise go and fetch, plus the exact command that
+# takes the concurrency lock.
 #
 # WHY THIS IS A HOOK AND NOT A RULE. Measured across 365 session transcripts in
 # this project, over prompts naming exactly one ticket: median 21.0s from the
 # ask to the `started` transition, p75 43.5s, p90 129.0s, 19% over a minute
 # (n=411). The median ask spends two tool calls — typically a skill load and a
 # GET of the ticket — before anything reaches the board, and the fastest claim
-# in the entire corpus was 4.6s. That floor is structural: an agent cannot
-# react until the model emits a tool call. UserPromptSubmit runs BEFORE the
-# model does, so it is the only place the reaction can beat that floor.
+# in the entire corpus was 4.6s. That floor is structural: an agent cannot act
+# until the model emits a tool call. UserPromptSubmit runs BEFORE the model
+# does, so it is the only place anything can beat that floor.
 #
 # ⚠️ IT DOES NOT TRANSITION THE TICKET, AND THAT IS THE DESIGN, NOT A TODO.
 # Also measured: of 551 prompts naming a single ticket, only 79% were followed
@@ -25,10 +26,18 @@
 # that the judgement now happens on the agent's FIRST call rather than its
 # third, because the ticket and the exact claim command are already in context.
 #
-# ⚠️ THE REACTION ENDPOINT IS A TOGGLE (CLAUDE.md, #3138). Firing it on a
-# ticket that already carries our 👀 REMOVES it, so this reads `reacted_by_me`
-# and keeps a per-session marker. Both guards matter: the marker alone would
-# still double-toggle across two sessions.
+# ⚠️ IT WRITES NOTHING AT ALL (#3796). Until then it also posted a 👀 on the
+# ticket, and jus-ticket-release-reaction.sh took it off again on a transition.
+# Measured across all 3,791 tickets on 2026-09-07: 62 carried the agent's 👀
+# against 3 genuinely `started`, 47 of the stale ones `accepted`. Six paths left
+# it on, and one of them no hook can reach — PostToolUse does not run when the
+# Bash command exits non-zero, which `jus api PATCH … | jq …` always does. The
+# per-session marker went with it: it existed only to stop the toggle firing
+# twice, and the release hook was the one thing that cleared it. Keeping it
+# would answer a follow-up from the snapshot taken at the first prompt, which is
+# wrong exactly when the ticket moved in between.
+#
+# `started` plus an assignee is the concurrency lock, and always was.
 #
 # Fails open everywhere. UserPromptSubmit is a BLOCKABLE event — exit 2 would
 # swallow the user's message — so nothing here is worth a non-zero exit.
@@ -70,17 +79,15 @@ ids=$(tr -c '[:alnum:]#' ' ' <<<"$prompt" \
         | head -n "$MAX" || true)
 [[ -n "$ids" ]] || exit 0
 
-session_id=$(jq -r '.session_id // ""' <<<"$input")
-state_dir=$(juscribe_sop_state_dir "$session_id")
 cwd=$(jq -r '.cwd // ""' <<<"$input")
 [[ -d "$cwd" ]] || cwd="$PWD"
 
 # ⚠️ SILENCE RATHER THAN A DEFAULT. This hook shipped with `1` hardcoded while
 # it was monumental-only (#3668); in the bundle that would fetch a REAL ticket
-# belonging to somebody else's workspace 1, and react to it. An unresolvable
-# workspace means this is not a jus project, which is not an error worth saying
-# anything about. The walk-up itself is shared with the release hook (#3684) —
-# see juscribe_sop_workspace_id, which carries the why-not-the-git-toplevel note.
+# belonging to somebody else's workspace 1 and feed it to the model as if it
+# were theirs. An unresolvable workspace means this is not a jus project, which
+# is not an error worth saying anything about. See juscribe_sop_workspace_id,
+# which carries the why-not-the-git-toplevel note.
 WORKSPACE="${TICKET_CLAIM_WORKSPACE:-}"
 if [[ -z "$WORKSPACE" ]]; then
   WORKSPACE=$(juscribe_sop_workspace_id "$cwd") || exit 0
@@ -93,30 +100,12 @@ summaries=""
 while read -r id; do
   [[ -n "$id" ]] || continue
 
-  # Fire once per ticket per session. A follow-up naming the same ticket must
-  # not toggle the reaction back off.
-  marker="${state_dir}/claimed_${id}"
-  [[ -f "$marker" ]] && continue
-
   ticket=$(cd "$cwd" && "$JUS" api GET \
     "/workspaces/${WORKSPACE}/tickets/${id}?include_comments=true" 2>/dev/null || true)
 
   # A 404, an HTML error page or a truncated body all land here and are all
   # silence — this hook never reports on the API's behalf.
   jq -e '.ticket.id' >/dev/null 2>&1 <<<"$ticket" || continue
-
-  mkdir -p "$state_dir"
-  : > "$marker"
-
-  reacted=$(jq -r '
-    [.ticket.ticket_reactions[]? | select(.emoji == "👀") | .reacted_by_me] | any
-  ' <<<"$ticket" 2>/dev/null || echo "false")
-
-  if [[ "$reacted" != "true" ]]; then
-    (cd "$cwd" && "$JUS" api POST \
-      "/workspaces/${WORKSPACE}/tickets/${id}/ticket_reactions/toggle" \
-      '{"emoji":"👀"}' >/dev/null 2>&1) || true
-  fi
 
   state=$(jq -r '.ticket.state // ""' <<<"$ticket")
 
@@ -170,14 +159,14 @@ done <<<"$ids"
 
 [[ -n "$blocks" ]] || exit 0
 
-context="[jus:pickup] Your prompt named a ticket. I have already posted the 👀 on the board, and fetched it for you — do NOT spend a call re-fetching it.
+context="[jus:pickup] Your prompt named a ticket and I have fetched it for you — do NOT spend a call re-fetching it. Nothing has been written to the board: taking the ticket is yours to do, and the command for it is below.
 
 ${blocks}
 Pre-start gate: a ticket needs a description and points before it goes to \`started\`, and \`stakeholder_id\` set. Transition BEFORE investigating — it is the concurrency lock."
 
 jq -n --arg ctx "${context:0:7800}" --arg ids "$summaries" '
   {
-    systemMessage: ("[jus] 👀 " + ($ids | rtrimstr(" ")) + " — fetched and reacted before the turn started."),
+    systemMessage: ("[jus] " + ($ids | rtrimstr(" ")) + " — fetched before the turn started."),
     hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: $ctx }
   }'
 

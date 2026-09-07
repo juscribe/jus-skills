@@ -74,6 +74,15 @@ See `hooks/` and the bundle README for installation and the per-harness coverage
 - **Never move on with a dirty working tree** — not to answer a question, not to explain what you did, not to run additional checks. Commit first, talk second. Treat an uncommitted change with the same urgency as an unsaved file.
 - **One commit per ticket**, self-contained: backend + frontend + tests together. Follow-up fixes from self-review get a second commit with the same ticket prefix.
 - **Format**: `[#N] Short description` or `[#N, #M] Short description` for multi-ticket commits. The `#N` prefix is mandatory — it autolinks on the board.
+- **End the message with a `Jus-Ticket:` git trailer**, in the same block as any `Co-Authored-By:`:
+
+  ```text
+  Jus-Ticket: <n>
+  ```
+
+  Same mechanism as `Co-Authored-By:`, and it is the one reference form nothing writes by accident — not a code host, not a bot, not a markdown link. Conventional Commits defines its own footers in git-trailer format, so this is that spec's mechanism rather than merely compatible with it.
+
+  ⚠️ **It is the LAST paragraph of the message or it is not a trailer.** Git reads only the final blank-line-separated block, every line of which has to be `Key: value`; one line of prose anywhere in that block disqualifies the whole of it, and a `Jus-Ticket:` line in the body links nothing.
 - **Never amend a delivered commit.** When a ticket is rejected, fix it in a NEW commit. `git commit --amend` on delivered work is forbidden.
 - **NEVER `git push`.** The stakeholder pushes manually. Pushing breaks their workflow.
 
@@ -139,6 +148,16 @@ jus api PATCH /workspaces/{ws}/tickets/{id} "{\"ticket\":{\"description\":$(jq -
 ```sh
 jus api POST /workspaces/{ws}/tickets/{id}/dependencies '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":{id},"description":"User input: <what you need>"}}'
 ```
+
+- **A BLOCKER WHOSE CONDITION IS A TIME MUST CARRY `due_on` AND `due_kind`.** Waiting on an answer has no date; waiting on _"a full 7-day window with no errors"_ or _"three days after the rollout"_ does, and a row that states one in its text and leaves the date column null gives the board nothing to bring anyone back with. The ticket then reads as blocked forever and surfaces only when a human goes looking. Neither half works alone — each without the other is a `422`.
+
+| Kind | Use it when |
+| --- | --- |
+| `wait_until` | The date is a hard do-not-start-before |
+| `review_on` | Revisit and decide on that day — push the date if the condition still is not met |
+| `expected_by` | A forecast, informational; work alongside it if you can |
+
+  ⚠️ **Not knowing the date yet is what `review_on` is for.** Pick the soonest day on which checking is worth anyone's time and say in the description what to do if the answer is still wrong. An estimated review date beats none, because none is indistinguishable from a blocker nobody intends to revisit.
 
 ## The Ticket Is a Claim, Not a Contract
 

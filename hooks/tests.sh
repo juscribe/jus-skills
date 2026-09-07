@@ -2077,10 +2077,15 @@ fi
 
 section "jus-ticket-claim-nudge.sh"
 
-# #3674. The hook reacts to a ticket named in a prompt BEFORE the model runs.
-# Its rspec spec (spec/scripts/) covers the behaviour in depth; these cases
-# cover what is specific to shipping it — that it cannot fire against somebody
-# else's workspace, and that it never blocks a prompt.
+# #3674. The hook fetches a ticket named in a prompt BEFORE the model runs and
+# feeds it back as context. Its rspec spec (spec/jus/hooks/) covers the
+# behaviour in depth; these cases cover what is specific to shipping it — that
+# it cannot fire against somebody else's workspace, and that it never blocks a
+# prompt.
+#
+# ⚠️ It WROTE to the board until #3796, posting a 👀 on every ticket it saw.
+# That is gone, and so is its release-side sibling; the rspec spec holds the
+# no-mutation guard.
 #
 # ⚠️ UserPromptSubmit IS A BLOCKABLE EVENT on Claude Code and on Kimi. A
 # non-zero exit here swallows the user's message, so every path must exit 0.
@@ -2129,7 +2134,7 @@ assert_match "$TEST_NAME" "$CLAIM_TMP/calls.log" "/workspaces/7/tickets/3668"
 
 # ⚠️ THE ONE THAT MATTERS FOR SHIPPING. Until #3674 this defaulted to `1`.
 # In a project that is not a jus project, or before `jus login`, that would
-# have fetched a REAL ticket in somebody else's workspace 1 — and reacted to it.
+# fetch a REAL ticket in somebody else's workspace 1 and feed it to the model.
 TEST_NAME="asks nothing at all when no workspace resolves"
 mkdir -p "$CLAIM_TMP/orphan"
 claim_run "$CLAIM_TMP/orphan" "please work #3668" >/dev/null
@@ -2151,117 +2156,6 @@ TEST_NAME="feeds the ticket back on additionalContext"
 assert_reaches_agent "$TEST_NAME" "$(claim_run "$CLAIM_TMP/proj" "please work #3668")" "UserPromptSubmit"
 
 rm -rf "$CLAIM_TMP"
-
-# ---- jus-ticket-release-reaction.sh ---------------------------------------
-
-section "jus-ticket-release-reaction.sh"
-
-# #3684 — the other half of the claim hook. It takes our 👀 back off a ticket
-# once a transition has moved it out of active work. Its rspec spec
-# (spec/scripts/) covers the behaviour in depth; these cases cover what is
-# specific to SHIPPING it: that it cannot fire against somebody else's
-# workspace, that it never ADDS a reaction, and that it never fails a command
-# the agent already ran.
-
-RELEASE_HOOK="$SCRIPTS/jus-ticket-release-reaction.sh"
-RELEASE_TMP=$(mktemp -d)
-
-# A `jus` that logs its argv and answers every GET with one delivered ticket
-# carrying OUR 👀 — the shape that should produce exactly one toggle.
-mkdir -p "$RELEASE_TMP/bin"
-cat > "$RELEASE_TMP/bin/jus" <<RELEASEJUS
-#!/usr/bin/env bash
-printf '%s\n' "\$*" >> "$RELEASE_TMP/calls.log"
-[ "\$1" = "api" ] && [ "\$2" = "GET" ] && exec cat <<'JSON'
-{"ticket":{"id":"3684","title":"T","state":"delivered",
- "ticket_reactions":[{"emoji":"👀","reacted_by_me":true}]}}
-JSON
-echo '{}'
-RELEASEJUS
-chmod +x "$RELEASE_TMP/bin/jus"
-
-release_run() { # <cwd> <command> [workspace]
-  : > "$RELEASE_TMP/calls.log"
-  local env_args=(PATH="$RELEASE_TMP/bin:$PATH" CLAUDE_PLUGIN_DATA="$RELEASE_TMP/state-$RANDOM")
-  [[ -n "${3:-}" ]] && env_args+=("TICKET_RELEASE_WORKSPACE=$3")
-  jq -n --arg cwd "$1" --arg cmd "$2" '
-    { hook_event_name: "PostToolUse", session_id: "s1", cwd: $cwd,
-      tool_name: "Bash", tool_input: { command: $cmd },
-      tool_response: { interrupted: false } }' \
-    | env "${env_args[@]}" "$RELEASE_HOOK" 2>&1
-}
-
-RELEASE_CMD="jus api PATCH /workspaces/1/tickets/3684/transition '{\"state\":\"delivered\"}'"
-
-mkdir -p "$RELEASE_TMP/proj/.jus/config" "$RELEASE_TMP/proj/deep/nested"
-echo "42" > "$RELEASE_TMP/proj/.jus/config/workspace_id"
-
-TEST_NAME="reads the workspace from .jus/config/workspace_id"
-release_run "$RELEASE_TMP/proj" "$RELEASE_CMD" >/dev/null
-assert_match "$TEST_NAME" "$RELEASE_TMP/calls.log" \
-  "/workspaces/42/tickets/3684/ticket_reactions/toggle"
-
-# The worktree case: .jus/config is gitignored, so a worktree holds no copy and
-# the hook must reach the parent checkout's — the same walk the CLI does.
-TEST_NAME="walks up to a parent's config from a subdirectory"
-release_run "$RELEASE_TMP/proj/deep/nested" "$RELEASE_CMD" >/dev/null
-assert_match "$TEST_NAME" "$RELEASE_TMP/calls.log" "/workspaces/42/tickets/3684"
-
-TEST_NAME="TICKET_RELEASE_WORKSPACE overrides the config"
-release_run "$RELEASE_TMP/proj" "$RELEASE_CMD" "7" >/dev/null
-assert_match "$TEST_NAME" "$RELEASE_TMP/calls.log" "/workspaces/7/tickets/3684"
-
-# ⚠️ THE ONE THAT MATTERS FOR SHIPPING, and it is the claim hook's #3674 defect
-# in a hook that MUTATES on the way out rather than on the way in. A hardcoded
-# workspace id would un-react to a real ticket in somebody else's workspace 1.
-TEST_NAME="asks nothing at all when no workspace resolves"
-mkdir -p "$RELEASE_TMP/orphan"
-release_run "$RELEASE_TMP/orphan" "$RELEASE_CMD" >/dev/null
-assert_no_match "$TEST_NAME" "$RELEASE_TMP/calls.log" "workspaces"
-
-TEST_NAME="says nothing, and calls nothing, on a command with no transition"
-out=$(release_run "$RELEASE_TMP/proj" "git status --porcelain")
-TESTS_RUN=$((TESTS_RUN + 1))
-if [[ -z "$out" && ! -s "$RELEASE_TMP/calls.log" ]]; then
-  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
-else
-  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-  printf '  \033[31m✗\033[0m %s (out=%s)\n' "$TEST_NAME" "${out:0:120}"
-fi
-
-# ⚠️ NEVER ADDS. `ticket_reactions/toggle` flips whatever it finds, so a ticket
-# we are not reacting to must produce no call at all — otherwise the hook that
-# clears stale eyes becomes the hook that creates them.
-cat > "$RELEASE_TMP/bin/jus" <<RELEASENOTOURS
-#!/usr/bin/env bash
-printf '%s\n' "\$*" >> "$RELEASE_TMP/calls.log"
-[ "\$1" = "api" ] && [ "\$2" = "GET" ] && exec cat <<'JSON'
-{"ticket":{"id":"3684","title":"T","state":"delivered","ticket_reactions":[]}}
-JSON
-echo '{}'
-RELEASENOTOURS
-
-TEST_NAME="never toggles a ticket that is not carrying our reaction"
-release_run "$RELEASE_TMP/proj" "$RELEASE_CMD" >/dev/null
-assert_no_match "$TEST_NAME" "$RELEASE_TMP/calls.log" "ticket_reactions/toggle"
-
-# PostToolUse runs AFTER a command the agent already ran. A non-zero exit here
-# surfaces as a failure on a command that actually succeeded, so every path
-# exits 0 — including a board that is unreachable.
-cat > "$RELEASE_TMP/bin/jus" <<'RELEASEFAIL'
-#!/usr/bin/env bash
-exit 1
-RELEASEFAIL
-
-TEST_NAME="exits 0 when the board call fails"
-assert_exit 0 "$RELEASE_HOOK" "$(jq -n --arg cwd "$RELEASE_TMP/proj" --arg cmd "$RELEASE_CMD" '
-  { hook_event_name: "PostToolUse", session_id: "s1", cwd: $cwd, tool_name: "Bash",
-    tool_input: { command: $cmd }, tool_response: { interrupted: false } }')"
-
-TEST_NAME="exits 0 on stdin that is not JSON"
-assert_exit 0 "$RELEASE_HOOK" "not json at all"
-
-rm -rf "$RELEASE_TMP"
 
 # ---- summary --------------------------------------------------------------
 

@@ -22,6 +22,14 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.19] — 2026-09-07
+
+### Changed
+
+- Delete the eyes-reaction automation (#3796)
+- Read Jus-Ticket: from commit trailers, and emit it from agent commits (#3779)
+- Make a blocker that names a time carry the date, and say so when it does not (#3782)
+
 ## [1.4.18] — 2026-09-06
 
 ### Changed

@@ -104,28 +104,17 @@ jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"started"}'
 jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"assignee_ids":[{your_user_id}]}}'
 ```
 
-Sequence: fetch ticket → transition to started → assign yourself → THEN investigate. **NEVER reverse this order.** The 👀 is not a step — a hook posts it before the model runs (see below).
+Sequence: fetch ticket → transition to started → assign yourself → THEN investigate. **NEVER reverse this order.** A `UserPromptSubmit` hook in this bundle has already fetched the ticket and printed the transition command; it writes nothing, so the lock is still yours to take.
 
-### Eyes reaction (non-dispatch agents only) — BOTH HALVES ARE HOOKS
+### ⚠️ Do NOT put a 👀 on a ticket
 
-Outside a dispatch job the 👀 ticket reaction shows the stakeholder that a ticket is being worked. **Two hooks in this bundle maintain it; you do not post or remove it by hand.** Inside a dispatch job neither matters — the dispatch UI already shows the work.
+**The eyes reaction is not part of the lifecycle.** Two hooks in this bundle used to maintain it — one adding it when a prompt named `#N`, one taking it off on a transition — and both were removed. Do not do by hand what they stopped doing.
 
-| Half | Hook | Fires on |
-| --- | --- | --- |
-| Adds it | `jus-ticket-claim-nudge.sh` | `UserPromptSubmit`, on a prompt naming `#N` — before the model runs |
-| Removes it | `jus-ticket-release-reaction.sh` | `PostToolUse`/`Bash`, after a `/transition` that left the ticket `finished`, `delivered`, `accepted`, `cancelled`, `converted` or `archived` |
+It leaked in every direction. Measured in the originating project across all 3,791 tickets: **62 carried the agent's 👀 against 3 that were genuinely `started`**, 47 of the stale ones `accepted`. Six paths left it on, and the last one closes the question — a `PostToolUse` hook does not run when the Bash command exits non-zero, and `jus api PATCH …/transition … | jq …` always exits non-zero because `jus api` prints an `HTTP 200` line before the body. So the removal half was skipped on exactly the commands most likely to need it, and no hook could reach that.
 
-Both were prose rules first, and both were missed often enough to become hooks. The removal half was measured in the originating project at **12 of 34 `delivered` tickets** still carrying the agent's reaction.
+**`started` plus an assignee is the concurrency lock**, and always was — it is what the conflict rule below keys on.
 
-⚠️ **`rejected` deliberately keeps the eyes** — a rejection goes back to `started`, so the reaction is still true.
-
-The endpoint, for a case the hooks cannot see (a board mutation that did not go through a Bash `jus api` call):
-
-```sh
-jus api POST /workspaces/{ws}/tickets/{id}/ticket_reactions/toggle '{"emoji":"👀"}'
-```
-
-⚠️ **It is a TOGGLE, not a setter.** It removes your reaction when it is already there and adds one when it is not, so read `reacted_by_me` on the ticket before calling it.
+Your reaction on a **comment** is a different mechanism and is unaffected.
 
 ### Concurrency conflict
 
@@ -306,6 +295,15 @@ And a delivery comment: `**Commit:**` line, a short `**What shipped:**` block, t
 - **Never move on with a dirty working tree** — not to answer a question, not to explain what you did, not to run additional checks. Commit first, talk second.
 - **One commit per ticket**, self-contained: backend + frontend + tests together. Follow-up fixes from self-review get a second commit with the same ticket prefix.
 - **Format**: `[#N] Short description` or `[#N, #M] Short description` for multi-ticket commits.
+- **End the message with a `Jus-Ticket:` git trailer**, in the same block as any `Co-Authored-By:`:
+
+  ```text
+  Jus-Ticket: <n>
+  ```
+
+  Same mechanism as `Co-Authored-By:`, and it is the one reference form nothing writes by accident — not a code host, not a bot, not a markdown link. Conventional Commits defines its own footers in git-trailer format, so this is that spec's mechanism rather than merely compatible with it.
+
+  ⚠️ **It is the LAST paragraph of the message or it is not a trailer.** Git reads only the final blank-line-separated block, every line of which has to be `Key: value`; one line of prose anywhere in that block disqualifies the whole of it, and a `Jus-Ticket:` line in the body links nothing.
 - **Do NOT push to remote** — the stakeholder pushes manually. Never run `git push`.
 
 ## Phase 5: Self-Review
