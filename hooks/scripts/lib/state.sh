@@ -433,3 +433,61 @@ juscribe_sop_workspace_id() {
   done
 }
 
+# Echo the repository's default branch for a working directory, or nothing when
+# it cannot be established (#3832). `origin/HEAD` is the authoritative answer
+# and is what a clone sets; the fallbacks are for a repository with no remote,
+# which is the ordinary case for a project a `jus` session was started in.
+juscribe_sop_default_branch() {
+  local dir="${1:-$PWD}" head local_branch
+  command -v git >/dev/null 2>&1 || return 0
+
+  head=$(git -C "$dir" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  if [[ -n "$head" ]]; then
+    echo "${head#origin/}"
+    return 0
+  fi
+
+  # `init.defaultBranch` says what THIS git would create, which is the right
+  # guess for a repository nobody cloned. Then the two conventional names, in
+  # the order a modern repository is likely to use them.
+  for local_branch in "$(git -C "$dir" config --get init.defaultBranch 2>/dev/null || true)" main master; do
+    [[ -n "$local_branch" ]] || continue
+    if git -C "$dir" show-ref --verify --quiet "refs/heads/$local_branch"; then
+      echo "$local_branch"
+      return 0
+    fi
+  done
+  return 0
+}
+
+# Echo the workspace's `workflow_strategy` (#3832), or nothing when it cannot be
+# established — no workspace id, no CLI, no answer, or a body that is not ours.
+#
+# ⚠️ SILENCE RATHER THAN A DEFAULT, the #3674 rule: a guard that cannot read the
+# rule must not invent one, or a hook in the published bundle would enforce a
+# strategy nobody chose.
+#
+# Cached per session so a session costs one API call rather than one per
+# command. The cache is a file in the session state dir, which is removed with
+# the session.
+# Arguments: $1 = directory, $2 = the jus binary (defaults to `jus`).
+juscribe_sop_workflow_strategy() {
+  local dir="${1:-$PWD}" jus_bin="${2:-jus}" workspace cache strategy
+  command -v "$jus_bin" >/dev/null 2>&1 || return 1
+  workspace=$(juscribe_sop_workspace_id "$dir") || return 1
+  [[ -n "$workspace" ]] || return 1
+
+  cache="$(juscribe_sop_state_dir "${CLAUDE_SESSION_ID:-}")/workflow_strategy_${workspace}"
+  if [[ -r "$cache" ]]; then
+    cat "$cache"
+    return 0
+  fi
+
+  strategy=$( (cd "$dir" && "$jus_bin" api GET "/workspaces/${workspace}" 2>/dev/null) \
+    | jq -r '.workspace.workflow_strategy // empty' 2>/dev/null || true)
+  [[ -n "$strategy" ]] || return 1
+
+  mkdir -p "$(dirname "$cache")" 2>/dev/null || true
+  printf '%s' "$strategy" > "$cache" 2>/dev/null || true
+  echo "$strategy"
+}

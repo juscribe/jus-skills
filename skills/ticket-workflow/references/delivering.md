@@ -37,6 +37,12 @@ The "To verify" section with concrete acceptance/rejection steps is **mandatory,
 
   ```
 
+- **Work on a branch, under `branch` or `pull_request`:** name the branch, and say where the setting lives. Somebody meeting a branch they did not expect should not have to ask which switch made it.
+
+  ```
+  **Branch:** `3832-workflow-strategy` — nothing merged, nothing pushed. (Change in Workspace Settings → General → Workflow.)
+  ```
+
 - **Dispatched work (on a branch):** Do NOT include branch info — the dispatch job appends it automatically after the session completes.
 - **Tickets with no code changes** (research, documentation, already-implemented): Omit git info — state plainly that no code changes were made.
 

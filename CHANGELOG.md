@@ -22,6 +22,14 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.20] — 2026-09-07
+
+### Changed
+
+- Merge lands the work where it happened (#3861)
+- Stop telling people to press a button that does not exist (#3860)
+- Tell a CLI session where its work goes, in three layers (#3832)
+
 ## [1.4.19] — 2026-09-07
 
 ### Changed

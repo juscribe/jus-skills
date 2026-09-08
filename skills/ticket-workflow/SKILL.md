@@ -85,6 +85,28 @@ If any are missing, PATCH them first. Never start a ticket that fails this gate.
 
 **The point scale, the ticket types and the metadata defaults are in [references/estimation-and-types.md](references/estimation-and-types.md)** — open it before putting a number or a type on anything. Guessing a type is a `422`, and guessing a point value silently distorts the board's velocity.
 
+### Read the workspace's workflow strategy — it decides where your work goes
+
+**Ask before the first edit, not at the end.** `workflow_strategy` on the workspace says where work lands, and it is the one setting whose answer changes what you do first:
+
+```sh
+jus api GET '/workspaces/{ws}?fields=id' | jq -r '.workspace.workflow_strategy'
+```
+
+| Value | Branch | At the end |
+| --- | --- | --- |
+| `main` | work in the checkout | commit; **do not push** — the person pushes |
+| `branch` | cut `<ticket-id>-<slug>` | leave it there; **nothing is merged, nothing is pushed**. A person presses Merge on the ticket, which lands it where the work happened |
+| `pull_request` | cut `<ticket-id>-<slug>` | **push the branch, do not merge it.** The pull request is opened for you |
+
+⚠️ **`branch` is the default, so absent an answer, work on a branch.** A `jus` session that quietly commits to someone's `main` is the failure this exists to stop — it is not undone by an apology, and in an existing codebase it is alarming rather than merely wrong.
+
+⚠️ **`<ticket-id>-<slug>` is not a style preference.** The commit linker reads a ticket id off the LAST path segment and only when that segment starts with it and a dash, so `3705-copy-a-branch-name` links its commits and its pull request with nothing typed anywhere and `copy-a-branch-name-3705` links nothing. Any prefix is fine — `feat/3705-copy-a-branch-name` works.
+
+**Where it can differ from what you are told:** a project's own instructions may hand the agent a step this table gives the person — merging the branch, for instance. Follow the project; the strategy is the default, not an override of it.
+
+⚠️ **A hook backs the two irreversible halves** on harnesses that run the jus hooks — a commit on the default branch under a strategy that says otherwise, and a push under one that forbids it. It is silent where it cannot establish the setting, so its silence is not permission.
+
 ### Fleshing out a sparse user-created ticket
 
 Stakeholders often file tickets as a bare title or a one-line description. The gate above is not satisfied by a token one-liner — **flesh the ticket out with substance the stakeholder can react to**:
