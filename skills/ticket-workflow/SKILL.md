@@ -97,7 +97,7 @@ jus api GET '/workspaces/{ws}?fields=id' | jq -r '.workspace.workflow_strategy'
 | --- | --- | --- |
 | `main` | work in the checkout | commit; **do not push** — the person pushes |
 | `branch` | cut `<ticket-id>-<slug>` | leave it there; **nothing is merged, nothing is pushed**. A person presses Merge on the ticket, which lands it where the work happened |
-| `pull_request` | cut `<ticket-id>-<slug>` | **push the branch, do not merge it.** The pull request is opened for you |
+| `pull_request` | cut `<ticket-id>-<slug>` | **push the branch, do not merge it.** You open the pull request, in whatever tool you use; Juscribe reports on it |
 
 ⚠️ **`branch` is the default, so absent an answer, work on a branch.** A `jus` session that quietly commits to someone's `main` is the failure this exists to stop — it is not undone by an apology, and in an existing codebase it is alarming rather than merely wrong.
 
