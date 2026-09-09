@@ -22,6 +22,16 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.21] — 2026-09-08
+
+### Changed
+
+- Retire the workflow-strategy guard and its permanent cache (#3936)
+- Record that --git-path answers relative to git's own cwd (#3921)
+- Let the workflow-strategy guard finish a conflicted merge (#3921)
+- Stop the shipped SOP promising a pull request nobody opens (#3901)
+- `jus station` becomes `jus dispatch`, and the sandbox prompt goes (#3912)
+
 ## [1.4.20] — 2026-09-07
 
 ### Changed

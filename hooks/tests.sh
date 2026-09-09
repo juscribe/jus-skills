@@ -572,6 +572,37 @@ t "tracker clears state for a git -C <path> commit, same as a plain one (#2363)"
 assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
   "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$SID_DASHC\"}"
 
+# A commit named inside a HEREDOC BODY is prose, and until #3921 both consumers
+# of juscribe_sop_is_git_commit read the RAW command string. The segment
+# splitter turns every newline into a separator, so a body line beginning with
+# the invocation is a segment anchored at column 0 and matched — anchoring alone
+# never saved it, which the stripper's own header has said since #2363 about the
+# other checks. Two costs, and the second is the corrosive one: the gate refused
+# the prose, and the tracker cleared last_modified_at, which disarms the gate for
+# the real commit that follows. The SOP mandates writing prose through quoted
+# heredocs, so this is the normal shape here rather than an exotic one.
+SID_HEREDOC="heredoc-commit-$$"
+HEREDOC_CMD="cat <<'EOF' > note.md\\ngit commit is what finishes a conflicted merge\\nEOF"
+printf '{"tool_name":"Edit","tool_input":{"file_path":"/repo/foo.rb","old_string":"a","new_string":"b"},"session_id":"%s"}' "$SID_HEREDOC" \
+  | "$SCRIPTS/jus-track-edits.sh" >/dev/null
+
+t "does not read a commit named inside a heredoc as one (#3921)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"$HEREDOC_CMD\"},\"session_id\":\"$SID_HEREDOC\"}"
+
+printf '{"tool_name":"Bash","tool_input":{"command":"%s"},"tool_response":{"interrupted":false},"session_id":"%s"}' "$HEREDOC_CMD" "$SID_HEREDOC" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+
+# The clearing is what makes the false positive dangerous, so assert it on the
+# state file rather than inferring it from the gate below (#2807).
+t "leaves last_modified_at alone for a heredoc that merely mentions one (#3921)"
+assert_state_file "$CLAUDE_PLUGIN_DATA/sessions/$SID_HEREDOC/last_modified_at" present
+
+t "still blocks the real commit that follows the heredoc (#3921)"
+assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$SID_HEREDOC\"}" \
+  "linters have not been run"
+
 # Doc-only edits → no lint required
 printf '{"tool_name":"Edit","tool_input":{"file_path":"/repo/README.md","old_string":"a","new_string":"b"},"session_id":"%s"}' "$SID_DOCS" \
   | "$SCRIPTS/jus-track-edits.sh" >/dev/null

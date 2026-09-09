@@ -320,10 +320,21 @@ juscribe_sop_is_git_commit() {
   # that has to be kept in step with the first. `commit` as the subcommand still
   # excludes `commit-tree`: the pattern requires whitespace or end-of-string
   # after it, and `commit-tree` has a hyphen.
+  #
+  # ⚠️ HEREDOC-STRIPPED, like every other invocation check here (#3921). The
+  # splitter turns each newline into a separator, so a heredoc body line
+  # beginning "git commit" is a segment anchored at column 0 and matches. The
+  # SOP mandates writing prose through `<<'EOF'`, so that is the normal shape,
+  # and the cost was paid three ways: a board comment describing a commit was
+  # refused outright, and in the two trackers a commit-shaped sentence clears
+  # `edits.log` and `last_modified_at` — disarming the pre-commit gate for the
+  # real commit that follows. A heredoc BODY is data, never the command word, so
+  # nothing real is lost; an unterminated one is restored by the stripper rather
+  # than swallowed.
   while IFS= read -r seg; do
     [[ -n "$seg" ]] || continue
     juscribe_sop_segment_invokes_git "$seg" "commit" && return 0
-  done < <(juscribe_sop_command_segments "$cmd")
+  done < <(juscribe_sop_command_segments "$(juscribe_sop_strip_heredocs "$cmd")")
   return 1
 }
 
@@ -460,34 +471,25 @@ juscribe_sop_default_branch() {
   return 0
 }
 
-# Echo the workspace's `workflow_strategy` (#3832), or nothing when it cannot be
-# established — no workspace id, no CLI, no answer, or a body that is not ours.
+# Is a merge waiting to be completed in $1 — a `git merge` that stopped on
+# conflicts, whose next step is a `git commit`? (#3921)
 #
-# ⚠️ SILENCE RATHER THAN A DEFAULT, the #3674 rule: a guard that cannot read the
-# rule must not invent one, or a hook in the published bundle would enforce a
-# strategy nobody chose.
+# ⚠️ `--git-path`, NOT a literal `.git/MERGE_HEAD`. In a linked worktree the
+# per-worktree state lives under `.git/worktrees/<name>/`, and worktrees are
+# exactly where a landing merge happens — so the hardcoded path would answer
+# "no merge" precisely where the answer matters (#2620).
 #
-# Cached per session so a session costs one API call rather than one per
-# command. The cache is a file in the session state dir, which is removed with
-# the session.
-# Arguments: $1 = directory, $2 = the jus binary (defaults to `jus`).
-juscribe_sop_workflow_strategy() {
-  local dir="${1:-$PWD}" jus_bin="${2:-jus}" workspace cache strategy
-  command -v "$jus_bin" >/dev/null 2>&1 || return 1
-  workspace=$(juscribe_sop_workspace_id "$dir") || return 1
-  [[ -n "$workspace" ]] || return 1
-
-  cache="$(juscribe_sop_state_dir "${CLAUDE_SESSION_ID:-}")/workflow_strategy_${workspace}"
-  if [[ -r "$cache" ]]; then
-    cat "$cache"
-    return 0
-  fi
-
-  strategy=$( (cd "$dir" && "$jus_bin" api GET "/workspaces/${workspace}" 2>/dev/null) \
-    | jq -r '.workspace.workflow_strategy // empty' 2>/dev/null || true)
-  [[ -n "$strategy" ]] || return 1
-
-  mkdir -p "$(dirname "$cache")" 2>/dev/null || true
-  printf '%s' "$strategy" > "$cache" 2>/dev/null || true
-  echo "$strategy"
+# ⚠️ `--git-path` prints RELATIVE to the directory git ran in, so it is resolved
+# against $1 rather than against whatever the hook process's cwd happens to be.
+#
+# Answers "no" whenever it cannot tell — no git, not a worktree, no path. The
+# caller uses this to RELAX a refusal, so an unanswerable case must leave the
+# guard where it stands rather than open it.
+juscribe_sop_merge_in_progress() {
+  local dir="${1:-$PWD}" merge_head
+  command -v git >/dev/null 2>&1 || return 1
+  merge_head=$(git -C "$dir" rev-parse --git-path MERGE_HEAD 2>/dev/null) || return 1
+  [[ -n "$merge_head" ]] || return 1
+  [[ "$merge_head" == /* ]] || merge_head="$dir/$merge_head"
+  [[ -f "$merge_head" ]]
 }

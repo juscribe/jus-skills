@@ -29,11 +29,6 @@
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-blocker-date-nudge.sh",
             "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-block-workflow-strategy.sh",
-            "timeout": 10
           }
         ]
       },
