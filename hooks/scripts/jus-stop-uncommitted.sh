@@ -86,7 +86,7 @@ ${files}${overflow}${in_worktree}
 
 Required next action:
   1. Run the applicable linters on the modified files.
-  2. Commit with a "[#N] Short description" message referencing the ticket.
+  2. Commit, with the ticket referenced in the message.
   3. Then stop.
 
 If the changes are intentional WIP that genuinely shouldn't be committed,

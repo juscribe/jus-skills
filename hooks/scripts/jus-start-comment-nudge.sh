@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # PostToolUse hook (Edit|Write): when a SOURCE file is edited on a ticket that
 # has been transitioned to `started` but no start comment has been posted yet,
-# emit a NON-BLOCKING `systemMessage` reminding Claude to post the start
-# comment first. Mirrors dirty-tree-nudge.sh — it never blocks (exit 0 always).
+# emit a NON-BLOCKING reminder to post the start comment first. It never blocks
+# (exit 0 always).
+#
+# ⚠️ IT EMITS BOTH CHANNELS, AND THAT IS THE LOAD-BEARING PART (#3498). The
+# `systemMessage` field is rendered for the user and the model never sees it;
+# `hookSpecificOutput.additionalContext` is what reaches the model. A nudge with
+# only the first looks correct from every angle except the one that matters —
+# `jus-dirty-tree-nudge.sh` was that shape for its whole life and was deleted
+# rather than fixed (#3952). Keep both fields on every emit site below.
 #
 # The start comment is the earliest stakeholder-facing signal that work began
 # and where root-cause + plan + test intent are declared. It deliberately does

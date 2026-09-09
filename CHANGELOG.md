@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.22] — 2026-09-09
+
+### Changed
+
+- Delete the dirty-tree nudge; it was never reaching the model (#3952)
+- Adopt Conventional Commits here, and mandate no format for anyone else (#3394)
+
 ## [1.4.21] — 2026-09-08
 
 ### Changed

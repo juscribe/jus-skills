@@ -31,13 +31,17 @@ identical `(cwd, command)` pairs, and the two installs use different paths).
   PostToolUse is observe-only: the trackers still run and write session
   state (so the pre-commit lint gate works), but nothing they print reaches
   the model.
-- **The dirty-tree nudge rides UserPromptSubmit instead of PostToolUse** —
+- **A commit reminder rides UserPromptSubmit** —
   `scripts/jus-kimi-prompt-nudge.sh` injects a commit-immediately reminder
-  into context at prompt time when the working tree is dirty (exit-0 stdout
-  on that event is context-injected; the PostToolUse `systemMessage` channel
-  does not exist on Kimi). It never exits 2 — a blockable event blocking the
-  user's own prompt would be worse than no nudge. The start-comment nudge
-  has no Kimi channel and stays prompt-level (skill layer).
+  into context at prompt time when the working tree is dirty, because exit-0
+  stdout on that event is context-injected. It never exits 2 — a blockable
+  event blocking the user's own prompt would be worse than no nudge. The
+  start-comment nudge has no Kimi channel and stays prompt-level (skill layer).
+  ⚠️ **This is Kimi's only mid-session commit reminder, and it has no Claude
+  Code counterpart.** It began as the Kimi channel for a `PostToolUse` hook
+  that #3952 deleted — that one emitted `systemMessage` only, which the model
+  never sees, so it was removed as ineffectual. This one reaches the model, so
+  it stays. Do not "restore parity" by deleting it.
 - **The Stop rule has no matcher** — Kimi matches Stop hooks against an
   empty string, so any non-empty matcher would never fire.
 - **Fail-open is Kimi doctrine**: hook errors/timeouts allow the action.

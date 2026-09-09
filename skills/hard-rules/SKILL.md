@@ -22,8 +22,8 @@ Some of these rules are also enforced **deterministically** by the jus enforceme
 | Transitions at the natural moment | ✅ | — |
 | Never transition to `accepted` / `rejected` | ✅ | — |
 | **Commit immediately after code changes** | ✅ | `Stop` blocks if working tree is dirty |
-| Never move on with a dirty working tree | ✅ | `PostToolUse` nudge after N uncommitted edits — **to your terminal, once per ticket**. It does not reach the model; see below |
-| One commit per ticket, `[#N]` prefix | ✅ | — |
+| Never move on with a dirty working tree | ✅ | — (the `Stop` row above is the end-of-turn backstop) |
+| One commit per ticket, carrying a ticket reference | ✅ | — |
 | Never amend a delivered commit | ✅ | — |
 | **Never `git push --force` (any variant)** | ✅ | `PreToolUse Bash` — blocks the command |
 | Never `git push` (stakeholder pushes manually) | ✅ | — |
@@ -52,7 +52,7 @@ Some of these rules are also enforced **deterministically** by the jus enforceme
 
 - The shipped hooks run on Claude Code, on OpenAI Codex via the `hooks/codex/` adapter (mind Codex's per-hook trust flow — approve with `/hooks`), and on Kimi Code via the `hooks/kimi-code/` adapter or the bundle's Kimi plugin (blockable rules only — Kimi's PostToolUse is observe-only, so the nudges ride a prompt-time reminder instead). Tools with no hook surface (Cursor, Copilot, Aider) get the skill layer only.
 - Hooks fail open: if `jq` or another required tool is missing on the host, the hook exits 0 rather than wedging the tool call. The skill remains the primary teaching mechanism.
-- ⚠️ **A hook's output goes to one of two places, and only one of them is the model.** `systemMessage` is rendered in the terminal for the *user*; `hookSpecificOutput.additionalContext` is what the model receives. They are separate fields, and emitting only the first means the agent never sees the message — it looks like a working hook from every angle except the one that matters. `jus-docs-nudge.sh` and `jus-start-comment-nudge.sh` emit **both**. `jus-dirty-tree-nudge.sh` deliberately emits only `systemMessage`: it fires mid-work when a dirty tree is often correct, so it informs you rather than instructing the agent.
+- ⚠️ **A hook's output goes to one of two places, and only one of them is the model.** `systemMessage` is rendered in the terminal for the *user*; `hookSpecificOutput.additionalContext` is what the model receives. They are separate fields, and emitting only the first means the agent never sees the message — it looks like a working hook from every angle except the one that matters. `jus-docs-nudge.sh` and `jus-start-comment-nudge.sh` emit **both**. ⚠️ **A hook emitting only `systemMessage` is not a backstop for anything.** #3952 removed one that had read as a commit guard for months and was only ever talking to the terminal — it looked correct in the manifest, in the rule table, and in its own tests.
 - ⚠️ **Not every event can carry `additionalContext`** — some accept the field and discard it. Check before designing a hook around one.
 - Hooks block deterministically (exit 2) but a determined model can disable them through its harness configuration (in Claude Code: `disableAllHooks` or a settings edit). The hooks are a guardrail, not a sandbox.
 
@@ -73,7 +73,7 @@ See `hooks/` and the bundle README for installation and the per-harness coverage
 - **COMMIT IMMEDIATELY after code changes.** The sequence is: code → lint → **COMMIT** → then everything else (self-review, comments, transitions, user communication). If you find yourself typing a response to the user and you haven't committed yet, **STOP and commit first.** This rule overrides any default "don't commit unless asked" behavior — for Juscribe work the user has explicitly and repeatedly asked for it.
 - **Never move on with a dirty working tree** — not to answer a question, not to explain what you did, not to run additional checks. Commit first, talk second. Treat an uncommitted change with the same urgency as an unsaved file.
 - **One commit per ticket**, self-contained: backend + frontend + tests together. Follow-up fixes from self-review get a second commit with the same ticket prefix.
-- **Format**: `[#N] Short description` or `[#N, #M] Short description` for multi-ticket commits. The `#N` prefix is mandatory — it autolinks on the board.
+- **The subject line format is yours to choose.** Nothing in Juscribe reads one, so use whatever your team already uses — Conventional Commits, a plain summary, anything. What matters is that the message carries a reference.
 - **End the message with a `Jus-Ticket:` git trailer**, in the same block as any `Co-Authored-By:`:
 
   ```text
@@ -83,6 +83,9 @@ See `hooks/` and the bundle README for installation and the per-harness coverage
   Same mechanism as `Co-Authored-By:`, and it is the one reference form nothing writes by accident — not a code host, not a bot, not a markdown link. Conventional Commits defines its own footers in git-trailer format, so this is that spec's mechanism rather than merely compatible with it.
 
   ⚠️ **It is the LAST paragraph of the message or it is not a trailer.** Git reads only the final blank-line-separated block, every line of which has to be `Key: value`; one line of prose anywhere in that block disqualifies the whole of it, and a `Jus-Ticket:` line in the body links nothing.
+  ⚠️ **A breaking change is `BREAKING-CHANGE:`, never `BREAKING CHANGE:`.** Conventional Commits spells it with a space; git requires a trailer key to be a single token, and such a line is none of the shapes git tolerates inside the block — so it disqualifies the **whole** final paragraph and takes `Jus-Ticket:` down with it. Nothing reports this: the commit succeeds and the ticket simply never links. The hyphenated form is that spec's own sanctioned synonym.
+- **A bracket reference — `[#41]`, anywhere in the message — links as well**, and it is the **only** form that can move a ticket on the board: the commit automation reads `[finishes #41]` and its family, never a trailer. Use it alongside the trailer if your workspace has that turned on.
+- ⚠️ **On a code host, keep the reference out of the subject line.** A squash merge on GitHub appends the pull request's own number — `Fix the thing (#41)` — under every message-format setting, and it cannot be turned off. Pull-request numbers and ticket ids are both dense integers from 1, which is why a bare or parenthesised `#41` is deliberately ignored. The trailer block and the message body are the two places the host does not write.
 - **Never amend a delivered commit.** When a ticket is rejected, fix it in a NEW commit. `git commit --amend` on delivered work is forbidden.
 - **NEVER `git push`.** The stakeholder pushes manually. Pushing breaks their workflow.
 
