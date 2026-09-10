@@ -22,6 +22,12 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.23] — 2026-09-09
+
+### Changed
+
+- [#3987] Stop advertising jus-dispatch (#3987)
+
 ## [1.4.22] — 2026-09-09
 
 ### Changed

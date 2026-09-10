@@ -36,9 +36,7 @@ jus login     # authenticate with API token
 jus whoami    # show authenticated user
 jus cleanup   # remove all files from .jus/tmp/
 jus version   # the CLI version — what the server sees in the X-Jus-Version header
-jus switch    # change which AI coding CLI runs dispatched work (multi-LLM accounts)
-jus dispatch init | start | logs          # manage the local dispatch agent
-jus station …                             # retired in favour of `jus dispatch`; exits with a pointer
+jus switch    # change which AI coding CLI is recorded for this project (multi-LLM accounts)
 ```
 
 ## Three things `jus api` does to your call
