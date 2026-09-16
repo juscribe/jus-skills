@@ -404,6 +404,8 @@ Valid `cancelled` resolutions (enum — exact values): `duplicate`, `wont_do`, `
 
 Panel mapping: `unprioritized→icebox`, `prioritized→backlog`, `started/finished/delivered/rejected→current`, `accepted/cancelled/converted/archived→done`.
 
+⚠️ **A board may MERGE Finished into Delivered** — a per-workspace option its owner sets. The map above is unchanged on such a board; what changes is that the `finished` call lands the ticket in `delivered` in one transaction, and the `delivered` call after it answers `200` with the ticket unchanged. Neither is a failure, and the delivery sequence is the same either way. The workspace payload's `merge_finished_into_delivered` says which kind of board you are on.
+
 > **`converted` and `archived` are real states.** An earlier version of this
 > reference listed neither, which made the lifecycle look like it ended at
 > accepted or cancelled. Both are terminal for practical purposes — `converted`

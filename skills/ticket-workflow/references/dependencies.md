@@ -33,6 +33,8 @@ jus api PATCH /workspaces/{ws}/dependencies/{dep_id}/resolve
 jus api DELETE /workspaces/{ws}/dependencies/{dep_id}
 ```
 
+⚠️ **Update, resolve and delete are WORKSPACE-level; only list and create are nested under the ticket.** `PATCH /workspaces/{ws}/tickets/{id}/dependencies/{dep_id}/resolve` is a **404** — and the 404 names nothing, so it reads like a wrong dependency id rather than a wrong route, and the detour is spent re-checking an id that was already right. Take `{dep_id}` from the list or create response and drop the `tickets/{id}` segment: the path that just worked for the create is the one in hand, which is exactly why this is worth stating.
+
 Constraints: valid `blocker_type` = `Ticket` / `Project` / `External`; valid `blocked_type` = `Ticket` / `Project`; External blockers require a `description` (no `blocker_id` to point at); all entities must belong to the same workspace.
 
 **Both sides can be a project**, and the same endpoints hang off `projects/{id}` — so `Project` → `Ticket`, `Ticket` → `Project` and `Project` → `Project` are all expressible. A whole project waiting on one ticket is a `Project` blocked by a `Ticket`, not an External blocker describing it in prose.
@@ -83,7 +85,7 @@ jus api PATCH /workspaces/{ws}/dependencies/{dep_id} '{"dependency":{"due_on":nu
 ## Resolving and post-delivery
 
 - **Auto-resolve** fires when a blocker reaches `accepted`/`cancelled`. No manual action needed.
-- **Manual resolve** (`PATCH .../resolve`) — for external blockers or when auto-resolve missed.
-- **Delete** (`DELETE .../dependencies/{id}`) — only for dependencies created in error.
-- **After delivering** — check `GET .../dependencies/blocks` and mention any unblocked tickets in the delivery comment. Don't auto-start them unless they're next in your batch queue.
+- **Manual resolve** (`PATCH /workspaces/{ws}/dependencies/{dep_id}/resolve`) — for external blockers or when auto-resolve missed. Workspace-level, **not** nested under the ticket; see the warning above.
+- **Delete** (`DELETE /workspaces/{ws}/dependencies/{dep_id}`) — only for dependencies created in error. Workspace-level too.
+- **After delivering** — check `GET /workspaces/{ws}/tickets/{id}/dependencies/blocks` — this one *is* nested — and mention any unblocked tickets in the delivery comment. Don't auto-start them unless they're next in your batch queue.
 - **Stale hygiene** — during session orientation, resolve any dependencies whose blockers are already in a terminal state.

@@ -22,6 +22,19 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.24] — 2026-09-15
+
+### Changed
+
+- [#4239] Install the Codex hooks from jus init (#4239)
+- [#4234] Record that a Codex plugin carries the skills and not the hooks (#4234)
+- [#4208] Mirror the drifted blockers into Kimi, and make its two manifests agree (#4208)
+- [#4207] Name the two test sections this ticket added (#4207)
+- [#4207] Rewrap the tracker comment the type guard widened (#4207)
+- [#4207] Complete the Codex hook adapter, and revive its dead lint gate (#4207)
+- [#4152] Say that resolving a dependency is not ticket-nested (#4152)
+- [#2707] Say that a board may merge Finished into Delivered (#2707)
+
 ## [1.4.23] — 2026-09-09
 
 ### Changed

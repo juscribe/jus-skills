@@ -1559,6 +1559,45 @@ codex_hook 2 "codex: Bash blocker payload blocks via the shim passthrough" \
   "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"cx1\",\"cwd\":\"/tmp\",${CODEX_ENV_EXTRA},\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push ${FORCE_FLAG:---force} origin main\"}}" \
   "$CODEX_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh"
 
+# ⚠️ CODEX SENDS tool_response AS A STRING, AND #1873 CAME BACK THROUGH IT (#4207).
+#
+# The tracker reads `.tool_response.interrupted`. jq cannot index a string, so
+# it errors with "Cannot index string" and EXITS 5 — and `set -euo pipefail`
+# carries that straight out of the hook. Codex logs "PostToolUse Failed" and
+# carries on, so nothing looks broken.
+#
+# What actually breaks is the lint gate: the tracker dies before
+# `last_linted_at` is written, so jus-pre-commit-gate's state-tracked rule
+# never sees a lint on Codex — which is exactly the dead-rule failure #1873
+# fixed for Claude Code, re-entering through a different payload shape. The
+# git-commit branch that clears edits.log never runs either.
+#
+# The fix is in the SHARED script rather than the adapter, because a hook that
+# dies on an unexpected field type violates the fail-open doctrine the sweep
+# above enforces for malformed JSON. A string tool_response is well-formed
+# JSON of an unexpected shape; it must degrade, not throw.
+codex_hook 0 "codex: PostToolUse Bash survives a STRING tool_response (does not exit 5)" \
+  "{\"hook_event_name\":\"PostToolUse\",\"session_id\":\"cx-str\",\"cwd\":\"/tmp\",${CODEX_ENV_EXTRA},\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo hi\"},\"tool_response\":\"hi\"}" \
+  "$SCRIPTS_DIR/jus-post-bash-tracker.sh"
+
+# The consequence, asserted rather than inferred: a lint command with Codex's
+# payload shape must still record last_linted_at.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="codex: a lint command with a STRING tool_response still records last_linted_at"
+CODEX_STATE_DIR="$(mktemp -d)"
+(
+  export CLAUDE_PLUGIN_DATA="$CODEX_STATE_DIR"
+  printf '%s' "{\"hook_event_name\":\"PostToolUse\",\"session_id\":\"cx-lint\",\"cwd\":\"/tmp\",${CODEX_ENV_EXTRA},\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"pnpm exec eslint app.ts\"},\"tool_response\":\"done\"}" \
+    | "$SCRIPTS_DIR/jus-post-bash-tracker.sh" >/dev/null 2>&1
+)
+if find "$CODEX_STATE_DIR" -name last_linted_at 2>/dev/null | grep -q .; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+rm -rf "$CODEX_STATE_DIR"
+
 CODEX_STOP_REPO="$(mktemp -d)"
 git -C "$CODEX_STOP_REPO" init -q
 echo dirty > "$CODEX_STOP_REPO/file.txt"
@@ -1569,6 +1608,207 @@ codex_hook 0 "codex: Stop payload with stop_hook_active=true passes (loop guard)
   "{\"hook_event_name\":\"Stop\",\"session_id\":\"cx1\",\"cwd\":\"$CODEX_STOP_REPO\",\"stop_hook_active\":true,\"last_assistant_message\":null,${CODEX_ENV_EXTRA}}" \
   "$SCRIPTS_DIR/jus-stop-uncommitted.sh"
 rm -rf "$CODEX_STOP_REPO"
+
+# ---- kimi manifest agreement + config load (#4208) --------------------------
+
+section "kimi manifest agreement"
+
+# ⚠️ THE TWO KIMI MANIFESTS MUST CARRY THE SAME HOOKS, and until #4208 nothing
+# said so. config-hooks.toml is appended to ~/.kimi-code/config.toml;
+# kimi.plugin.json is the /plugins install. A user gets ONE of them, so a hook
+# in one and not the other means an enforcement rule that exists or not
+# depending on how they installed — with nothing to tell them which they got.
+#
+# They had in fact been disagreeing: the plugin registered
+# jus-ticket-claim-nudge and the TOML did not. Checking each against the CLAUDE
+# manifest (the parity section below) does not catch this on its own, because
+# an exception entry covering both surfaces excuses the pair together.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="the two kimi manifests register the same shared hooks"
+km_toml=$(grep -oE 'jus-[a-z-]+\.sh' "$PLUGIN_ROOT/hooks/kimi-code/config-hooks.toml" | sort -u)
+km_json=$(grep -oE 'jus-[a-z-]+\.sh' "$PLUGIN_ROOT/kimi.plugin.json" | sort -u)
+if [[ "$km_toml" == "$km_json" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+  comm -23 <(printf '%s\n' "$km_toml") <(printf '%s\n' "$km_json") | sed 's/^/      only in config-hooks.toml: /'
+  comm -13 <(printf '%s\n' "$km_toml") <(printf '%s\n' "$km_json") | sed 's/^/      only in kimi.plugin.json: /'
+fi
+
+# The two blockers #4208 added, against the PreToolUse/Bash payload captured
+# from a live kimi-code 0.29.2 session (same shape the section below uses).
+KIMI_PRE='"hook_event_name":"PreToolUse","session_id":"km-4208","cwd":"/tmp","tool_call_id":"call_9"'
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="kimi: blocker-date nudge runs on the captured PreToolUse/Bash shape"
+if printf '%s' "{${KIMI_PRE},\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"}}" \
+     | "$SCRIPTS/jus-blocker-date-nudge.sh" >/dev/null 2>&1; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="kimi: accepted-manifest blocker runs on the captured PreToolUse/Bash shape"
+if printf '%s' "{${KIMI_PRE},\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git status\"}}" \
+     | "$SCRIPTS/jus-block-accepted-manifest-edit.sh" >/dev/null 2>&1; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+
+# ⚠️ THE SCHEMA REJECTS UNKNOWN FIELDS AND AN EXTRA KEY FAILS THE WHOLE CONFIG
+# LOAD, so "the TOML parses" is not the check — "kimi accepts it" is. `kimi
+# doctor` is that check, and KIMI_CODE_HOME redirects the config root so it
+# runs against a copy rather than the user's own 0600 ~/.kimi-code/config.toml.
+#
+# Skipped, not failed, where kimi is absent: this suite ships to machines that
+# will never have it, and a hard requirement would make the bundle's own tests
+# depend on an install nobody promised.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="kimi doctor accepts the shipped hook config (skipped if kimi absent)"
+KIMI_BIN="${KIMI_BIN:-$HOME/.kimi-code/bin/kimi}"
+if [[ ! -x "$KIMI_BIN" ]]; then
+  printf '  \033[33m-\033[0m %s — kimi not installed\n' "$TEST_NAME"
+  TESTS_RUN=$((TESTS_RUN - 1))
+else
+  KIMI_TEST_HOME="$(mktemp -d)"
+  cp "$PLUGIN_ROOT/hooks/kimi-code/config-hooks.toml" "$KIMI_TEST_HOME/config.toml"
+  if KIMI_CODE_HOME="$KIMI_TEST_HOME" "$KIMI_BIN" doctor 2>&1 | grep -q "All checked config files are valid"; then
+    printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+    KIMI_CODE_HOME="$KIMI_TEST_HOME" "$KIMI_BIN" doctor 2>&1 | sed 's/^/      /' | head -8
+  fi
+  rm -rf "$KIMI_TEST_HOME"
+fi
+
+# ---- adapter hook parity (#4207) --------------------------------------------
+
+section "adapter hook parity"
+
+# Every shared hook the CLAUDE manifest registers must also be registered by
+# each adapter, or be named in ADAPTER_EXCEPTIONS with the reason it cannot be.
+#
+# ⚠️ THIS IS THE CHECK THAT WAS MISSING, AND ITS ABSENCE IS WHY THREE HOOKS
+# DRIFTED. jus/hooks/hooks.json and jus/hooks/codex/hooks.json were last
+# touched in the SAME commit, so git history reads as if the adapters were
+# kept in step — while jus-block-accepted-manifest-edit (added 2026-08-10),
+# jus-blocker-date-nudge (2026-09-07) and jus-ticket-claim-nudge had never
+# been registered on Codex at all. The fail-open sweep above already derives
+# its list from hooks.json rather than typing one (#3507); nothing compared
+# the manifests to each other.
+#
+# An exception is a LINE SOMEONE WROTE, which is the whole point: an adapter
+# that genuinely cannot carry a hook says so here, and an adapter that merely
+# forgot one fails. Format: "<adapter>:<script>=<reason>".
+ADAPTER_EXCEPTIONS=(
+  # ⚠️ jus-ticket-claim-nudge IS registered on Kimi and must not be excepted
+  # (#4208). #4207 excepted it here as "superseded by jus-kimi-prompt-nudge on
+  # the same event" — an inference, not something the README says, and
+  # kimi.plugin.json already contradicted it by registering both. They do
+  # different jobs: the Kimi nudge is a dirty-tree commit reminder, the claim
+  # nudge fetches the ticket a prompt names and feeds it back as context. The
+  # TOML was the surface missing it, and the two Kimi manifests had been
+  # disagreeing about it since before either was checked against the other.
+  #
+  # Kimi: PostToolUse is observe-only — the trackers run and write session
+  # state, but nothing they PRINT reaches the model, so a nudge there is
+  # inert by construction (hooks/kimi-code/README.md).
+  "kimi-code:jus-docs-nudge.sh=PostToolUse is observe-only on Kimi; printed output never reaches the model"
+  "kimi-code:jus-start-comment-nudge.sh=PostToolUse is observe-only on Kimi; no channel reaches the model"
+  # ⚠️ NOT deliberate — the same drift #4207 fixed on Codex, left here because
+  # kimi-code is not installed on the machine that found it and this project
+  # does not register hooks it cannot fire. See #4208.
+  # The same three apply to the plugin manifest: they are properties of Kimi,
+  # not of which install path carries the rules.
+  "kimi-plugin:jus-docs-nudge.sh=PostToolUse is observe-only on Kimi; printed output never reaches the model"
+  "kimi-plugin:jus-start-comment-nudge.sh=PostToolUse is observe-only on Kimi; no channel reaches the model"
+)
+
+# The shared hooks are the ones in hooks/scripts/ — an adapter's own shim
+# (jus-codex-adapt.sh, jus-kimi-adapt.sh) is not a shared hook and must not
+# count toward parity in either direction.
+SHARED_HOOKS=$(cd "$HOOKS_DIR/scripts" && ls jus-*.sh 2>/dev/null | sort)
+
+adapter_registered() {   # <manifest-path>
+  grep -oE 'jus-[a-z-]+\.sh' "$1" 2>/dev/null | sort -u
+}
+
+CLAUDE_REGISTERED=$(adapter_registered "$HOOKS_DIR/hooks.json")
+
+# ⚠️ kimi-code has TWO manifests and #4207's guard read only one (#4208).
+# config-hooks.toml is the append-to-~/.kimi-code/config.toml path;
+# kimi.plugin.json is the `/plugins` install path, carrying the same rules with
+# plugin-relative paths. Either can drift from the other, and a hook present in
+# one and absent from the other is invisible to a guard that reads one of them.
+for adapter_spec in "codex:$PLUGIN_ROOT/hooks/codex/hooks.json" \
+                    "kimi-code:$PLUGIN_ROOT/hooks/kimi-code/config-hooks.toml" \
+                    "kimi-plugin:$PLUGIN_ROOT/kimi.plugin.json"; do
+  adapter_name="${adapter_spec%%:*}"
+  adapter_file="${adapter_spec#*:}"
+
+  TESTS_RUN=$((TESTS_RUN + 1))
+  TEST_NAME="$adapter_name registers every shared hook the Claude manifest does (or excepts it)"
+
+  if [[ ! -f "$adapter_file" ]]; then
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s (manifest not found: %s)\n' "$TEST_NAME" "$adapter_file"
+    continue
+  fi
+
+  adapter_has=$(adapter_registered "$adapter_file")
+  unexplained=()
+  for hook in $SHARED_HOOKS; do
+    # Only hooks the Claude manifest itself registers are in scope — a script
+    # sitting in scripts/ that nothing registers anywhere is a different bug.
+    grep -qx "$hook" <<<"$CLAUDE_REGISTERED" || continue
+    grep -qx "$hook" <<<"$adapter_has" && continue
+    excepted=0
+    for exc in "${ADAPTER_EXCEPTIONS[@]}"; do
+      [[ "${exc%%=*}" == "$adapter_name:$hook" ]] && { excepted=1; break; }
+    done
+    [[ "$excepted" -eq 1 ]] || unexplained+=("$hook")
+  done
+
+  if [[ "${#unexplained[@]}" -eq 0 ]]; then
+    printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+    for u in "${unexplained[@]}"; do
+      printf '      unregistered and unexplained: %s\n' "$u"
+    done
+  fi
+done
+
+# An exception naming a hook that IS registered is stale — it would go on
+# excusing an absence that has been fixed, which is how this list rots into
+# the thing it replaced.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="no ADAPTER_EXCEPTIONS entry excuses a hook that is actually registered"
+stale=()
+for exc in "${ADAPTER_EXCEPTIONS[@]}"; do
+  key="${exc%%=*}"; a="${key%%:*}"; h="${key#*:}"
+  case "$a" in
+    codex)       f="$PLUGIN_ROOT/hooks/codex/hooks.json" ;;
+    kimi-code)   f="$PLUGIN_ROOT/hooks/kimi-code/config-hooks.toml" ;;
+    kimi-plugin) f="$PLUGIN_ROOT/kimi.plugin.json" ;;
+    *)         f="" ;;
+  esac
+  [[ -n "$f" && -f "$f" ]] || continue
+  adapter_registered "$f" | grep -qx "$h" && stale+=("$key")
+done
+if [[ "${#stale[@]}" -eq 0 ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (stale: %s)\n' "$TEST_NAME" "${stale[*]}"
+fi
 
 # ---- kimi-code adapter (#1977) ----------------------------------------------
 

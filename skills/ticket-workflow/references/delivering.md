@@ -59,6 +59,8 @@ jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"delivered"}'
 
 Sequence: commit → self-review → post finished comment → finish → deliver.
 
+⚠️ **Both calls, on every board.** A workspace can be set to merge Finished into Delivered, in which case the first call already lands the ticket in `delivered` and the second answers `200` having done nothing — a transition to the state a ticket already holds is a successful no-op, precisely so this sequence keeps working. Neither response is a failure, and the sequence is the same either way. The workspace payload's `merge_finished_into_delivered` says which kind of board you are on.
+
 # Phase 7: Project Completion
 
 When all tickets in a project reach `accepted`, post a **validation comment on the Project** summarizing how the stakeholder can verify every ticket works as spec'd. This is a consolidated end-to-end QA guide — not a repeat of individual ticket steps.

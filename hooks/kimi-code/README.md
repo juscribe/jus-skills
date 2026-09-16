@@ -50,18 +50,64 @@ identical `(cwd, command)` pairs, and the two installs use different paths).
   source + live capture). The `[[hooks]]` schema rejects unknown fields, so
   a future field rename fails loudly at config load, not silently.
 
-## Live-verified
+## ⚠️ TWO manifests, and they had drifted apart (#4208)
 
-On kimi-code 0.29.2 / kimi-k2.7-code against these exact files: a prompted
-`git push --force` was denied (the model relayed the hook's `git revert`
-guidance), and a prompted Edit adding an `eslint`-`disable` line was blocked
-with the file left byte-identical.
+`config-hooks.toml` and `../../kimi.plugin.json` carry the **same** rules by
+different paths — one appended to `~/.kimi-code/config.toml`, one installed via
+`/plugins`. A user gets one of them, so **a hook in one and not the other is an
+enforcement rule that exists or not depending on how they installed**, with
+nothing telling them which they got.
+
+They were disagreeing: the plugin registered `jus-ticket-claim-nudge.sh` on
+`UserPromptSubmit`; the TOML did not. `../tests.sh` now holds the two against
+each other, which is a different check from holding each against the Claude
+manifest — an exception covering both surfaces excuses the pair together and
+hides exactly this.
+
+⚠️ **`jus-kimi-prompt-nudge.sh` does not supersede `jus-ticket-claim-nudge.sh`,
+and #4207 wrongly recorded that it did.** They share an event and do different
+jobs: the Kimi nudge is a dirty-tree commit reminder with no Claude Code
+counterpart (see above — do not delete it), and the claim nudge fetches the
+ticket a prompt names and feeds it back as context. Both are registered on both
+surfaces.
+
+## Verified — and what is NOT
+
+**Blocking behaviour, on kimi-code 0.29.2 / kimi-k2.7-code** against these exact
+files: a prompted `git push --force` was denied (the model relayed the hook's
+`git revert` guidance), and a prompted Edit adding an `eslint`-`disable` line
+was blocked with the file left byte-identical.
+
+**Config load, on kimi-code 0.29.2** (#4208): the shipped `config-hooks.toml` is
+run through `kimi doctor` under an isolated `KIMI_CODE_HOME`, which answers
+_"All checked config files are valid"_. This matters more than it sounds: the
+`[[hooks]]` schema **rejects unknown fields and an extra key fails the whole
+config load**, so "the TOML parses" is not the question. The check is shown to
+respond to its variable — adding one `bogus_key` produces
+`hooks[11]: Unrecognized key`.
+
+⚠️ **The two blockers added in #4208 — `jus-block-accepted-manifest-edit.sh` and
+`jus-blocker-date-nudge.sh` — were NOT exercised in a live session.** The
+evidence for them is: the config loads, and each runs clean on the
+`PreToolUse`/Bash payload captured from a live 0.29.2 session. That is the same
+standard the rest of this adapter's per-hook coverage is held to, but it is not
+a live end-to-end run, and it should not be described as one. A live pass needs
+a logged-in kimi; do that when there is one.
 
 Host prerequisites match the shared scripts: `bash` 4+, `jq`, `git`.
 
+⚠️ **`KIMI_CODE_HOME` is the knob for testing anything here.** It redirects the
+config root, so a check never has to touch `~/.kimi-code/config.toml` — the
+user's real file, mode `0600`.
+
 ## Tests
 
-`../tests.sh` carries a "kimi-code adapter" section: config-snippet and
+`../tests.sh` carries a **"kimi-code adapter"** section: config-snippet and
 plugin-manifest shape checks, captured-payload fixtures through the real
 scripts (path-key shim, Write content, removal pass-through), tracker state
 via the shim, and the prompt nudge's dirty/clean/fail-open behavior.
+
+Since #4208 it also carries **"kimi manifest agreement"**: the two manifests
+register the same hooks, both new blockers run on the captured payload, and
+`kimi doctor` accepts the shipped config — **skipped, not failed, where kimi is
+absent**, since this bundle ships to machines that will never have it.

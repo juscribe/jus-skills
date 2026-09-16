@@ -30,6 +30,18 @@ timeout = 10
 
 [[hooks]]
 event = "PreToolUse"
+matcher = "^Bash$"
+command = "~/.jus-skills/hooks/scripts/jus-block-accepted-manifest-edit.sh"
+timeout = 10
+
+[[hooks]]
+event = "PreToolUse"
+matcher = "^Bash$"
+command = "~/.jus-skills/hooks/scripts/jus-blocker-date-nudge.sh"
+timeout = 10
+
+[[hooks]]
+event = "PreToolUse"
 matcher = "^(Edit|Write)$"
 command = "~/.jus-skills/hooks/kimi-code/scripts/jus-kimi-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-lint-suppression.sh"
 timeout = 10
@@ -49,6 +61,11 @@ timeout = 10
 [[hooks]]
 event = "UserPromptSubmit"
 command = "~/.jus-skills/hooks/kimi-code/scripts/jus-kimi-prompt-nudge.sh"
+timeout = 10
+
+[[hooks]]
+event = "UserPromptSubmit"
+command = "~/.jus-skills/hooks/scripts/jus-ticket-claim-nudge.sh"
 timeout = 10
 
 [[hooks]]
