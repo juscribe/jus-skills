@@ -22,6 +22,18 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.25] — 2026-09-16
+
+### Changed
+
+- [#4264] Hook adapter for Windsurf Cascade (#4264)
+- [#4263] Hook adapter for Qwen Code — it can deny (#4263)
+- [#4262] Hook adapter for Antigravity (#4262)
+- [#4261] Hook adapter for Cursor (#4261)
+- [#4260] Hook adapter for GitHub Copilot (#4260)
+- [#4241] JUS_SKILLS_DIR moves the bundle clone (#4241)
+- [#4259] Date every vendor capability claim and fail the suite when one goes stale (#4259)
+
 ## [1.4.24] — 2026-09-15
 
 ### Changed

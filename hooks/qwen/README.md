@@ -1,0 +1,152 @@
+# jus enforcement hooks — Qwen Code adapter
+
+Runs all twelve shared hook scripts (`../scripts/`) under Qwen Code's hooks
+system (#4263), in **thirteen registrations** — the same count and the same
+split as the Claude Code manifest.
+
+> ## ⚠️ NOT LIVE-VERIFIED, but the contract is the best-attested of the four new adapters.
+>
+> **No hook here has been watched refusing anything** — `qwen` is not installed on
+> the machine this was written on. What is different from the Copilot (#4260),
+> Cursor (#4261) and Antigravity (#4262) adapters is that Qwen's hook contract is
+> **vendor-documented and near-identical to Claude Code's**, so there is far less
+> guessed.
+>
+> **What would settle it:** install the CLI, prompt it to force-push a throwaway
+> branch, check the remote tip, and replace this box with what you saw.
+
+## The ticket's question, and the answer that flipped it
+
+#4263 was filed asking whether a Qwen hook can **deny** or only annotate, and
+said to establish that before building anything. It can deny.
+
+|                | Qwen Code                                                                                    | Claude Code |
+| -------------- | -------------------------------------------------------------------------------------------- | ----------- |
+| exit `0`       | stdout JSON controls behaviour; other text added to model context                            | same        |
+| **exit `2`**   | **"Blocking error. Ignores stdout, passes stderr as error feedback to the model"**           | same        |
+| other non-zero | non-blocking; stderr in debug mode only; execution continues                                 | same        |
+| response       | `hookSpecificOutput.permissionDecision` = `allow` / `deny` / `ask`                           | same        |
+| payload        | `tool_name`, `tool_input`, `tool_use_id`, `session_id`, `transcript_path`, `permission_mode` | same names  |
+| `Stop`         | carries `stop_hook_active` — _"true when continuing due to previous stop hook block"_        | same        |
+
+The observe-only shape the ticket described is real, but it is the **skill
+frontmatter** surface. The full hooks system is a separate and much larger one —
+22 events — and it is modelled on Claude Code's.
+
+✅ **`Stop` blocks here.** On Cursor and Antigravity the dirty-tree gate degrades
+to a message because their stop events cannot refuse; Qwen's `stop_hook_active`
+exists precisely to guard a stop hook that already blocked. **This is the only
+one of the four new adapters with no degradation against Claude Code.**
+
+## Setup
+
+One shared clone per machine, then merge the `hooks` key into Qwen's settings:
+
+```sh
+git clone https://github.com/juscribe/jus-skills.git ~/.jus-skills
+```
+
+**Per project** — merge into `.qwen/settings.json`:
+
+```sh
+jq -s '.[0] * .[1]' .qwen/settings.json ~/.jus-skills/hooks/qwen/settings.json > .qwen/settings.json.new && mv .qwen/settings.json.new .qwen/settings.json
+```
+
+⚠️ **MERGE, NEVER COPY.** `settings.json` is Qwen's whole configuration file, not
+a hooks-only file — overwriting it discards the model, the auth and everything
+else the user has set. If `.qwen/settings.json` does not exist yet, copy is safe:
+
+```sh
+mkdir -p .qwen && cp ~/.jus-skills/hooks/qwen/settings.json .qwen/settings.json
+```
+
+⚠️ **Registering at project _and_ user scope fires every hook twice.** Pick one.
+
+## ⚠️ The matcher trap, which is why this shim exists at all
+
+[QwenLM/qwen-code#11823](https://github.com/QwenLM/qwen-code/issues/11823), filed
+2026-09-14:
+
+> _"A tool hook matcher written with Claude Code's tool names never matches in
+> qwen-code when that name differs from qwen's own display name."_
+
+A `"matcher": "Bash"` **never fires**. `"Write|Edit"` fires for `edit` and not for
+`write_file`. Qwen's permission rules already map the Claude names; its hook
+matchers do not. PR #11826 is referenced as the fix, so a current build may
+behave differently.
+
+**This manifest matches on Qwen's own names** — `run_shell_command`, `edit`,
+`write_file` — and the shim renames afterwards. That is correct on every version,
+before the fix and after it, and it fails loudly rather than silently if a name
+ever changes: the hook simply does not appear in `/hooks`.
+
+⚠️ **Do not "simplify" the matchers to Claude names once #11826 ships.** It would
+make this adapter silently inert on every older Qwen a user might be running, and
+a hook that does not fire produces no error at all.
+
+## What the shim does — and does not
+
+**Only the tool name**, because everything else already matches:
+
+| Qwen                | shared scripts |
+| ------------------- | -------------- |
+| `run_shell_command` | `Bash`         |
+| `edit`              | `Edit`         |
+| `write_file`        | `Write`        |
+| `read_file`         | `Read`         |
+
+✅ **The map is explicit, not shape-inferred.** Qwen publishes its thirteen tool
+names, so inferring would be choosing to be less certain than the vendor — the
+opposite of the Copilot adapter, which has to infer because GitHub publishes only
+`bash`. A shape fallback sits behind the map for a tool it has not met (a new
+Qwen tool, or a plugin's) and never overrides a known name.
+
+⚠️ **There is NO response translation, deliberately.** Exit 2 plus stderr is
+already what Qwen reads as a block, and a shared script's `hookSpecificOutput`
+object on exit 0 is already the shape Qwen expects. The shim `exec`s the target,
+so its stdout, stderr and exit code reach Qwen untouched. Wrapping either would
+be the Antigravity work (#4262) done where it is not needed.
+
+## Event mapping
+
+Thirteen registrations, twelve scripts — the same as Claude Code's manifest.
+
+| Shared hook                           | Claude event + matcher                   | Qwen event + matcher                   |
+| ------------------------------------- | ---------------------------------------- | -------------------------------------- |
+| `jus-block-force-push.sh`             | `PreToolUse` / `Bash`                    | `PreToolUse` / `^run_shell_command$`   |
+| `jus-block-no-verify.sh`              | `PreToolUse` / `Bash`                    | `PreToolUse` / `^run_shell_command$`   |
+| `jus-pre-commit-gate.sh`              | `PreToolUse` / `Bash`                    | `PreToolUse` / `^run_shell_command$`   |
+| `jus-block-accepted-manifest-edit.sh` | `PreToolUse` / `Bash`                    | `PreToolUse` / `^run_shell_command$`   |
+| `jus-blocker-date-nudge.sh`           | `PreToolUse` / `Bash`                    | `PreToolUse` / `^run_shell_command$`   |
+| `jus-block-lint-suppression.sh`       | `PreToolUse` / `Edit\|Write\|MultiEdit`  | `PreToolUse` / `^(edit\|write_file)$`  |
+| `jus-post-bash-tracker.sh`            | `PostToolUse` / `Bash`                   | `PostToolUse` / `^run_shell_command$`  |
+| `jus-track-edits.sh`                  | `PostToolUse` / `Edit\|Write\|MultiEdit` | `PostToolUse` / `^(edit\|write_file)$` |
+| `jus-start-comment-nudge.sh`          | `PostToolUse` / `Edit\|Write\|MultiEdit` | `PostToolUse` / `^(edit\|write_file)$` |
+| `jus-docs-nudge.sh`                   | `PostToolUse` ×2                         | `PostToolUse` ×2 — both matchers       |
+| `jus-stop-uncommitted.sh`             | `Stop`                                   | `Stop` — **a real gate here**          |
+| `jus-ticket-claim-nudge.sh`           | `UserPromptSubmit`                       | `UserPromptSubmit`                     |
+
+✅ **`jus-docs-nudge.sh` is registered twice, exactly as on Claude Code**, because
+Qwen's matchers split the same event the same way. On Copilot and Antigravity it
+appears once, because those tools have no matcher to split on.
+
+## Skills — and the second install root
+
+⚠️ **Qwen does not read `.agents/skills/`.** It scans `.qwen/skills/` and
+`~/.qwen/skills/` and nothing else;
+[QwenLM/qwen-code#2042](https://github.com/QwenLM/qwen-code/issues/2042) asks for
+`.agents` support and is closed with no linked PR. `jus init` writes both roots
+(#4257); a hand install must too, or Qwen loads no skills and reports success.
+
+```sh
+mkdir -p .qwen/skills && ln -sfn ~/.jus-skills/skills/* .qwen/skills/
+```
+
+## Tests
+
+`jus/hooks/tests.sh`, in the `qwen adapter` section: the settings file is valid
+JSON with a `hooks` key, every script it names exists, all twelve are registered,
+**no matcher uses a Claude Code tool name** (the #11823 trap, asserted rather than
+remembered), and the shim renames each of Qwen's four tools before the guards see
+them — including that a `run_shell_command` force-push blocks and that `write_file`
+reaches the suppression guard, which is the exact pair #11823 reports breaking.
