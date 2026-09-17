@@ -412,6 +412,29 @@ assert_exit 2 "$SCRIPTS/jus-block-lint-suppression.sh" \
   '{"tool_name":"Write","tool_input":{"file_path":"/repo/app/frontend/components/X.tsx","content":"// @ts-nocheck\nexport {}"}}' \
   "@ts-nocheck"
 
+# #4347 — `shellcheck disable` joined the table, and it is the one directive that
+# cannot be typed by extension: most shell scripts are extensionless (bin/ci,
+# script/dev/gate), so they type as `ci` and `gate`. A shell SHEBANG resolves the
+# type to `sh`, and these three pin both halves of that rule.
+
+t "blocks a new shellcheck disable in a .sh file (#4347)"
+assert_exit 2 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  '{"tool_name":"Write","tool_input":{"file_path":"/repo/script/x.sh","content":"#!/usr/bin/env bash\n# shellcheck disable=SC2086\necho $x"}}' \
+  "shellcheck disable"
+
+t "blocks one in an EXTENSIONLESS script, typed by its shebang (#4347)"
+assert_exit 2 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  '{"tool_name":"Write","tool_input":{"file_path":"/repo/bin/ci","content":"#!/usr/bin/env bash\n# shellcheck disable=SC2086\necho $x"}}' \
+  "shellcheck disable"
+
+t "allows a shellcheck directive that is not a disable (#4347)"
+assert_exit 0 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  '{"tool_name":"Write","tool_input":{"file_path":"/repo/script/x.sh","content":"#!/usr/bin/env bash\n# shellcheck source=lib/state.sh\nsource lib/state.sh"}}'
+
+t "allows a shellcheck disable quoted in a markdown doc (#1985, #4347)"
+assert_exit 0 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  '{"tool_name":"Edit","tool_input":{"file_path":"/repo/.jus/docs/linting.md","old_string":"## Rules","new_string":"## Rules\nNever add # shellcheck disable=SC2086."}}'
+
 # ---- jus-pre-commit-gate.sh + tracking ----------------------------------------
 
 section "jus-pre-commit-gate.sh + tracking"

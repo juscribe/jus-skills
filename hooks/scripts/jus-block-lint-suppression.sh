@@ -1,15 +1,26 @@
 #!/usr/bin/env bash
-# PreToolUse hook (Edit|Write): block edits that introduce a NEW lint or
-# type-check suppression comment.
+# PreToolUse hook (Edit|Write|MultiEdit): block edits that introduce a NEW lint
+# or type-check suppression comment.
 #
 # The Juscribe SOP forbids inline suppression of linters and type-checkers.
 # Fix the underlying smell instead. This hook compares old vs. new content
 # and only blocks when the count of a suppression pattern increases.
+#
+# ⚠️ THE TABLE IS NOT HERE — it is in lib/lint_suppressions.sh, shared with the
+# commit-time guard (#4347). This hook only sees tool events, so a change made
+# with `sed` or a heredoc walks straight past it; the commit guard is what
+# closes that. Both read one array so they cannot disagree about what a
+# suppression is.
+#
+# This one is kept because it is strictly better WHEN it fires: it stops the
+# line before it exists and explains why at the moment of writing.
 
 set -euo pipefail
 
 # shellcheck source=lib/state.sh
 source "$(dirname "$0")/lib/state.sh"
+# shellcheck source=lib/lint_suppressions.sh
+source "$(dirname "$0")/lib/lint_suppressions.sh"
 juscribe_sop_require_jq
 
 input=$(cat)
@@ -35,66 +46,43 @@ case "$tool_name" in
     ;;
 esac
 
-# Each entry: regex pattern + human-readable label + the file types whose
-# linter actually reads the directive. Outside those types the token is inert
-# text (docs quoting a rule, shell test fixtures) and must not block (#1985).
-# Extensionless entries (Gemfile, Rakefile) are matched by basename.
-patterns=(
-  '#[[:space:]]*rubocop:disable|rubocop:disable|rb rake gemspec ru Gemfile Rakefile'
-  '#[[:space:]]*rubocop:todo|rubocop:todo|rb rake gemspec ru Gemfile Rakefile'
-  ':reek:[A-Za-z]|:reek: comment|rb rake gemspec ru Gemfile Rakefile'
-  '//[[:space:]]*eslint-disable|eslint-disable|ts tsx js jsx mjs cjs'
-  '/\*[[:space:]]*eslint-disable|eslint-disable (block)|ts tsx js jsx mjs cjs'
-  '//[[:space:]]*prettier-ignore|prettier-ignore|ts tsx js jsx mjs cjs'
-  '/\*[[:space:]]*prettier-ignore|prettier-ignore (block)|ts tsx js jsx mjs cjs css scss'
-  '//[[:space:]]*@ts-ignore|@ts-ignore|ts tsx js jsx'
-  '//[[:space:]]*@ts-expect-error|@ts-expect-error|ts tsx js jsx'
-  '//[[:space:]]*@ts-nocheck|@ts-nocheck|ts tsx js jsx'
-  '#[[:space:]]*type:[[:space:]]*ignore|type: ignore (mypy)|py'
-  '#[[:space:]]*pyright:[[:space:]]*ignore|pyright: ignore|py'
-  '//[[:space:]]*nolint|nolint (Go)|go'
-  '#nosec|#nosec (gosec)|go'
-)
-
 file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input")
-base="${file_path##*/}"
-ext="${base##*.}" # extensionless files (Gemfile, Rakefile) yield the basename
 
-for entry in "${patterns[@]}"; do
-  pattern="${entry%%|*}"
-  rest="${entry#*|}"
-  label="${rest%%|*}"
-  exts="${rest#*|}"
-  # Skip patterns whose linter never reads this file type. An empty file_path
-  # stays fail-closed: every pattern remains active when the target is unknown.
-  if [[ -n "$file_path" && " $exts " != *" $ext "* ]]; then
-    continue
-  fi
-  new_count=$(grep -cE "$pattern" <<<"$new_content" 2>/dev/null || true)
-  old_count=$(grep -cE "$pattern" <<<"$old_content" 2>/dev/null || true)
+# The shebang clause of the type rule needs the file's FIRST line, and an Edit
+# carries only the replaced fragment. Read it from disk when the file is there;
+# a Write of a new shell script carries its own shebang in the content.
+first_line=""
+if [[ -n $file_path && -r $file_path ]]; then
+  first_line=$(head -n 1 "$file_path" 2>/dev/null || true)
+else
+  first_line=$(head -n 1 <<<"$new_content")
+fi
+
+# An empty file_path stays fail-closed: the type stays empty and every pattern
+# remains active when the target is unknown.
+file_type=""
+if [[ -n $file_path ]]; then
+  jus_lint_suppression_type_into file_type "$file_path" "$first_line"
+fi
+
+while IFS= read -r row; do
+  types=$(jus_lint_suppression_types "$row")
+  jus_lint_suppression_applies "$types" "$file_type" || continue
+
+  regex=$(jus_lint_suppression_regex "$row")
+  # ⚠️ COUNTS, NOT A MATCH. An Edit whose old_string already carries the
+  # suppression is moving a line rather than adding one, and blocking it would
+  # make every later edit to that file impossible.
+  new_count=$(grep -cE "$regex" <<<"$new_content" 2>/dev/null || true)
+  old_count=$(grep -cE "$regex" <<<"$old_content" 2>/dev/null || true)
   # grep -c may emit "0" or empty; coerce to integer
   new_count=${new_count:-0}
   old_count=${old_count:-0}
-  if (( new_count > old_count )); then
-    cat >&2 <<EOF
-[jus:hard-rules] BLOCKED: lint/type suppression added.
-
-Detected new occurrence of: $label
-
-The Juscribe SOP forbids inline suppression of linters and type-checkers.
-Fix the underlying issue instead:
-
-  - Refactor to remove the smell (smaller methods, better names, etc.).
-  - For TypeScript: type the value correctly instead of @ts-ignore /
-    @ts-expect-error / @ts-nocheck.
-  - For genuine false positives: escalate to the stakeholder before
-    silencing — never silence silently.
-
-If a suppression is structurally accepted (e.g. an established pattern in
-the codebase), discuss with the stakeholder before introducing more.
-EOF
+  if ((new_count > old_count)); then
+    jus_lint_suppression_explain \
+      "Detected new occurrence of: $(jus_lint_suppression_label "$row")" >&2
     exit 2
   fi
-done
+done < <(jus_lint_suppression_rows)
 
 exit 0

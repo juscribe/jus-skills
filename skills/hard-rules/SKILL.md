@@ -145,11 +145,12 @@ jus api PATCH /workspaces/{ws}/tickets/{id} "{\"ticket\":{\"description\":$(jq -
 - **ALWAYS add an External dependency when waiting for user input.** If you cannot proceed without information from the stakeholder (config values, credentials, design decisions, clarifications), you MUST:
   1. Leave the ticket in `started`.
   2. Post a comment explaining what you need.
-  3. Add an External dependency describing the input needed.
+  3. Add an External dependency **titled** for the input needed — a few words, not a paragraph.
 - **Do NOT just ask and move on** — the dependency is the mechanism that makes the block visible on the board. A comment alone is invisible to project-level rollups.
+- **`title` IS THE HALF THE BOARD DRAWS.** An External blocker requires a `title` (≤200 chars), not a `description` — the description is the body and appears on no card. Omit the title and one is derived from the description: first line, first sentence, cut at 80 characters with an ellipsis. That is how a blocker ends up drawn as a truncated paragraph. Write the short line yourself, and keep the description for what the title cannot hold.
 
 ```sh
-jus api POST /workspaces/{ws}/tickets/{id}/dependencies '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":{id},"description":"User input: <what you need>"}}'
+jus api POST /workspaces/{ws}/tickets/{id}/dependencies '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":{id},"title":"User input: <the ask in a few words>","description":"<the full ask>"}}'
 ```
 
 - **A BLOCKER WHOSE CONDITION IS A TIME MUST CARRY `due_on` AND `due_kind`.** Waiting on an answer has no date; waiting on _"a full 7-day window with no errors"_ or _"three days after the rollout"_ does, and a row that states one in its text and leaves the date column null gives the board nothing to bring anyone back with. The ticket then reads as blocked forever and surfaces only when a human goes looking. Neither half works alone — each without the other is a `422`.
@@ -265,7 +266,7 @@ Some tickets interleave agent work with steps only the stakeholder can perform (
 - **Assign both.** The ticket's `assignee_ids` includes the stakeholder AND the agent. A mixed ticket assigned only to the agent reads as in-progress while it is actually waiting on a human; assigned only to the stakeholder, it hides the agent's remaining work. (If NO step is agent-executable, assign the stakeholder alone and open the description saying why.)
 - **One chronological subtask list**, each with its own `assignee_id`. Do NOT write separate "Stakeholder does: / Agent does:" sections — per-actor sections hide the interleaving. The sequence is the contract, and the first untoggled subtask shows whose move it is.
 - **Tick each subtask the turn its step completes**, not in a sweep at delivery. That is the whole point of it being data; a ten-step ticket left untouched for days is the board lying for days.
-- **Blocker integration:** whenever the next untoggled subtask is the stakeholder's, the External Blocker Rule above applies — leave the ticket `started`, post a comment naming exactly which step you are waiting on, and add the External dependency. Resolve it and continue when your next step unblocks.
+- **Blocker integration:** whenever the next untoggled subtask is the stakeholder's, the External Blocker Rule above applies — leave the ticket `started`, post a comment naming exactly which step you are waiting on, and add the External dependency. **That blocker is a `title` naming the subtask and nothing else** — no `description` — because the subtask already carries the step, its command and its owner, and the board draws both: `{"title":"Subtask 3 — run the dispatch"}`. Restating the step in the blocker is duplication, not emphasis. Resolve it and continue when your next step unblocks.
 
 ### What stays a description checkbox: acceptance criteria
 

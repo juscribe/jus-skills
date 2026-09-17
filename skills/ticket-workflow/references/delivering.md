@@ -6,10 +6,11 @@
 
 1. Leave the ticket in `started`.
 2. Post a comment explaining what you couldn't do, why, and what options exist.
-3. Add an **External dependency** so the ticket shows as blocked:
+3. Add an **External dependency** titled for the ask, so the ticket shows as blocked:
    ```sh
-   jus api POST /workspaces/{ws}/tickets/{id}/dependencies '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":{id},"description":"User input"}}'
+   jus api POST /workspaces/{ws}/tickets/{id}/dependencies '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":{id},"title":"User input: <the ask in a few words>","description":"<the full ask>"}}'
    ```
+   ⚠️ **`title` is the half the board draws**, so it is the one to get right — leave it out and it is derived from the description, cut at 80 characters with an ellipsis. When the ask is simply that the next subtask is someone else's, the title names that subtask and there is **no description**.
 4. Move on to the next ticket. The stakeholder resolves the dependency after providing input.
 
 **Delivering work that doesn't match the ticket is worse than not delivering at all** — it forces a rejection cycle. When in doubt, leave it started and comment.

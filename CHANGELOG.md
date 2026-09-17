@@ -22,6 +22,16 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.26] — 2026-09-17
+
+### Changed
+
+- Title the one dated-blocker example the sweep missed (#4387)
+- Keep the ASCII apostrophe the surrounding file uses (#4387)
+- Give a handoff blocker a short title and no body (#4387)
+- Stop saying dispatch is off (#4212)
+- Guard lint suppressions at commit time, not only at tool time (#4347)
+
 ## [1.4.25] — 2026-09-16
 
 ### Changed

@@ -26,7 +26,10 @@ jus api GET '/workspaces/{ws}/tickets/{id}/dependencies/blocks'
 jus api POST /workspaces/{ws}/tickets/874/dependencies \
   '{"dependency":{"blocker_type":"Ticket","blocker_id":809,"blocked_type":"Ticket","blocked_id":874}}'
 jus api POST /workspaces/{ws}/tickets/100/dependencies \
-  '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":100,"description":"Waiting on DNS propagation"}}'
+  '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":100,"title":"Waiting on DNS propagation","description":"<the full condition, when the title does not hold it>"}}'
+# External, handoff — title only, because the subtask holds the detail
+jus api POST /workspaces/{ws}/tickets/100/dependencies \
+  '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":100,"title":"Subtask 3 — run the dispatch"}}'
 
 # Resolve (preserves history) / Delete (only for deps created in error) — both workspace-level
 jus api PATCH /workspaces/{ws}/dependencies/{dep_id}/resolve
@@ -35,7 +38,9 @@ jus api DELETE /workspaces/{ws}/dependencies/{dep_id}
 
 ⚠️ **Update, resolve and delete are WORKSPACE-level; only list and create are nested under the ticket.** `PATCH /workspaces/{ws}/tickets/{id}/dependencies/{dep_id}/resolve` is a **404** — and the 404 names nothing, so it reads like a wrong dependency id rather than a wrong route, and the detour is spent re-checking an id that was already right. Take `{dep_id}` from the list or create response and drop the `tickets/{id}` segment: the path that just worked for the create is the one in hand, which is exactly why this is worth stating.
 
-Constraints: valid `blocker_type` = `Ticket` / `Project` / `External`; valid `blocked_type` = `Ticket` / `Project`; External blockers require a `description` (no `blocker_id` to point at); all entities must belong to the same workspace.
+Constraints: valid `blocker_type` = `Ticket` / `Project` / `External`; valid `blocked_type` = `Ticket` / `Project`; External blockers have no `blocker_id` to point at; all entities must belong to the same workspace.
+
+⚠️ **An External blocker requires a `title`, not a `description`** — and the two are not interchangeable. `title` (≤200 chars) is the only half the board draws (`BlockedBadge`); `description` is the body and appears on no card. Send a description alone and a title is derived from it — first line, first sentence, cut at 80 characters with an ellipsis (`Dependency::DerivedTitle`) — which is how a blocker ends up rendered as a truncated paragraph. Send the title. ⚠️ **A handoff blocker is the title ALONE**: when it exists only because the next untoggled subtask belongs to someone else, that subtask already carries the step, its command and its owner, so the blocker names it (`"Subtask 3 — run the dispatch"`) and sends no description.
 
 **Both sides can be a project**, and the same endpoints hang off `projects/{id}` — so `Project` → `Ticket`, `Ticket` → `Project` and `Project` → `Project` are all expressible. A whole project waiting on one ticket is a `Project` blocked by a `Ticket`, not an External blocker describing it in prose.
 
@@ -64,7 +69,7 @@ A blocker can carry a date, and the date carries a **kind**, because the same ca
 
 ```sh
 jus api POST /workspaces/{ws}/tickets/100/dependencies \
-  '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":100,"description":"Vendor countersignature","due_on":"2026-11-30","due_kind":"expected_by"}}'
+  '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":100,"title":"Vendor countersignature","due_on":"2026-11-30","due_kind":"expected_by"}}'
 
 jus api PATCH /workspaces/{ws}/dependencies/{dep_id} '{"dependency":{"due_on":"2026-11-30","due_kind":"wait_until"}}'
 jus api PATCH /workspaces/{ws}/dependencies/{dep_id} '{"dependency":{"due_on":null,"due_kind":null}}'   # clear both
