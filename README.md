@@ -41,7 +41,7 @@ The skills are tool-agnostic Markdown — readable by any agent that loads them.
 
 ## Hooks
 
-Ten bash scripts wired into Claude Code's hook system. Each is a deterministic backstop (hard block) or soft nudge supporting the prompt-level rules in `hard-rules` / `ticket-workflow`. All are `jus-`prefixed.
+Twelve bash scripts wired into Claude Code's hook system. Each is a deterministic backstop (hard block) or soft nudge supporting the prompt-level rules in `hard-rules` / `ticket-workflow`. All are `jus-`prefixed.
 
 | Hook                                              | Event                           | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -53,6 +53,20 @@ Ten bash scripts wired into Claude Code's hook system. Each is a deterministic b
 | `jus-start-comment-nudge.sh`                      | `PostToolUse Edit/Write`        | On the first source-file edit after a `started` transition with no start comment yet, nudges (non-blocking) to post the start comment first                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `jus-docs-nudge.sh`                               | `PostToolUse Bash + Edit/Write` | Nudges (non-blocking) at the project docs mapped in `.jus/docs-nudges.tsv` — at ticket pickup for `label:<name>`/`kw:<word>` rows matching the started ticket's labels/title (one sparse `jus api` GET, fail-open), and on the first edit under a mapped path prefix. Once per doc per active ticket across both moments; a silent no-op for projects with no map. A row is `<trigger>\t<doc path>` with an **optional** third `<when-to-read hint>` column — omit it and the hint is read from the `When to read:` line of the `INDEX.md` beside the doc, first clause only; no index or no entry means no nudge |
 | `jus-stop-uncommitted.sh`                         | `Stop`                          | Prevents the session from ending while the working tree is dirty. Checks the worktree this session locked when there is one — see _Which tree the stop guard reads_                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+
+### Where the hooks act
+
+**Every hook is a no-op outside a Juscribe project** (#4404). A hook runs only when its payload's `cwd` sits in a git repository whose toplevel holds a `.jus/` directory. Everywhere else all twelve exit 0 silently.
+
+This is what stops an install in one project from reaching into every other checkout on the machine — a force push refused in an unrelated repository, a dirty-tree stop nag on somebody's weekend project. It also makes the install scope the only thing that decides where the bundle acts.
+
+⚠️ **A `.jus` in an ANCESTOR does not count, deliberately.** The check anchors on the git toplevel rather than walking up to `/`, because ancestors are not the project's to claim: a `.jus` in `$HOME` would wire every repository a person owns, and on the authoring machine `$TMPDIR/.jus/` already exists as litter from an unrelated tool. Not being in a git repository at all means not being in a Juscribe project — `jus init` refuses to set one up outside git.
+
+Set `JUS_HOOKS_EVERYWHERE=1` to restore the old machine-wide behaviour, if you use the SOP without ever running `jus init`:
+
+```sh
+export JUS_HOOKS_EVERYWHERE=1
+```
 
 ### Which tree the stop guard reads
 
@@ -122,6 +136,16 @@ published you install it in two commands from inside Claude Code:
 /plugin marketplace add juscribe/jus-skills   # registers the "jus-skills" marketplace
 /plugin install jus@jus-skills                # installs the "jus" plugin from it
 ```
+
+> **The install asks which scope, and the wrong answer is listed first.**
+> `/plugin install` offers `Install for you (user scope)`,
+> `Install for all collaborators on this repository (project scope)` and
+> `Install for you, in this repo only (local scope)`, in that order. Pick the
+> **second** unless you really do want the bundle everywhere: user scope loads
+> the skills and fires the enforcement hooks in every project on your machine,
+> including ones with no `.jus` directory. The non-interactive equivalent is
+> `claude plugin install -s project jus@jus-skills` — that form takes the scope
+> as a flag and defaults to `user` without asking.
 
 The `@jus-skills` suffix is the marketplace `name` (from `marketplace.json`), not
 the repo name — they happen to match here by design. The version is pinned by

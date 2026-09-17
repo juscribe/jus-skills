@@ -47,6 +47,7 @@ file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input")
 # Resolves a repo-relative recorded path so an extensionless shell script can be
 # classified by its shebang (#2387). Without a base, such a path is not probed.
 cwd=$(jq -r '.cwd // ""' <<<"$input")
+juscribe_sop_require_jus_project "$cwd"
 base_dir=$(juscribe_sop_repo_toplevel "$cwd")
 [[ -n "$base_dir" ]] || base_dir="$cwd"
 state_dir=$(juscribe_sop_state_dir "$session_id")

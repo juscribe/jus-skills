@@ -81,6 +81,7 @@ ids=$(tr -c '[:alnum:]#' ' ' <<<"$prompt" \
 
 cwd=$(jq -r '.cwd // ""' <<<"$input")
 [[ -d "$cwd" ]] || cwd="$PWD"
+juscribe_sop_require_jus_project "$cwd"
 
 # ⚠️ SILENCE RATHER THAN A DEFAULT. This hook shipped with `1` hardcoded while
 # it was monumental-only (#3668); in the bundle that would fetch a REAL ticket

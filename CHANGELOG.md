@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.27] — 2026-09-17
+
+### Changed
+
+- Gate every hook on being inside a Juscribe project (#4404)
+- Name the install scope on every printed install path (#4403)
+
 ## [1.4.26] — 2026-09-17
 
 ### Changed

@@ -22,6 +22,51 @@ juscribe_sop_require_valid_json() {
   jq . >/dev/null 2>&1 <<<"${1:-}" || exit 0
 }
 
+# Exit the hook unless it is running inside a Juscribe-wired project — a git
+# repository whose toplevel holds a `.jus/` directory (#4404).
+#
+# ⚠️ WHY THIS EXISTS. Every hook here used to act in any repository at all, so
+# installing the bundle for one project vetoed commands in every other one on
+# the machine: a force push refused in an unrelated checkout, a dirty-tree nag
+# on somebody else's weekend project. Six of the twelve did it demonstrably and
+# the rest were quiet only by accident, so the rule is stated once, here, and
+# every hook calls it.
+#
+# ⚠️ THE MARKER IS `.jus/`, NOT `.jus/config/`. The config directory is
+# gitignored, so a fresh clone of a properly wired repository does not have one
+# until `jus init` runs — keying on it would silence every hook on exactly the
+# projects that want them. `.jus/bin`, `.jus/docs` and `.jus/hooks` are tracked,
+# so a git worktree carries the marker too, which is the case that matters most
+# here: worktrees are this project's isolation strategy.
+#
+# ⚠️ IT ANCHORS ON THE GIT TOPLEVEL RATHER THAN WALKING UP TO `/`, AND THE
+# FIRST CUT DID WALK. A bare upward walk treats a `.jus` in ANY ancestor as
+# wiring the project, and ancestors are not ours: measured on this machine,
+# `$TMPDIR/.jus/baseline/` exists — litter from an edge check — so every
+# `mktemp -d` repository on it read as Juscribe-wired and the guard passed
+# everywhere it was supposed to stop. `$HOME/.jus` would do the same for every
+# project a person owns. The toplevel is the boundary the marker belongs to.
+#
+# It also makes a subdirectory free: `git rev-parse --show-toplevel` answers the
+# same from `src/deep` as from the root, so a hook firing anywhere inside a
+# wired project is inside it.
+#
+# ⚠️ NOT A GIT REPOSITORY MEANS NOT A JUSCRIBE PROJECT, deliberately. `jus init`
+# refuses to set one up outside git (#1907) and the whole workflow is
+# commit-shaped, so there is no such thing as a wired non-repository.
+#
+# `JUS_HOOKS_EVERYWHERE=1` restores the old machine-wide behaviour for anyone
+# who installed the bundle for the SOP and never ran `jus init`.
+#
+# Argument: $1 = the payload's cwd (may be empty; falls back to $PWD).
+juscribe_sop_require_jus_project() {
+  [[ "${JUS_HOOKS_EVERYWHERE:-}" == "1" ]] && return 0
+  local dir="${1:-}" toplevel
+  [[ -d "$dir" ]] || dir="$PWD"
+  toplevel=$(juscribe_sop_repo_toplevel "$dir")
+  [[ -n "$toplevel" && -d "${toplevel}/.jus" ]] || exit 0
+}
+
 # Resolve the per-session state directory.
 # Argument: $1 = session_id (may be empty)
 # Echoes the directory path. Caller decides whether to mkdir.

@@ -30,6 +30,14 @@ TESTS_RUN=0
 TESTS_FAILED=0
 FAILURES=()
 
+# ⚠️ THE GUARD IS OFF FOR THE WHOLE SUITE, ON PURPOSE (#4404). Every hook now
+# no-ops outside a Juscribe project, and most tests below drive them against a
+# `mktemp -d` repo that has no `.jus/` — so without this every one of them
+# would pass by doing nothing, which is the worst possible way for a suite to
+# be green. The guard gets its own section at the bottom, which unsets this.
+JUS_HOOKS_EVERYWHERE=1
+export JUS_HOOKS_EVERYWHERE
+
 # Isolated state directory so tests don't pollute real plugin data.
 CLAUDE_PLUGIN_DATA=$(mktemp -d)
 export CLAUDE_PLUGIN_DATA
@@ -2885,6 +2893,165 @@ TEST_NAME="feeds the ticket back on additionalContext"
 assert_reaches_agent "$TEST_NAME" "$(claim_run "$CLAIM_TMP/proj" "please work #3668")" "UserPromptSubmit"
 
 rm -rf "$CLAIM_TMP"
+
+# ---- the .jus project guard (#4404) ---------------------------------------
+
+section "juscribe_sop_require_jus_project"
+
+# ⚠️ THE ESCAPE HATCH COMES OFF HERE AND GOES BACK ON AT THE END. Everything
+# above runs with it set; this section is the only place the guard is live, so
+# leaving it unset would silently disable every later test if one is ever added
+# below.
+unset JUS_HOOKS_EVERYWHERE
+
+GUARD_BARE=$(mktemp -d)
+( cd "$GUARD_BARE" && git init -q && git config user.email t@t && git config user.name t \
+  && touch a && git add a && git commit -q -m init && echo dirty > b )
+
+GUARD_WIRED=$(mktemp -d)
+( cd "$GUARD_WIRED" && git init -q && git config user.email t@t && git config user.name t \
+  && mkdir -p .jus/docs && touch a && git add a && git commit -q -m init && echo dirty > b )
+
+# A subdirectory, because the guard walks UP. A hook firing in `src/` of a wired
+# project is the ordinary case, and keying on the cwd alone would miss it.
+mkdir -p "$GUARD_WIRED/src/deep"
+
+# --- the three blocking hooks ---
+
+t "force-push guard is silent in a checkout with no .jus"
+assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
+  "{\"cwd\":\"$GUARD_BARE\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push --force\"}}"
+
+t "force-push guard still blocks in a .jus project"
+assert_exit 2 "$SCRIPTS/jus-block-force-push.sh" \
+  "{\"cwd\":\"$GUARD_WIRED\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push --force\"}}" \
+  "force-push"
+
+t "force-push guard blocks from a subdirectory of a .jus project"
+assert_exit 2 "$SCRIPTS/jus-block-force-push.sh" \
+  "{\"cwd\":\"$GUARD_WIRED/src/deep\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push --force\"}}" \
+  "force-push"
+
+t "no-verify guard is silent in a checkout with no .jus"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  "{\"cwd\":\"$GUARD_BARE\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit --no-verify -m x\"}}"
+
+t "no-verify guard still blocks in a .jus project"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  "{\"cwd\":\"$GUARD_WIRED\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit --no-verify -m x\"}}" \
+  "no-verify"
+
+t "lint-suppression guard is silent in a checkout with no .jus"
+assert_exit 0 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  "{\"cwd\":\"$GUARD_BARE\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$GUARD_BARE/a.ts\",\"content\":\"// eslint-disable-next-line\\nconst x = 1\"}}"
+
+t "lint-suppression guard still blocks in a .jus project"
+assert_exit 2 "$SCRIPTS/jus-block-lint-suppression.sh" \
+  "{\"cwd\":\"$GUARD_WIRED\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$GUARD_WIRED/a.ts\",\"content\":\"// eslint-disable-next-line\\nconst x = 1\"}}"
+
+# --- the dirty-tree stop nag ---
+
+t "stop hook is silent in a dirty checkout with no .jus"
+assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" "{\"cwd\":\"$GUARD_BARE\"}"
+
+t "stop hook still blocks in a dirty .jus project"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" "{\"cwd\":\"$GUARD_WIRED\"}" "STOP BLOCKED"
+
+# --- the two state trackers ---
+#
+# These write rather than print, so the assertion is on the state file. Without
+# it they are indistinguishable from any other silent hook, and "exits 0 with no
+# output" is what they do when they succeed.
+
+GUARD_SESSION=guard-$$
+GUARD_STATE="$CLAUDE_PLUGIN_DATA/sessions/$GUARD_SESSION"
+rm -rf "$GUARD_STATE"
+
+printf '%s' "{\"cwd\":\"$GUARD_BARE\",\"session_id\":\"$GUARD_SESSION\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$GUARD_BARE/a.ts\"}}" \
+  | "$SCRIPTS/jus-track-edits.sh" >/dev/null 2>&1 || true
+t "edit tracker writes no state in a checkout with no .jus"
+assert_state_file "$GUARD_STATE/last_modified_at" absent
+
+printf '%s' "{\"cwd\":\"$GUARD_WIRED\",\"session_id\":\"$GUARD_SESSION\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$GUARD_WIRED/a.ts\"}}" \
+  | "$SCRIPTS/jus-track-edits.sh" >/dev/null 2>&1 || true
+t "edit tracker still writes state in a .jus project"
+assert_state_file "$GUARD_STATE/last_modified_at" present
+
+GUARD_SESSION2=guard2-$$
+GUARD_STATE2="$CLAUDE_PLUGIN_DATA/sessions/$GUARD_SESSION2"
+rm -rf "$GUARD_STATE2"
+
+printf '%s' "{\"cwd\":\"$GUARD_BARE\",\"session_id\":\"$GUARD_SESSION2\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"bin/rubocop app\"}}" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null 2>&1 || true
+t "bash tracker writes no state in a checkout with no .jus"
+assert_state_file "$GUARD_STATE2/last_linted_at" absent
+
+printf '%s' "{\"cwd\":\"$GUARD_WIRED\",\"session_id\":\"$GUARD_SESSION2\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"bin/rubocop app\"}}" \
+  | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null 2>&1 || true
+t "bash tracker still writes state in a .jus project"
+assert_state_file "$GUARD_STATE2/last_linted_at" present
+
+# --- the boundary is the git toplevel, not any ancestor ---
+#
+# ⚠️ THE FIRST CUT OF THE GUARD WALKED UP TO `/` AND THIS IS WHY IT DOES NOT.
+# Measured on the authoring machine: `$TMPDIR/.jus/baseline/` exists — litter
+# from an edge check — so every `mktemp -d` repository sat under a `.jus` and
+# the guard passed in all six cases above while appearing to work. An ancestor
+# is not ours to read: `$HOME/.jus` would wire every project a person owns.
+
+GUARD_NEST=$(mktemp -d)
+mkdir -p "$GUARD_NEST/.jus"
+( cd "$GUARD_NEST" && mkdir inner && cd inner && git init -q \
+  && git config user.email t@t && git config user.name t \
+  && touch a && git add a && git commit -q -m init )
+
+t "a .jus in an ANCESTOR of the repo does not wire it"
+assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
+  "{\"cwd\":\"$GUARD_NEST/inner\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push --force\"}}"
+
+GUARD_NOGIT=$(mktemp -d)
+mkdir -p "$GUARD_NOGIT/.jus"
+
+t "a .jus outside any git repository does not wire it"
+assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
+  "{\"cwd\":\"$GUARD_NOGIT\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push --force\"}}"
+
+# --- the escape hatch ---
+
+t "JUS_HOOKS_EVERYWHERE=1 restores the old machine-wide behaviour"
+TESTS_RUN=$((TESTS_RUN + 1))
+guard_ec=0
+printf '%s' "{\"cwd\":\"$GUARD_BARE\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push --force\"}}" \
+  | JUS_HOOKS_EVERYWHERE=1 "$SCRIPTS/jus-block-force-push.sh" >/dev/null 2>&1 || guard_ec=$?
+if [[ "$guard_ec" -eq 2 ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (exit=%s, wanted 2)\n' "$TEST_NAME" "$guard_ec"
+fi
+
+# --- every hook, structurally ---
+#
+# ⚠️ The behavioural cases above cover the six hooks that demonstrably ACT
+# outside a Juscribe project. The other six are already quiet there for
+# incidental reasons — no workspace id, no active ticket, no nudge map — so a
+# behavioural test on them would pass without the guard and prove nothing (an
+# empty walk looks clean). This asserts the call site instead, which is the only
+# thing that distinguishes "guarded" from "happens to be silent today".
+
+for guard_hook in "$SCRIPTS"/jus-*.sh; do
+  t "$(basename "$guard_hook") calls the .jus project guard"
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if grep -q 'juscribe_sop_require_jus_project' "$guard_hook"; then
+    printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+  fi
+done
+
+rm -rf "$GUARD_BARE" "$GUARD_WIRED" "$GUARD_NEST" "$GUARD_NOGIT"
+export JUS_HOOKS_EVERYWHERE=1
 
 # ---- summary --------------------------------------------------------------
 

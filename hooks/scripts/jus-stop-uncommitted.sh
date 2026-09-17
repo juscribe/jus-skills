@@ -24,6 +24,7 @@ juscribe_sop_require_jq
 input=$(cat)
 juscribe_sop_require_valid_json "$input"
 cwd=$(jq -r '.cwd // ""' <<<"$input")
+juscribe_sop_require_jus_project "$cwd"
 session_id=$(jq -r '.session_id // ""' <<<"$input")
 stop_hook_active=$(jq -r '.stop_hook_active // false' <<<"$input")
 

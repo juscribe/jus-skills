@@ -9,6 +9,13 @@ empirically pinned divergence (kimi-code 0.29.2): the file-path key is
 delegates; the Bash blockers, pre-commit gate, Bash tracker, and Stop gate
 run unchanged.
 
+> ⚠️ **These hooks do nothing outside a Juscribe project** (#4404). Each runs
+> only when the payload's `cwd` is inside a git repository whose toplevel holds
+> a `.jus/` directory; everywhere else they exit 0 in silence. That is the
+> shared scripts' behaviour, so it applies here however this adapter is
+> installed — including a user-scope install that every project on the machine
+> sees. `JUS_HOOKS_EVERYWHERE=1` restores the old machine-wide behaviour.
+
 ## Two ways to install
 
 **1. Plugin (recommended — skills + hooks + auto-loaded hard-rules in one).**

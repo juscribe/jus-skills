@@ -35,6 +35,13 @@ system (#4262). Antigravity replaced the Gemini CLI, which was sunset on
 > 3. Which global path is real. Project scope (`.agents/hooks.json`) is agreed by
 >    all three sources; use that until (3) is answered.
 
+> ⚠️ **These hooks do nothing outside a Juscribe project** (#4404). Each runs
+> only when the payload's `cwd` is inside a git repository whose toplevel holds
+> a `.jus/` directory; everywhere else they exit 0 in silence. That is the
+> shared scripts' behaviour, so it applies here however this adapter is
+> installed — including a user-scope install that every project on the machine
+> sees. `JUS_HOOKS_EVERYWHERE=1` restores the old machine-wide behaviour.
+
 ## Setup
 
 One shared clone per machine, then **project scope**, which every source agrees on:

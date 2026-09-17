@@ -17,6 +17,13 @@ hooks system (#4261).
 > **What would settle it:** install `cursor-agent`, prompt it to force-push a
 > throwaway branch, check the remote tip, and replace this box with what you saw.
 
+> ⚠️ **These hooks do nothing outside a Juscribe project** (#4404). Each runs
+> only when the payload's `cwd` is inside a git repository whose toplevel holds
+> a `.jus/` directory; everywhere else they exit 0 in silence. That is the
+> shared scripts' behaviour, so it applies here however this adapter is
+> installed — including a user-scope install that every project on the machine
+> sees. `JUS_HOOKS_EVERYWHERE=1` restores the old machine-wide behaviour.
+
 ## Setup
 
 One shared clone per machine, then either scope:

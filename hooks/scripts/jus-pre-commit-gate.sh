@@ -30,6 +30,7 @@ tool_name=$(jq -r '.tool_name // ""' <<<"$input")
 command=$(jq -r '.tool_input.command // ""' <<<"$input")
 session_id=$(jq -r '.session_id // ""' <<<"$input")
 cwd=$(jq -r '.cwd // ""' <<<"$input")
+juscribe_sop_require_jus_project "$cwd"
 
 # (1) Only act on `git commit`
 if ! juscribe_sop_is_git_commit "$command"; then
