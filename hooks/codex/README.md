@@ -158,6 +158,28 @@ other way.
 Codex **merges hook layers** — project + user + managed all run — so install
 in one place only, or the hooks fire twice.
 
+## The `~` in every command expands, and it is positional (#4417)
+
+**Measured 2026-09-17 on codex-cli 0.154.0**, three `SessionStart` hooks under an
+isolated `HOME` and `CODEX_HOME`. No API call is needed: the hooks fire before
+the run 401s.
+
+| Arm                | `command`             | Fired |
+| ------------------ | --------------------- | ----- |
+| bare               | `~/probe-bare.sh`     | ✅    |
+| quoted             | `"~/probe-quoted.sh"` | ❌    |
+| absolute (control) | `$T/probe-abs.sh`     | ✅    |
+
+So a tilde anywhere but the start of a word is a literal here too — command not
+found, exit 127, and a non-2 exit is fail-**open**, so every hook in this file
+would silently do nothing. **This manifest carries the most exposure in the
+bundle: 17 tilde paths over 13 command keys.** `../tests.sh` guards all of them.
+
+⚠️ **WHICH shell does the expanding is not established, only that the rule
+holds.** The binary carries no `/bin/sh` literal and bundles `shlex`, a splitter
+that expands nothing, so the engine may well do it itself. The guard depends on
+the behaviour above, not on the mechanism.
+
 ## Trust flow
 
 Codex requires you to review and trust each non-managed hook (recorded per

@@ -32,6 +32,19 @@ install; adjust if your clone lives elsewhere). Don't combine with the
 plugin install — the rules would fire twice (Kimi de-duplicates only
 identical `(cwd, command)` pairs, and the two installs use different paths).
 
+## How the `~` in every command is expanded — not established here
+
+Every path in this manifest is `~/.jus-skills/…`, and `../tests.sh` holds each one
+at the start of a word, because that is the only position a shell expands `~`
+(#4417). **Whether Kimi Code spawns a hook command through a shell at all is
+unread**: it is not installed on the machine this was written on, so nothing here
+was measured against its shipped code.
+
+The rule is settled on three siblings — Cursor and Qwen from their own source
+(#4261), Codex live (#4417) — and the guard costs nothing if Kimi Code turns out to
+expand the tilde itself. If you have the tool, the probe is three hooks on one
+event: a bare tilde, a quoted tilde, and an absolute path as the control arm.
+
 ## Kimi-specific behavior
 
 - **Blockable events are PreToolUse, Stop, UserPromptSubmit only.**

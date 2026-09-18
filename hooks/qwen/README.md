@@ -110,6 +110,20 @@ mkdir -p .qwen && cp ~/.jus-skills/hooks/qwen/settings.json .qwen/settings.json
 
 ⚠️ **Registering at project _and_ user scope fires every hook twice.** Pick one.
 
+## The `~` in every command is expanded by `bash -c`
+
+Qwen does not spawn a hook command directly. `getShellConfiguration()` returns
+`argsPrefix: ["-c"]` on every POSIX platform, so the whole command string is
+handed to `bash -c` and **the shell is what expands the tilde** — read from
+qwen-code's own shipped source on #4261.
+
+⚠️ **Which makes the expansion positional.** A shell expands `~` only at the
+START of a word, so `"~/.jus-skills/..."`, `--flag=~/...`, or a tilde anywhere
+but the first character is a literal: command not found, exit 127, fail-open,
+and every hook in this file silently does nothing while the session looks
+healthy. `../tests.sh` holds every path in this manifest against that rule
+(#4417).
+
 ## ⚠️ The matcher trap, which is why this shim exists at all
 
 [QwenLM/qwen-code#11823](https://github.com/QwenLM/qwen-code/issues/11823), filed

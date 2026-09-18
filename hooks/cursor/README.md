@@ -73,9 +73,11 @@ nothing else. **The shell is what expands the tilde**, so Cursor never has to.
 START of a word.** `"~/.jus-skills/..."`, `--flag=~/...` or a tilde anywhere but
 the first character is a literal, the command is not found, the exit is 127, and
 Cursor treats a non-2 exit as fail-**open** — so every hook silently does
-nothing and the session looks healthy. `tests.sh` has a guard for exactly this;
-it was written by mutating a quoted path into the manifest and watching all
-three transport tests go to 127.
+nothing and the session looks healthy. `../tests.sh` has a guard for exactly
+this; it was written by mutating a quoted path into the manifest and watching all
+three transport tests go to 127. Since #4417 that guard covers **all seven**
+adapter manifests rather than this one, and walks the directory rather than a
+list, so an eighth is covered the day it lands.
 
 ## Trust and approval
 

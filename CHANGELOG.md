@@ -22,6 +22,16 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.30] — 2026-09-18
+
+### Changed
+
+- Define the grade where the bundle's own readers meet it (#4439)
+- Grade a capability claim by how it was checked (#4439)
+- Say why three manifests are outside the tilde walk (#4417)
+- Guard the ~ word-start rule across all seven manifests (#4417)
+- Cut the dirty-tree stop message to three lines (#4431)
+
 ## [1.4.29] — 2026-09-17
 
 ### Changed

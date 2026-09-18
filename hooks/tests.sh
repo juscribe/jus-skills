@@ -145,6 +145,52 @@ assert_exit() {
 
 t() { TEST_NAME="$1"; }
 
+# ⚠️ RESTORED (#4431). These two were deleted along with the dirty-tree nudge in
+# a9dc2c27 (#3952) while fifteen of their CALLERS stayed. The harness runs under
+# `set -uo pipefail` with no `-e`, so each call was a `command not found` on
+# stderr, exit 127, carried straight past: `TESTS_RUN` never incremented, no
+# failure recorded, suite green. Fifteen assertions across the docs-nudge, stop
+# and worktree-lock sections asserted nothing for eight days, including the two
+# this ticket's own criteria rest on.
+assert_stdout() { # <name> <wanted, or "" for no output at all> <got>
+  local name="$1" want="$2" got="$3"
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local ok=0
+  if [[ -z "$want" ]]; then
+    [[ -z "$got" ]] && ok=1
+  elif [[ "$got" == *"$want"* ]]; then
+    ok=1
+  fi
+  if (( ok )); then
+    printf '  \033[32m✓\033[0m %s\n' "$name"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILURES+=("$name")
+    printf '  \033[31m✗\033[0m %s\n' "$name"
+    printf '      wanted: %s\n' "${want:-<no output>}"
+    printf '      got:    %s\n' "${got:0:300}"
+  fi
+}
+
+# The mirror of assert_stdout, and #3393 is why it exists: that change is
+# defined by what the message leaves OUT. An INDEX hint truncated to its first
+# clause still CONTAINS that clause when the truncation silently does nothing,
+# so every positive assertion passes over a message running to 457 characters.
+assert_stdout_lacks() { # <name> <unwanted> <got>
+  local name="$1" unwanted="$2" got="$3"
+  TESTS_RUN=$((TESTS_RUN + 1))
+  if [[ "$got" != *"$unwanted"* ]]; then
+    printf '  \033[32m✓\033[0m %s\n' "$name"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILURES+=("$name")
+    printf '  \033[31m✗\033[0m %s\n' "$name"
+    printf '      unwanted: %s\n' "$unwanted"
+    printf '      got:      %s\n' "${got:0:300}"
+  fi
+}
+
+
 # Assert a per-session state file is present or absent. Lives up here with the
 # other helpers because sections from the gate onward use it, and a function
 # defined further down is simply not in scope yet — a silent 127, not an error.
@@ -1105,8 +1151,11 @@ rm -rf "$DOCS_PROJECT"
 
 section "jus-stop-uncommitted.sh"
 
-# Build a dirty repo
-DIRTY_REPO=$(mktemp -d)
+# Build a dirty repo. `pwd -P` because `git rev-parse --show-toplevel` answers
+# with the REALPATH, and on a Mac `mktemp -d` hands back /var/… for
+# /private/var/… — so an assertion on the literal path would never match the
+# command the message now carries (#4431).
+DIRTY_REPO=$(cd "$(mktemp -d)" && pwd -P)
 ( cd "$DIRTY_REPO" && git init -q && git config user.email t@t && git config user.name t \
   && touch a && git add a && git commit -q -m init && echo dirty > b )
 
@@ -1114,6 +1163,22 @@ t "blocks stop when working tree is dirty"
 assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
   "{\"cwd\":\"$DIRTY_REPO\"}" \
   "STOP BLOCKED"
+
+# #4431 — the message names the command instead of the files, so `-C` is what
+# makes it runnable from wherever the reader is standing. Asserted on the
+# ORDINARY case, because the point is that it is not a worktree special case:
+# there is one message form and it always carries the path.
+t "the message carries a -C command naming the tree it checked"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\"}" \
+  "git -C $DIRTY_REPO status --porcelain"
+
+# The file list is what the command replaces. A tree with 40 dirty files used to
+# print 20 lines and an overflow count on every firing.
+t "and does not list the dirty files"
+assert_stdout_lacks "no file list in the stop message" " b" \
+  "$(printf '%s' "{\"cwd\":\"$DIRTY_REPO\"}" \
+     | "$SCRIPTS/jus-stop-uncommitted.sh" 2>&1 || true)"
 
 t "allows stop when stop_hook_active=true (avoid loop)"
 assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
@@ -1161,31 +1226,35 @@ assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
 
 echo dirty > "$WT_BASE/wt/mine"
 
+# The command's PATH is what says which tree, now that the files are not listed
+# (#4431) — so this is the same claim the filename assertion used to make, and
+# it is stronger: a wrong path is wrong even when both trees hold a file of the
+# same name.
 t "a dirty session worktree still blocks the stop"
 assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
   "{\"cwd\":\"$WT_MAIN\",\"session_id\":\"test-sid\"}" \
-  "mine"
+  "git -C $WT_BASE/wt status --porcelain"
 
-# The positive assertion above passes on a hook that reports BOTH trees, which
-# is the failure this ticket is about — so the load-bearing half is the absence.
-t "and the files it lists are the worktree's, not the main checkout's"
-assert_stdout_lacks "main-only is not reported to a worktree session" "main-only" \
+# The positive assertion above passes on a hook that names BOTH trees, which is
+# the failure #3667 was about — so the load-bearing half is the absence.
+t "and the command names that tree, not the cwd's"
+assert_stdout_lacks "the main checkout is not named to a worktree session" "$WT_MAIN" \
   "$(printf '%s' "{\"cwd\":\"$WT_MAIN\",\"session_id\":\"test-sid\"}" \
      | "$SCRIPTS/jus-stop-uncommitted.sh" 2>&1 || true)"
 
-# The paths in the message are relative to the tree it checked, so a reader
-# standing in the main checkout must be told which tree that was — otherwise
-# `git status` where they are shows a different set and the block reads as
-# spurious.
-t "the block names the worktree when it is not the cwd's tree"
-assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
-  "{\"cwd\":\"$WT_MAIN\",\"session_id\":\"test-sid\"}" \
-  "worktree this session locked"
+# #3667 added a paragraph saying which tree had been checked, because the file
+# list was relative to it and a reader standing elsewhere saw a different set.
+# The path inside the command retires that paragraph: it says the same thing,
+# and it is runnable.
+t "and says so without a paragraph explaining it"
+assert_stdout_lacks "the redirect paragraph is gone" "worktree this session locked" \
+  "$(printf '%s' "{\"cwd\":\"$WT_MAIN\",\"session_id\":\"test-sid\"}" \
+     | "$SCRIPTS/jus-stop-uncommitted.sh" 2>&1 || true)"
 
 t "no lock naming this session leaves the main checkout blocking"
 assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
   "{\"cwd\":\"$WT_MAIN\",\"session_id\":\"other-sid\"}" \
-  "main-only"
+  "git -C $WT_MAIN status --porcelain"
 
 # An empty session_id must match NOTHING. A substring test against "" matches
 # every reason, which would silently redirect the check to an arbitrary
@@ -1193,7 +1262,7 @@ assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
 t "an absent session_id leaves the main checkout blocking"
 assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
   "{\"cwd\":\"$WT_MAIN\"}" \
-  "main-only"
+  "git -C $WT_MAIN status --porcelain"
 
 ( cd "$WT_MAIN" && git worktree add --lock --reason "jus session test-sid (pid 1)" \
     "$WT_BASE/wt2" -b wt-branch-2 ) >/dev/null 2>&1
@@ -1204,10 +1273,12 @@ assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
 
 echo dirty > "$WT_BASE/wt2/theirs"
 
-t "and its block says nothing about a worktree, because it is already in one"
-assert_stdout_lacks "no redirect note when cwd is the tree checked" "worktree this session locked" \
-  "$(printf '%s' "{\"cwd\":\"$WT_BASE/wt2\",\"session_id\":\"test-sid\"}" \
-     | "$SCRIPTS/jus-stop-uncommitted.sh" 2>&1 || true)"
+# It keeps the tree it is standing in rather than being redirected to whichever
+# it locked first, and the command is what proves which one that was.
+t "and its block names the tree it is standing in, not the one it locked first"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$WT_BASE/wt2\",\"session_id\":\"test-sid\"}" \
+  "git -C $WT_BASE/wt2 status --porcelain"
 rm -f "$WT_BASE/wt2/theirs"
 
 ( cd "$WT_MAIN" && git worktree remove --force "$WT_BASE/wt" \
@@ -2086,29 +2157,6 @@ cursor_transport 0 "cursor: the same transport lets an ordinary push through" \
 
 rm -rf "$CURSOR_STAGE"
 
-# A shell expands `~` only at the START of a word. `--flag=~/x` or `"~/x"` is a
-# literal tilde and the hook silently never runs, which is the failure mode the
-# README used to warn was unverified. This is the regression guard for it.
-TESTS_RUN=$((TESTS_RUN + 1))
-TEST_NAME="cursor: every ~ in the manifest sits at the start of a word, where a shell expands it"
-bad_tilde=""
-# `\~` unquoted, as SKILLS_PREFIX does above: shellcheck's SC2088 fires on a
-# quoted tilde even where it is a case PATTERN and a literal is what we want.
-while IFS= read -r cmd; do
-  for word in $cmd; do
-    case "$word" in
-      \~/*) ;;
-      *\~*) bad_tilde+="$word " ;;
-    esac
-  done
-done < <(jq -r '.hooks[][].command' "$CURSOR_DIR/hooks.json" 2>/dev/null)
-if [[ -z "$bad_tilde" ]]; then
-  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
-else
-  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%s)\n' "$TEST_NAME" "$bad_tilde"
-fi
-
 # ---- antigravity adapter (#4262) -------------------------------------------
 
 section "antigravity adapter"
@@ -2328,7 +2376,7 @@ echo "uncommitted" > "$AGY_DIRTY/scratch.txt"
 printf '{"conversationId":"agystop","toolCall":{"name":"run_command","args":{"CommandLine":"ls","Cwd":"%s"}}}' "$AGY_DIRTY" \
   | env -u JUS_HOOKS_EVERYWHERE "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-force-push.sh" >/dev/null 2>&1
 
-agy_says '.decision == "continue" and (.reason | test("dirty")) and (has("allow_tool") | not)' \
+agy_says '.decision == "continue" and (.reason | test("STOP BLOCKED")) and (has("allow_tool") | not)' \
   "antigravity: Stop with a dirty tree answers continue, replaying the remembered cwd" \
   '{"conversationId":"agystop","executionNum":0,"terminationReason":"NO_TOOL_CALL","fullyIdle":true}' \
   env -u JUS_HOOKS_EVERYWHERE "$AGY_ADAPT" Stop "$SCRIPTS_DIR/jus-stop-uncommitted.sh"
@@ -3065,6 +3113,133 @@ fi
 codex_hook 0 "kimi: prompt nudge fails open on malformed input" \
   "not json at all" "$KIMI_NUDGE"
 rm -rf "$KIMI_NUDGE_REPO"
+
+# ---- the ~ word-start guard, every adapter (#4417) --------------------------
+
+section "manifest ~ expansion (all adapters)"
+
+# Every manifest routes through `~/.jus-skills/…`, and a shell expands `~` only
+# at the START of a word. `--flag=~/x`, `"~/x"`, or a tilde anywhere but the
+# first character of a word is a literal: command not found, exit 127, and
+# every adapter's fail-open default turns that into a tool whose hooks are ALL
+# dead, with no output anywhere. One stray quote in one manifest does it, and
+# nothing else in the bundle would report it.
+#
+# ⚠️ THE RULE IS MEASURED ON THREE TOOLS — two from their own shipped code, one
+# live. It is an assumption on the other four, which is exactly why the guard is
+# cheap insurance rather than a formality:
+#   Cursor — wraps the command in a heredoc and hands the string to a shell, so
+#            the shell does the expanding (#4261)
+#   Qwen   — `getShellConfiguration()` returns `argsPrefix: ["-c"]` on every
+#            POSIX platform, i.e. `bash -c "<cmd>"` (#4261)
+#   Codex  — measured 2026-09-17 on codex-cli 0.154.0 (#4417): three SessionStart
+#            hooks under an isolated HOME and CODEX_HOME, bare tilde FIRED,
+#            quoted tilde did NOT fire, absolute path FIRED as the control arm
+#
+# ⚠️ THIS WALKS THE DIRECTORY RATHER THAN A LIST, so an eighth adapter is covered
+# the day it lands — including by FAILING if its manifest carries a name none of
+# the three known ones cover. A silent skip is the failure a check like this
+# acquires later, and it is invisible from a green run.
+#
+# ⚠️ THE THREE MANIFESTS OUTSIDE hooks/<adapter>/ ARE OUT OF SCOPE BY MEASUREMENT,
+# not by oversight: hooks/hooks.json, ../kimi.plugin.json and
+# ../gemini-extension.json carry ZERO tildes between them, because each is
+# installed as a plugin and reaches the scripts by a relative path or by
+# ${CLAUDE_PLUGIN_ROOT}. There is nothing here for this rule to hold. Adding one
+# to the walk would fail it on "no ~ paths", which is the assertion below
+# working correctly.
+
+# Emit every hook command string in a manifest, one per line.
+manifest_commands() { # <manifest-path>
+  case "$1" in
+    *.toml)
+      # jq cannot read TOML. `[[hooks]]` accepts only event/matcher/command/
+      # timeout, one key per line, the value double-quoted.
+      sed -E -n 's/^[[:space:]]*(command|bash)[[:space:]]*=[[:space:]]*"(.*)"[[:space:]]*$/\2/p' "$1"
+      ;;
+    *)
+      # Recursive descent rather than a path per tool: the six JSON manifests
+      # nest differently from each other and an eighth will nest differently
+      # again. Copilot spells the key `bash`; everyone else spells it `command`.
+      jq -r '[.. | objects | (.command?, .bash?) | strings] | .[]' "$1" 2>/dev/null
+      ;;
+  esac
+}
+
+# Count the command keys in the raw text, without parsing. This is the check on
+# the EXTRACTOR: if the structural read above returns fewer entries than the
+# file plainly contains, it half-worked, and a half-worked extractor reports a
+# clean manifest for the paths it never looked at.
+manifest_command_keys() { # <manifest-path>
+  case "$1" in
+    *.toml) grep -cE '^[[:space:]]*(command|bash)[[:space:]]*=' "$1" ;;
+    *) grep -cE '"(command|bash)"[[:space:]]*:' "$1" ;;
+  esac
+}
+
+for tilde_dir in "$HOOKS_DIR"/*/; do
+  tilde_adapter=$(basename "$tilde_dir")
+  # scripts/ holds the shared hooks themselves, not a manifest. Any OTHER new
+  # directory here is an adapter until somebody says otherwise, and will fail
+  # below for want of a manifest — deliberately, so that it is a decision.
+  [[ "$tilde_adapter" == "scripts" ]] && continue
+
+  TESTS_RUN=$((TESTS_RUN + 1))
+  TEST_NAME="$tilde_adapter: every ~ in the manifest sits at the start of a word, where a shell expands it"
+
+  tilde_manifest=""
+  for tilde_candidate in hooks.json settings.json config-hooks.toml; do
+    if [[ -f "$tilde_dir$tilde_candidate" ]]; then
+      tilde_manifest="$tilde_dir$tilde_candidate"
+      break
+    fi
+  done
+  if [[ -z "$tilde_manifest" ]]; then
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s (no hooks.json, settings.json or config-hooks.toml)\n' "$TEST_NAME"
+    continue
+  fi
+
+  bad_tilde=""; tilde_cmds=0; tilde_paths=0
+  while IFS= read -r cmd; do
+    [[ -n "$cmd" ]] || continue
+    tilde_cmds=$((tilde_cmds + 1))
+    # `read -ra` splits on IFS exactly as a shell does and, unlike `for w in
+    # $cmd`, does not glob — a command holding a `*` would otherwise be expanded
+    # against the current directory before it was ever examined.
+    read -ra tilde_words <<<"$cmd"
+    for word in ${tilde_words[@]+"${tilde_words[@]}"}; do
+      # `\~` unquoted, as SKILLS_PREFIX does above: shellcheck's SC2088 fires on
+      # a quoted tilde even where it is a case PATTERN and a literal is wanted.
+      case "$word" in
+        \~/*) tilde_paths=$((tilde_paths + 1)) ;;
+        *\~*) bad_tilde+="$word " ;;
+      esac
+    done
+  done < <(manifest_commands "$tilde_manifest")
+  tilde_keys=$(manifest_command_keys "$tilde_manifest")
+
+  # ⚠️ AN EMPTY WALK LOOKS CLEAN. A manifest this extractor cannot read yields
+  # no commands, therefore no bad tildes, therefore a PASS that asserted
+  # nothing. All three counts are checked so that failure is loud instead.
+  if [[ "$tilde_cmds" -eq 0 ]]; then
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s (no hook commands read from %s)\n' "$TEST_NAME" "$(basename "$tilde_manifest")"
+  elif [[ "$tilde_cmds" -ne "$tilde_keys" ]]; then
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s (read %d of the %d command keys in %s)\n' \
+      "$TEST_NAME" "$tilde_cmds" "$tilde_keys" "$(basename "$tilde_manifest")"
+  elif [[ "$tilde_paths" -eq 0 ]]; then
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s (%d command(s), none of them a ~ path — did the install prefix change?)\n' \
+      "$TEST_NAME" "$tilde_cmds"
+  elif [[ -n "$bad_tilde" ]]; then
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s (%s)\n' "$TEST_NAME" "$bad_tilde"
+  else
+    printf '  \033[32m✓\033[0m %s (%d ~ paths over %d commands)\n' "$TEST_NAME" "$tilde_paths" "$tilde_cmds"
+  fi
+done
 
 # ---- skill-body portability (#1975) ---------------------------------------
 

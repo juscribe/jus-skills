@@ -59,6 +59,19 @@ The skills are a separate install and do not come with these. See
 `installing-the-bundle.md`; Copilot reads `.agents/skills/`, `.github/skills/`
 and `.claude/skills/`, so the canonical recipe works unchanged.
 
+## How the `~` in every command is expanded — not established here
+
+Every path in this manifest is `~/.jus-skills/…`, and `../tests.sh` holds each one
+at the start of a word, because that is the only position a shell expands `~`
+(#4417). **Whether Copilot spawns a hook command through a shell at all is
+unread**: it is not installed on the machine this was written on, so nothing here
+was measured against its shipped code.
+
+The rule is settled on three siblings — Cursor and Qwen from their own source
+(#4261), Codex live (#4417) — and the guard costs nothing if Copilot turns out to
+expand the tilde itself. If you have the tool, the probe is three hooks on one
+event: a bare tilde, a quoted tilde, and an absolute path as the control arm.
+
 ## What the shim does
 
 Copilot's documented payload is camelCase and differs from the shared scripts'

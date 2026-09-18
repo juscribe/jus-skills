@@ -67,6 +67,19 @@ There is a **system** scope too, for organisation-wide policy:
 ⚠️ **Cascade loads and MERGES all three scopes.** Installing at two of them
 registers every hook twice and fires each twice per action. Pick one.
 
+## How the `~` in every command is expanded — not established here
+
+Every path in this manifest is `~/.jus-skills/…`, and `../tests.sh` holds each one
+at the start of a word, because that is the only position a shell expands `~`
+(#4417). **Whether Windsurf spawns a hook command through a shell at all is
+unread**: it is not installed on the machine this was written on, so nothing here
+was measured against its shipped code.
+
+The rule is settled on three siblings — Cursor and Qwen from their own source
+(#4261), Codex live (#4417) — and the guard costs nothing if Windsurf turns out to
+expand the tilde itself. If you have the tool, the probe is three hooks on one
+event: a bare tilde, a quoted tilde, and an absolute path as the control arm.
+
 ## Why this shim is the simplest of the five
 
 **Blocking is exit code 2 and nothing else.** Cascade reads no JSON response at
