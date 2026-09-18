@@ -180,6 +180,58 @@ path without Guardian intercepting.
 **Prior verification** was on codex-cli 0.145.0 with auth via `CODEX_API_KEY`
 alone (no `codex login` needed for headless runs).
 
+## Can a hook actually DENY? Yes — and two of the four ways do nothing (#4288)
+
+**Measured 2026-09-17, codex-cli 0.154.0, five arms, each hook appending its own
+payload to a file so "fired and denied" is distinguishable from "never fired".**
+The event is `UserPromptSubmit`, which fires **before the model is contacted** —
+so the whole table runs unauthenticated, on a machine nobody has logged in on.
+That is what made this measurable at all; it had been parked for a day as
+needing an account.
+
+| Hook returns                                           | codex reports | turn          |
+| ------------------------------------------------------ | ------------- | ------------- |
+| exit `0`                                               | `Completed`   | ran (control) |
+| **exit `2`**                                           | **`Blocked`** | **aborted**   |
+| **stdout `{"decision":"block","reason":"…"}`**         | **`Blocked`** | **aborted**   |
+| stdout `hookSpecificOutput.permissionDecision: "deny"` | `Failed`      | **ran**       |
+| exit `1`                                               | `Failed`      | ran           |
+
+"Ran" and "aborted" are not read off the label: the allow arms made ten
+authentication attempts to `api.openai.com` and the blocked arms made one, which
+is the connection codex opens before the hook returns.
+
+⚠️ **`permissionDecision` IS THE PRE-TOOL-USE SHAPE AND IT FAILS OPEN HERE.**
+Codex mirrors Claude Code's contract **per event**, so the field that denies a
+`PreToolUse` is not the field that denies a `UserPromptSubmit` — and a hook that
+sends the wrong one is marked `Failed` and the action proceeds. None of the
+shared scripts does this today (they all exit 2), but a future one that returns
+JSON must match the event.
+
+⚠️ **AN UNTRUSTED HOOK DOES NOT FIRE, AND SAYS NOTHING AT ALL.** The same exit-2
+arm run without `--dangerously-bypass-hook-trust` never executed the script — no
+warning, no "hook untrusted" line, no non-zero exit, and the turn proceeded
+normally. This is the trust flow above seen from the other side: a headless run
+against untrusted hooks is indistinguishable from a run with no hooks installed.
+
+⚠️ **`--json` CARRIES NO HOOK EVENT, AND A BLOCKED TURN REPORTS `turn.completed`.**
+The human stream prints `hook: UserPromptSubmit Blocked`; the JSON stream emits
+`thread.started`, `turn.started`, `turn.completed` with all-zero usage, and
+nothing else. **`dispatch/internal/provider/codex.go` runs `codex exec --json`**,
+so a dispatch whose hook blocked it sees a successful, empty turn.
+
+⚠️ **The reason never reaches the operator on `codex exec`.** The README above
+says exit 2 blocks "with stderr as the reason". The block is real; the reason is
+not printed on either stream. Against `PreToolUse` the binary does carry
+`Command blocked by PreToolUse hook: <reason>` and
+`Tool call blocked by PreToolUse hook: <reason>`, so the reason is plumbed where
+it is fed back to the model — but do not expect to see it in a log.
+
+**What is NOT measured**: a `PreToolUse` denial end to end, on a tool call a
+model actually issued. That needs an account; the strings above and #4207's
+blocked force-push are the evidence for it, and #4207's own Guardian warning is
+why that force-push is not conclusive on its own.
+
 ## Tests
 
 `../tests.sh` carries a **"codex adapter"** section: manifest shape + referenced

@@ -4,16 +4,25 @@ Runs all twelve shared hook scripts (`../scripts/`) under Qwen Code's hooks
 system (#4263), in **thirteen registrations** — the same count and the same
 split as the Claude Code manifest.
 
-> ## ⚠️ NOT LIVE-VERIFIED, but the contract is the best-attested of the four new adapters.
+> ## ✅ LIVE-VERIFIED against qwen 0.24.0, 2026-09-17
 >
-> **No hook here has been watched refusing anything** — `qwen` is not installed on
-> the machine this was written on. What is different from the Copilot (#4260),
-> Cursor (#4261) and Antigravity (#4262) adapters is that Qwen's hook contract is
-> **vendor-documented and near-identical to Claude Code's**, so there is far less
-> guessed.
+> Every claim below was measured, each against a control arm:
 >
-> **What would settle it:** install the CLI, prompt it to force-push a throwaway
-> branch, check the remote tip, and replace this box with what you saw.
+> | Probe                                                | Result                                                                         |
+> | ---------------------------------------------------- | ------------------------------------------------------------------------------ |
+> | Model-issued forced push, manifest installed         | **Refused**, remote tip unmoved                                                |
+> | Same, manifest absent (control)                      | Pushed; tip moved                                                              |
+> | Model-issued `edit` adding a lint suppression        | **Refused**, file unchanged                                                    |
+> | Same, control                                        | Suppression landed in the file                                                 |
+> | Model-issued `write_file` carrying a suppression     | **Refused**                                                                    |
+> | `Stop` with a dirty tree                             | **Blocks and forces continuation** — 9 model requests against 2 in the control |
+> | `UserPromptSubmit` stdout                            | Injected into the model's context                                              |
+> | `PostToolUse` `hookSpecificOutput.additionalContext` | Injected into the model's context                                              |
+>
+> **The "no degradation" claim below survives the measurement.** All thirteen
+> registrations do on Qwen what they do on Claude Code.
+>
+> **No sign-in was involved** — see _Verifying this yourself_ below.
 
 > ⚠️ **These hooks do nothing outside a Juscribe project** (#4404). Each runs
 > only when the payload's `cwd` is inside a git repository whose toplevel holds
@@ -27,14 +36,14 @@ split as the Claude Code manifest.
 #4263 was filed asking whether a Qwen hook can **deny** or only annotate, and
 said to establish that before building anything. It can deny.
 
-|                | Qwen Code                                                                                    | Claude Code |
-| -------------- | -------------------------------------------------------------------------------------------- | ----------- |
-| exit `0`       | stdout JSON controls behaviour; other text added to model context                            | same        |
-| **exit `2`**   | **"Blocking error. Ignores stdout, passes stderr as error feedback to the model"**           | same        |
-| other non-zero | non-blocking; stderr in debug mode only; execution continues                                 | same        |
-| response       | `hookSpecificOutput.permissionDecision` = `allow` / `deny` / `ask`                           | same        |
-| payload        | `tool_name`, `tool_input`, `tool_use_id`, `session_id`, `transcript_path`, `permission_mode` | same names  |
-| `Stop`         | carries `stop_hook_active` — _"true when continuing due to previous stop hook block"_        | same        |
+|                | Qwen Code                                                                                                                                            | Claude Code                       |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------- |
+| exit `0`       | stdout **JSON** controls behaviour. ⚠️ Plain text is **not** added to context — measured, `hookSpecificOutput.additionalContext` is the only channel | Claude Code adds plain stdout too |
+| **exit `2`**   | **"Blocking error. Ignores stdout, passes stderr as error feedback to the model"**                                                                   | same                              |
+| other non-zero | non-blocking; stderr in debug mode only; execution continues                                                                                         | same                              |
+| response       | `hookSpecificOutput.permissionDecision` = `allow` / `deny` / `ask`                                                                                   | same                              |
+| payload        | `tool_name`, `tool_input`, `tool_use_id`, `session_id`, `transcript_path`, `permission_mode`                                                         | same names                        |
+| `Stop`         | carries `stop_hook_active` — _"true when continuing due to previous stop hook block"_                                                                | same                              |
 
 The observe-only shape the ticket described is real, but it is the **skill
 frontmatter** surface. The full hooks system is a separate and much larger one —
@@ -44,6 +53,38 @@ frontmatter** surface. The full hooks system is a separate and much larger one �
 to a message because their stop events cannot refuse; Qwen's `stop_hook_active`
 exists precisely to guard a stop hook that already blocked. **This is the only
 one of the four new adapters with no degradation against Claude Code.**
+
+## Verifying this yourself — no Qwen account needed
+
+⚠️ **The sign-in this adapter waited on turned out to be unnecessary.** Qwen takes
+an OpenAI-compatible provider as first-class flags, so a local stub answering
+`/chat/completions` with a canned `tool_calls` response drives a **real**
+model-issued tool call through the real hook path, with no account and no network.
+
+```sh
+qwen -y --auth-type openai --openai-base-url http://127.0.0.1:8812 --openai-api-key stub -m stub-model "…"
+```
+
+⚠️ **`--auth-type openai` is required, and its absence does not read as a missing
+flag.** With a base URL and a key but no auth type, the run dies at _"No auth type
+is selected"_ — which reads like a credential problem rather than a flag problem.
+
+⚠️ **Do not pass `--bare`.** It skips startup auto-discovery, and that includes
+hook discovery: the run completes, looks clean, and fires nothing.
+
+⚠️ **Do not override `HOME` to isolate the config.** Every command in this manifest
+is written `~/.jus-skills/hooks/...`, so the tilde expands into the fake home and
+every hook points at a file that does not exist — **and a hook whose command is
+missing fires nothing and says nothing.** Measured: that produced a clean
+"qwen cannot deny" result, which is the wrong answer to this adapter's deciding
+question. Symlink the bundle into the fake home, or leave `HOME` alone.
+
+⚠️ **Always run a control arm.** The trap above was caught by the control failing
+to differ from the guarded arm, and by nothing else.
+
+⚠️ **Qwen requires `read_file` before `edit`**, and refuses a relative `file_path`.
+A control arm that skips either reports the edit not landing, which is
+indistinguishable from the blocker working.
 
 ## Setup
 

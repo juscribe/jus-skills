@@ -25,7 +25,7 @@ This file is the lifecycle. The operational detail sits beside it and is **not**
 
 | Read | Before |
 | --- | --- |
-| [references/api.md](references/api.md) | Constructing **any** `jus api` call. Four documented request shapes return a 400 or hang on stdin if you guess, and the response envelope is not the JSON root. |
+| [references/api.md](references/api.md) | Constructing **any** `jus api` call. Four documented request shapes return a 400, or send no body at all, if you guess, and the response envelope is not the JSON root. |
 | [references/estimation-and-types.md](references/estimation-and-types.md) | Sizing, typing or labelling a ticket, or filling in a sparse one. Also the pre-start metadata gate and the placement rules for a new ticket. |
 | [references/dependencies.md](references/dependencies.md) | Recording that a ticket is blocked. One blocker per independently-clearing condition, and editing one means setting **both** `title` and `description`. |
 | [references/delivering.md](references/delivering.md) | Finishing or delivering anything — the pre-delivery gate, the mandatory "To verify" steps, the transitions, and project completion. |

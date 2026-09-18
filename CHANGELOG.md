@@ -22,6 +22,21 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.28] — 2026-09-17
+
+### Changed
+
+- Rewrite the Antigravity claims against what was measured (#4262)
+- Rebuild the Antigravity adapter against the measured contract (#4262)
+- Correct the trust claim, and the one the live check falsified (#4261)
+- Realign the shim's event table after the cwd note (#4261)
+- Live-verify the Cursor adapter, and fix what it found (#4261)
+- Verify the Cursor adapter's transport, and what it found (#4261)
+- Live-verify the Qwen adapter against a stub model (#4263)
+- Correct the four places that said this hangs (#4413)
+- Live-verify the Copilot adapter, and fix what that found (#4260)
+- Measure codex sandbox precedence and hook deny (#4288)
+
 ## [1.4.27] — 2026-09-17
 
 ### Changed

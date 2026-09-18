@@ -1644,11 +1644,15 @@ rm -rf "$CODEX_STOP_REPO"
 
 section "copilot adapter"
 
-# ⚠️ NOTHING HERE IS A LIVE VERIFICATION, AND THE README SAYS SO. The copilot
-# CLI is not installed on the machine this was written on, so these exercise the
-# shim against payloads built from GitHub's published hooks reference. They
-# establish that the adapter is internally correct; they cannot establish that
-# Copilot fires these events or honours a deny.
+# ⚠️ THESE PAYLOADS ARE MEASURED, NOT GUESSED, AND THE DISTINCTION IS THE WHOLE
+# LESSON OF #4260. The first cut of this section built its edit payloads from
+# Claude's field names — `file_path`, `old_string`, `new_string` — because the
+# copilot CLI was not installed and nobody could look. Every test passed against
+# a payload Copilot never sends, while a live `# rubocop:disable` edit went
+# straight into the file. The names below (`edit`, `create`, `view`, and
+# `path`/`old_str`/`new_str`/`file_text`) are read off the `tools` array copilot
+# 1.0.85 sends its model. The live run is in the README; keep these in step with
+# it, and never re-derive a payload from another vendor's shape.
 COPILOT_DIR="$PLUGIN_ROOT/hooks/copilot"
 COPILOT_ADAPT="$COPILOT_DIR/scripts/jus-copilot-adapt.sh"
 
@@ -1730,14 +1734,26 @@ copilot_hook 2 "copilot: --no-verify blocks through the shim" \
   "{\"sessionId\":\"cp1\",\"timestamp\":1700000000000,\"cwd\":\"/tmp\",\"toolName\":\"bash\",\"toolArgs\":\"{\\\"command\\\":\\\"git commit --no-verify -m x\\\"}\"}" \
   "$COPILOT_ADAPT" "$SCRIPTS_DIR/jus-block-no-verify.sh"
 
-# The edit tool's NAME is undocumented, so the shim infers Edit from the shape.
-# A name-based map would have to guess, and a wrong guess fails silently.
-copilot_hook 2 "copilot: a lint suppression is blocked on an UNNAMED edit tool, by argument shape" \
-  "{\"sessionId\":\"cp1\",\"timestamp\":1700000000000,\"cwd\":\"/tmp\",\"toolName\":\"str_replace_editor\",\"toolArgs\":\"{\\\"file_path\\\":\\\"app/a.ts\\\",\\\"old_string\\\":\\\"const x = 1\\\",\\\"new_string\\\":\\\"// ${SUPP_MARK}-next-line\\\\nconst x: any = 1\\\"}\"}" \
+# ⚠️ `edit` WITH `path`/`old_str`/`new_str` — Copilot's real shape, and the one
+# that shipped unblocked. Reverting either the name map or the field map in the
+# shim turns this test red, which is the only reason it exists.
+copilot_hook 2 "copilot: a lint suppression is blocked on Copilot's real edit tool (path/old_str/new_str)" \
+  "{\"sessionId\":\"cp1\",\"timestamp\":1700000000000,\"cwd\":\"/tmp\",\"toolName\":\"edit\",\"toolArgs\":\"{\\\"path\\\":\\\"app/a.ts\\\",\\\"old_str\\\":\\\"const x = 1\\\",\\\"new_str\\\":\\\"// ${SUPP_MARK}-next-line\\\\nconst x: any = 1\\\"}\"}" \
   "$COPILOT_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
 
 copilot_hook 0 "copilot: an edit REMOVING a suppression passes" \
-  "{\"sessionId\":\"cp1\",\"timestamp\":1700000000000,\"cwd\":\"/tmp\",\"toolName\":\"str_replace_editor\",\"toolArgs\":\"{\\\"file_path\\\":\\\"app/a.ts\\\",\\\"old_string\\\":\\\"// ${SUPP_MARK}-next-line\\\\nconst x: any = 1\\\",\\\"new_string\\\":\\\"const x = 1\\\"}\"}" \
+  "{\"sessionId\":\"cp1\",\"timestamp\":1700000000000,\"cwd\":\"/tmp\",\"toolName\":\"edit\",\"toolArgs\":\"{\\\"path\\\":\\\"app/a.ts\\\",\\\"old_str\\\":\\\"// ${SUPP_MARK}-next-line\\\\nconst x: any = 1\\\",\\\"new_str\\\":\\\"const x = 1\\\"}\"}" \
+  "$COPILOT_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
+# `create` is Copilot's write tool and carries `file_text`, not `content`.
+copilot_hook 2 "copilot: a suppression written by the create tool is blocked (file_text -> content)" \
+  "{\"sessionId\":\"cp1\",\"timestamp\":1700000000000,\"cwd\":\"/tmp\",\"toolName\":\"create\",\"toolArgs\":\"{\\\"path\\\":\\\"app/a.ts\\\",\\\"file_text\\\":\\\"// ${SUPP_MARK}-next-line\\\\nconst x: any = 1\\\"}\"}" \
+  "$COPILOT_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
+# The shape fallback still has to cover a tool NOT on the measured name list —
+# a plugin tool, or a rename in a later release.
+copilot_hook 2 "copilot: an UNKNOWN edit-shaped tool still blocks, by argument shape" \
+  "{\"sessionId\":\"cp1\",\"timestamp\":1700000000000,\"cwd\":\"/tmp\",\"toolName\":\"str_replace_editor\",\"toolArgs\":\"{\\\"path\\\":\\\"app/a.ts\\\",\\\"old_str\\\":\\\"const x = 1\\\",\\\"new_str\\\":\\\"// ${SUPP_MARK}-next-line\\\\nconst x: any = 1\\\"}\"}" \
   "$COPILOT_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
 
 # ⚠️ ITS OWN dirty repo, not the shared $DIRTY_REPO. Sections above commit and
@@ -1776,13 +1792,54 @@ copilot_hook 0 "copilot: malformed JSON fails open" \
   'not json at all' \
   "$COPILOT_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh"
 
+# ⚠️ A BARE exit 2 REACHES THE MODEL AS "hook exited with code 2" AND NOTHING
+# ELSE — measured against copilot 1.0.85. The blocker's stderr says what to do
+# instead, and that is the half worth delivering, so the shim also emits
+# Copilot's JSON deny form on stdout. If this goes red the block still happens
+# and the agent is simply never told why.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="copilot: a block emits the JSON deny form carrying the blocker's reason"
+copilot_deny_out=$(printf '%s' \
+  '{"sessionId":"cp1","cwd":"/tmp","toolName":"bash","toolArgs":"{\"command\":\"git push --force origin main\"}"}' \
+  | "$COPILOT_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh" 2>/dev/null)
+if jq -e '.permissionDecision == "deny" and (.permissionDecisionReason | test("NEVER force-push"))' \
+  >/dev/null 2>&1 <<<"$copilot_deny_out"; then
+  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s\n' "$TEST_NAME"
+fi
+
+# ⚠️ The decision object belongs to TOOL events only. `hookSpecificOutput`, the
+# shape Claude Code uses, was measured to fail OPEN on copilot — so an object on
+# an event that has no permission to decide is a guess, and the shim does not
+# make it. agentStop keeps the plain exit-2-plus-stderr form, which copilot
+# renders to the terminal.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="copilot: an agentStop block emits NO decision object (not a tool event)"
+COPILOT_STOP_DIRTY=$(mktemp -d)
+git -C "$COPILOT_STOP_DIRTY" init -q
+echo "uncommitted" > "$COPILOT_STOP_DIRTY/scratch.txt"
+copilot_stop_out=$(printf '%s' \
+  "{\"sessionId\":\"cp1\",\"cwd\":\"$COPILOT_STOP_DIRTY\",\"transcriptPath\":\"/tmp/t.jsonl\",\"stop_hook_active\":false}" \
+  | "$COPILOT_ADAPT" "$SCRIPTS_DIR/jus-stop-uncommitted.sh" 2>/dev/null)
+rm -rf "$COPILOT_STOP_DIRTY"
+if [[ -z "$copilot_stop_out" ]]; then
+  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (got: %s)\n' "$TEST_NAME" "$copilot_stop_out"
+fi
+
 # ---- cursor adapter (#4261) ------------------------------------------------
 
 section "cursor adapter"
 
-# ⚠️ NOTHING HERE IS A LIVE VERIFICATION, AND THE README SAYS SO. cursor-agent is
-# not installed on the machine this was written on, so these exercise the shim
-# against payloads built from Cursor's published hooks documentation.
+# ⚠️ THESE ARE UNIT TESTS; THE LIVE VERIFICATION IS IN hooks/cursor/README.md.
+# Since #4261 the payload shapes below are the ones cursor-agent 2026.09.15-d2fe57e
+# was measured to send, not the ones its documentation implies — the two differ on
+# `cwd`, on `preToolUse`'s tool names, and on which events a headless `-p` run fires
+# at all. Correct a shape here only against a captured payload.
 CURSOR_DIR="$PLUGIN_ROOT/hooks/cursor"
 CURSOR_ADAPT="$CURSOR_DIR/scripts/jus-cursor-adapt.sh"
 
@@ -1892,6 +1949,72 @@ cursor_hook 0 "cursor: malformed JSON fails open" \
   'not json at all' \
   "$CURSOR_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh"
 
+# ⚠️ `cwd` IS `""`, NOT NULL, ON EVERY EVENT THAT CARRIES IT (#4261).
+# Measured against cursor-agent 2026.09.15-d2fe57e: `beforeShellExecution`,
+# `preToolUse` and `postToolUse` all send an empty string. jq's `//` falls back
+# on null and false only, so the shim used to hand the shared scripts `cwd: ""`
+# — and `juscribe_sop_require_jus_project` then exits 0 and the guard allows
+# what it exists to block.
+#
+# It has to run from a directory that is NOT a Juscribe project, because the
+# shared scripts fall back to `$PWD` and that fallback is what hid this live:
+# Cursor happens to spawn hooks with the workspace root as their cwd.
+#
+# ⚠️ AND IT HAS TO DROP `JUS_HOOKS_EVERYWHERE`, WHICH THIS HARNESS EXPORTS
+# GLOBALLY (line 38). That flag is the first thing
+# `juscribe_sop_require_jus_project` checks, so with it set the project lookup
+# never runs at all and both of these pass — the empty-cwd one vacuously, over a
+# shim that still has the bug.
+CURSOR_WS=$(mktemp -d)
+git -C "$CURSOR_WS" init -q
+mkdir -p "$CURSOR_WS/.jus"
+CURSOR_OUTSIDE=$(mktemp -d)
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME='cursor: an empty-string cwd falls back to workspace_roots'
+cursor_empty_cwd_ec=0
+( cd "$CURSOR_OUTSIDE" && env -u JUS_HOOKS_EVERYWHERE "$CURSOR_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh" ) \
+  >/dev/null 2>&1 \
+  <<<"{\"conversation_id\":\"cv1\",\"hook_event_name\":\"beforeShellExecution\",\"workspace_roots\":[\"$CURSOR_WS\"],\"command\":\"git push --force origin main\",\"cwd\":\"\"}" \
+  || cursor_empty_cwd_ec=$?
+if [[ "$cursor_empty_cwd_ec" -eq 2 ]]; then
+  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (exit=%d, want 2)\n' "$TEST_NAME" "$cursor_empty_cwd_ec"
+fi
+
+# The other direction: a non-empty cwd still wins over workspace_roots, because
+# a shell can run outside the first root.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME='cursor: a non-empty cwd still wins over workspace_roots'
+cursor_explicit_cwd_ec=0
+( cd "$CURSOR_WS" && env -u JUS_HOOKS_EVERYWHERE "$CURSOR_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh" ) \
+  >/dev/null 2>&1 \
+  <<<"{\"conversation_id\":\"cv1\",\"hook_event_name\":\"beforeShellExecution\",\"workspace_roots\":[\"$CURSOR_WS\"],\"command\":\"git push --force origin main\",\"cwd\":\"$CURSOR_OUTSIDE\"}" \
+  || cursor_explicit_cwd_ec=$?
+if [[ "$cursor_explicit_cwd_ec" -eq 0 ]]; then
+  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (exit=%d, want 0)\n' "$TEST_NAME" "$cursor_explicit_cwd_ec"
+fi
+
+rm -rf "$CURSOR_WS" "$CURSOR_OUTSIDE"
+
+# The preToolUse shapes Cursor was MEASURED to send, rather than the ones its
+# docs imply: a shell call arrives as `Shell` with `{command, cwd, timeout}`,
+# and a whole-file write as `Write` with `{file_path, content}` (#4261). The
+# shim re-infers both from the shape, so these assert the inference agrees with
+# the real vocabulary.
+cursor_hook 2 "cursor: a preToolUse Shell call reaches the command blockers" \
+  "{${CURSOR_ENV/\"hook_event_name\":\"\"/\"hook_event_name\":\"preToolUse\"},\"tool_name\":\"Shell\",\"cwd\":\"\",\"tool_input\":{\"command\":\"git commit --no-verify -m x\",\"cwd\":\"\",\"timeout\":30000}}" \
+  "$CURSOR_ADAPT" "$SCRIPTS_DIR/jus-block-no-verify.sh"
+
+cursor_hook 2 "cursor: a preToolUse Write carries content, not old_string/new_string" \
+  "{${CURSOR_ENV/\"hook_event_name\":\"\"/\"hook_event_name\":\"preToolUse\"},\"tool_name\":\"Write\",\"cwd\":\"/tmp\",\"tool_input\":{\"file_path\":\"app/a.ts\",\"content\":\"// ${SUPP_MARK}-next-line\\nconst x: any = 1\"}}" \
+  "$CURSOR_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
 # afterShellExecution carries `output` rather than tool_response, and the tracker
 # reads the latter. A mismatch here is the #4207 failure shape again.
 TESTS_RUN=$((TESTS_RUN + 1))
@@ -1918,33 +2041,126 @@ else
   printf '  \033[31m\xe2\x9c\x97\033[0m %s (got %s)\n' "$TEST_NAME" "${cursor_edit:0:160}"
 fi
 
+# ⚠️ CURSOR'S OWN TRANSPORT, WHICH IS WHAT SETTLES THE `~` QUESTION (#4261).
+# The tests above pipe a payload straight into the shim, so they prove the
+# NORMALISATION and nothing about whether Cursor can reach these scripts at all.
+# Cursor does not spawn the command directly: `executeCommandScript` builds
+#
+#     <command> <<'CURSOR_HOOK_EOF'
+#     <payload JSON>
+#     CURSOR_HOOK_EOF
+#
+# and hands that whole string to a shell — a heredoc is meaningful to nothing
+# else. So the `~` in every manifest command is expanded by the SHELL, at word
+# start, and these two run the real manifest line through that exact transport
+# against a staged bundle. Read from cursor-agent 2026.09.15-d2fe57e's own
+# bundle; if a future version spawns the command without a shell, these fail.
+CURSOR_STAGE=$(mktemp -d)
+mkdir -p "$CURSOR_STAGE/.jus-skills"
+cp -R "$PLUGIN_ROOT/hooks" "$CURSOR_STAGE/.jus-skills/hooks"
+
+# cursor_transport <expected_exit> <name> <payload>
+# Reproduces Cursor's heredoc transport verbatim for the FIRST beforeShellExecution
+# command in the manifest — the force-push guard.
+cursor_transport() {
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local expected="$1" name="$2" payload="$3" ec=0
+  local cmd
+  cmd=$(jq -r '.hooks.beforeShellExecution[0].command' "$CURSOR_DIR/hooks.json")
+  HOME="$CURSOR_STAGE" /bin/sh -c "$cmd <<'CURSOR_HOOK_EOF'
+$payload
+CURSOR_HOOK_EOF" >/dev/null 2>&1 || ec=$?
+  if [[ "$ec" -eq "$expected" ]]; then
+    printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$name"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$name")
+    printf '  \033[31m\xe2\x9c\x97\033[0m %s (exit=%d, want %d)\n' "$name" "$ec" "$expected"
+  fi
+}
+
+cursor_transport 2 "cursor: the manifest's own command line blocks a force-push through Cursor's heredoc transport" \
+  "{\"conversation_id\":\"cv1\",\"hook_event_name\":\"beforeShellExecution\",\"workspace_roots\":[\"/tmp\"],\"command\":\"git push --force origin main\",\"cwd\":\"/tmp\"}"
+
+cursor_transport 0 "cursor: the same transport lets an ordinary push through" \
+  "{\"conversation_id\":\"cv1\",\"hook_event_name\":\"beforeShellExecution\",\"workspace_roots\":[\"/tmp\"],\"command\":\"git push origin main\",\"cwd\":\"/tmp\"}"
+
+rm -rf "$CURSOR_STAGE"
+
+# A shell expands `~` only at the START of a word. `--flag=~/x` or `"~/x"` is a
+# literal tilde and the hook silently never runs, which is the failure mode the
+# README used to warn was unverified. This is the regression guard for it.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="cursor: every ~ in the manifest sits at the start of a word, where a shell expands it"
+bad_tilde=""
+# `\~` unquoted, as SKILLS_PREFIX does above: shellcheck's SC2088 fires on a
+# quoted tilde even where it is a case PATTERN and a literal is what we want.
+while IFS= read -r cmd; do
+  for word in $cmd; do
+    case "$word" in
+      \~/*) ;;
+      *\~*) bad_tilde+="$word " ;;
+    esac
+  done
+done < <(jq -r '.hooks[][].command' "$CURSOR_DIR/hooks.json" 2>/dev/null)
+if [[ -z "$bad_tilde" ]]; then
+  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%s)\n' "$TEST_NAME" "$bad_tilde"
+fi
+
 # ---- antigravity adapter (#4262) -------------------------------------------
 
 section "antigravity adapter"
 
 # ⚠️ THE ONLY ADAPTER THAT TRANSLATES THE RESPONSE, so these assert on STDOUT as
 # well as on exit codes. Every other tool here takes exit 2 + stderr as a block;
-# Antigravity wants a JSON answer on stdout for every invocation, so a shim that
-# only normalised the input would let every block through while looking
-# installed. Nothing here is a live verification — agy is not installed.
+# Antigravity wants a JSON answer on stdout for every invocation.
+#
+# ⚠️ AND THE ANSWER IS A DIFFERENT SHAPE PER EVENT, which is what makes the
+# negative assertions below the load-bearing ones. Antigravity parses each
+# hook's stdout with protojson, DiscardUnknown OFF, against a per-event message
+# — so an extra key is a hard error and a PreToolUse hook that errors makes the
+# tool call FAIL. Measured on agy 1.2.5 (#4262): the first cut of this adapter
+# emitted `allow_tool`/`deny_reason` alongside `decision`/`reason` as a hedge
+# against a contested contract, and that hedge would have broken every tool call
+# rather than half of one.
 AGY_DIR="$PLUGIN_ROOT/hooks/antigravity"
 AGY_ADAPT="$AGY_DIR/scripts/jus-antigravity-adapt.sh"
 
+# ⚠️ PreToolUse/PostToolUse ARE GROUPED (`matcher` + `hooks`); PreInvocation and
+# Stop ARE FLAT — a list of handler objects with `command` directly on them.
+# Wrapping the flat two is not a tolerated variation: the engine answers
+# `invalid hook "…": command hook must specify 'command'` and rejects the WHOLE
+# FILE, so one wrapped entry disables all twelve hooks (#4262, measured).
 TESTS_RUN=$((TESTS_RUN + 1))
-TEST_NAME="antigravity hooks.json is valid JSON in the named-container shape"
-if jq -e '."jus-hard-rules".enabled == true and (."jus-hard-rules".PreToolUse[0].hooks | length > 0) and ."jus-hard-rules".Stop[0].hooks[0].command' \
-  "$AGY_DIR/hooks.json" >/dev/null 2>&1; then
+TEST_NAME="antigravity hooks.json groups the tool events and leaves PreInvocation/Stop flat"
+if jq -e '
+  ."jus-hard-rules".enabled == true
+  and (."jus-hard-rules".PreToolUse[0].hooks | length > 0)
+  and (."jus-hard-rules".PostToolUse[0].hooks | length > 0)
+  and (."jus-hard-rules".PreInvocation | length > 0)
+  and (."jus-hard-rules".PreInvocation | all(has("command") and (has("hooks") | not)))
+  and (."jus-hard-rules".Stop | all(has("command") and (has("hooks") | not)))
+' "$AGY_DIR/hooks.json" >/dev/null 2>&1; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
   printf '  \033[31m\xe2\x9c\x97\033[0m %s\n' "$TEST_NAME"
 fi
 
+# Every command in the manifest, whichever shape its event uses.
+agy_commands() {
+  jq -r '."jus-hard-rules" | to_entries[] | select(.value | type == "array") | .key as $event
+    | .value[] | (if has("hooks") then .hooks[] else . end) | "\($event) \(.command)"' \
+    "$AGY_DIR/hooks.json" 2>/dev/null
+}
+
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="antigravity hooks.json references only scripts that exist in the bundle"
 missing=0
-while IFS= read -r cmd; do
-  for word in $cmd; do
+while IFS= read -r line; do
+  for word in $line; do
     case "$word" in
       "$SKILLS_PREFIX"*)
         resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
@@ -1952,7 +2168,7 @@ while IFS= read -r cmd; do
         ;;
     esac
   done
-done < <(jq -r '."jus-hard-rules"[] | select(type == "array") | .[].hooks[].command' "$AGY_DIR/hooks.json" 2>/dev/null)
+done < <(agy_commands)
 if [[ "$missing" -eq 0 ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
@@ -1962,8 +2178,7 @@ fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="antigravity registers every shared hook"
-agy_scripts=$(jq -r '."jus-hard-rules"[] | select(type == "array") | .[].hooks[].command' "$AGY_DIR/hooks.json" \
-  | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-antigravity-adapt.sh' | sort -u)
+agy_scripts=$(agy_commands | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-antigravity-adapt.sh' | sort -u)
 if [[ "$agy_scripts" == "$shared_scripts" ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
@@ -1972,7 +2187,26 @@ else
   comm -13 <(printf '%s\n' "$agy_scripts") <(printf '%s\n' "$shared_scripts") | sed 's/^/      unregistered: /'
 fi
 
-# agy_says <jq-filter> <name> <payload> <script...> — asserts on the STDOUT
+# ⚠️ THE EVENT NAME IS AN ARGUMENT, so it can disagree with the key it is
+# registered under — and nothing at runtime would say so. A `Stop` handler
+# invoked as `PreToolUse` answers `{"decision":"allow"}`, which protojson
+# rejects for Stop, which fails the hook silently.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="antigravity: every command passes the event it is registered under"
+agy_event_mismatch=0
+while IFS= read -r line; do
+  registered="${line%% *}"
+  passed=$(printf '%s' "$line" | grep -oE 'jus-antigravity-adapt\.sh [A-Za-z]+' | awk '{print $2}')
+  [[ "$registered" == "$passed" ]] || agy_event_mismatch=$((agy_event_mismatch + 1))
+done < <(agy_commands)
+if [[ "$agy_event_mismatch" -eq 0 ]]; then
+  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%d mismatched)\n' "$TEST_NAME" "$agy_event_mismatch"
+fi
+
+# agy_says <jq-filter> <name> <payload> <adapt-args...> — asserts on the STDOUT
 # object, because on Antigravity that is the verdict.
 agy_says() {
   TESTS_RUN=$((TESTS_RUN + 1))
@@ -1987,63 +2221,202 @@ agy_says() {
   fi
 }
 
-# ⚠️ THE COMMAND IS NESTED TWO LEVELS DEEPER THAN ANYWHERE ELSE. If the shim
-# ever reads a flat `.command` only, this payload yields an empty string, which
-# reads as "no command" and ALLOWS — a silent regression with a green suite
-# everywhere else.
-AGY_PUSH='{"sessionId":"agy1","cwd":"/tmp","toolCall":{"name":"run_command","args":{"CommandLine":"git push --force origin main"}}}'
+AGY_STATE=$(mktemp -d)
+export JUS_ANTIGRAVITY_STATE="$AGY_STATE"
 
-# ⚠️ BOTH DENY SPELLINGS ARE ASSERTED. Google documents neither; the developer
-# guide says allow_tool, shipped code in atuinsh/atuin#4117 says decision. A
-# regression that dropped either half would be invisible until somebody ran agy.
-agy_says '.decision == "deny" and .allow_tool == false and (.deny_reason | length > 0)' \
-  "antigravity: a force-push under .toolCall.args.CommandLine denies, in both spellings" \
-  "$AGY_PUSH" "$AGY_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh"
+# ⚠️ THE COMMAND IS NESTED TWO LEVELS DEEPER THAN ANYWHERE ELSE, and the cwd
+# arrives as a SIBLING of it rather than at the top level. This payload is a
+# captured one, not an invented one (#4262).
+AGY_PUSH='{"conversationId":"agy1","toolCall":{"name":"run_command","args":{"CommandLine":"git push --force origin main","Cwd":"/tmp"}},"stepIdx":2,"workspacePaths":[]}'
+
+# ⚠️ THE NEGATIVE HALF IS THE POINT. `allow_tool` and `deny_reason` are the
+# Antigravity developer guide's spelling and protojson rejects both — emitting
+# them alongside the real keys does not hedge, it fails the tool call.
+agy_says '.decision == "deny" and (.reason | length > 0) and (has("allow_tool") | not) and (has("deny_reason") | not)' \
+  "antigravity: a force-push under .toolCall.args.CommandLine denies, with no rejected keys" \
+  "$AGY_PUSH" "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-force-push.sh"
 
 # ⚠️ AN ALLOW STILL HAS TO ANSWER. Antigravity requires stdout on every
 # invocation, so silence is not "no opinion" — it may wedge the agent loop.
-agy_says '.decision == "allow" and .allow_tool == true' \
+agy_says '.decision == "allow" and (has("allow_tool") | not)' \
   "antigravity: an ordinary push answers allow rather than nothing" \
-  '{"sessionId":"agy1","cwd":"/tmp","toolCall":{"name":"run_command","args":{"CommandLine":"git push origin main"}}}' \
-  "$AGY_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh"
+  '{"conversationId":"agy1","toolCall":{"name":"run_command","args":{"CommandLine":"git push origin main","Cwd":"/tmp"}}}' \
+  "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-force-push.sh"
 
-agy_says '.decision == "deny" and .allow_tool == false' \
+agy_says '.decision == "deny"' \
   "antigravity: --no-verify denies" \
-  '{"sessionId":"agy1","cwd":"/tmp","toolCall":{"name":"run_command","args":{"CommandLine":"git commit --no-verify -m x"}}}' \
-  "$AGY_ADAPT" "$SCRIPTS_DIR/jus-block-no-verify.sh"
+  '{"conversationId":"agy1","toolCall":{"name":"run_command","args":{"CommandLine":"git commit --no-verify -m x","Cwd":"/tmp"}}}' \
+  "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-no-verify.sh"
 
-agy_says '.decision == "deny" and .allow_tool == false' \
-  "antigravity: a lint suppression denies, tool inferred from argument shape" \
-  "{\"sessionId\":\"agy1\",\"cwd\":\"/tmp\",\"toolCall\":{\"name\":\"write_file\",\"args\":{\"file_path\":\"app/a.ts\",\"old_string\":\"const x = 1\",\"new_string\":\"// ${SUPP_MARK}-next-line\\nconst x: any = 1\"}}}" \
-  "$AGY_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+# ⚠️ THE FILE TOOLS ARE `write_to_file` AND `replace_file_content`, AND THEIR
+# ARGUMENTS ARE `TargetFile`/`CodeContent`/`TargetContent`/`ReplacementContent`.
+# None of Claude's names (`file_path`, `old_string`, `content`, `edits`) appears
+# anywhere in an Antigravity payload, so the first cut's argument-shape
+# inference matched nothing and every edit reached the guards unrecognised.
+agy_says '.decision == "deny"' \
+  "antigravity: a lint suppression in replace_file_content denies" \
+  "{\"conversationId\":\"agy1\",\"toolCall\":{\"name\":\"replace_file_content\",\"args\":{\"TargetFile\":\"/tmp/app/a.ts\",\"TargetContent\":\"const x = 1\",\"ReplacementContent\":\"// ${SUPP_MARK}-next-line\\nconst x: any = 1\"}}}" \
+  "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
 
 agy_says '.decision == "allow"' \
   "antigravity: an edit REMOVING a suppression allows" \
-  "{\"sessionId\":\"agy1\",\"cwd\":\"/tmp\",\"toolCall\":{\"name\":\"write_file\",\"args\":{\"file_path\":\"app/a.ts\",\"old_string\":\"// ${SUPP_MARK}-next-line\\nconst x: any = 1\",\"new_string\":\"const x = 1\"}}}" \
-  "$AGY_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+  "{\"conversationId\":\"agy1\",\"toolCall\":{\"name\":\"replace_file_content\",\"args\":{\"TargetFile\":\"/tmp/app/a.ts\",\"TargetContent\":\"// ${SUPP_MARK}-next-line\\nconst x: any = 1\",\"ReplacementContent\":\"const x = 1\"}}}" \
+  "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
 
+agy_says '.decision == "deny"' \
+  "antigravity: a lint suppression in write_to_file denies" \
+  "{\"conversationId\":\"agy1\",\"toolCall\":{\"name\":\"write_to_file\",\"args\":{\"TargetFile\":\"/tmp/app/a.ts\",\"CodeContent\":\"// ${SUPP_MARK}-next-line\\nconst x: any = 1\"}}}" \
+  "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
+# ── the cwd, which the payload never carries ─────────────────────────────────
+# ⚠️ ANTIGRAVITY SENDS NO `cwd` AND `workspacePaths` CAME BACK `[]` ON EVERY
+# CAPTURED PAYLOAD. The shared scripts gate on the cwd being inside a repo
+# holding `.jus/` (#4404), so a shim that derives nothing disarms all twelve —
+# and the $PWD fallback cannot save it either, because Antigravity runs a hook
+# in the directory containing hooks.json, which for the documented global
+# install is `~/.gemini/config`.
+#
+# ⚠️ THESE DROP `JUS_HOOKS_EVERYWHERE`, WHICH THIS HARNESS EXPORTS GLOBALLY
+# (line 38). That flag is the first thing `juscribe_sop_require_jus_project`
+# checks, so with it set the project lookup never runs and these pass vacuously
+# over a shim that derives nothing.
+AGY_WS=$(mktemp -d)
+git -C "$AGY_WS" init -q
+mkdir -p "$AGY_WS/.jus"
+AGY_OUTSIDE=$(mktemp -d)
+
+agy_derives() {
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local filter="$1" name="$2" payload="$3"; shift 3
+  local out ec=0
+  out=$( cd "$AGY_OUTSIDE" && env -u JUS_HOOKS_EVERYWHERE "$@" <<<"$payload" 2>/dev/null ) || ec=$?
+  if [[ "$ec" -eq 0 ]] && jq -e "$filter" >/dev/null 2>&1 <<<"$out"; then
+    printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$name"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$name")
+    printf '  \033[31m\xe2\x9c\x97\033[0m %s (exit=%d, out=%s)\n' "$name" "$ec" "${out:0:160}"
+  fi
+}
+
+agy_derives '.decision == "deny"' \
+  "antigravity: run_command takes its cwd from .toolCall.args.Cwd" \
+  "{\"conversationId\":\"agycwd\",\"toolCall\":{\"name\":\"run_command\",\"args\":{\"CommandLine\":\"git push --force origin main\",\"Cwd\":\"$AGY_WS\"}}}" \
+  "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-force-push.sh"
+
+# ⚠️ A FILE TOOL CARRIES NO `Cwd` AT ALL — measured null on both of them — so the
+# only thing naming a directory is the absolute `TargetFile`.
+agy_derives '.decision == "deny"' \
+  "antigravity: a file tool takes its cwd from the TargetFile directory" \
+  "{\"conversationId\":\"agyfile\",\"toolCall\":{\"name\":\"write_to_file\",\"args\":{\"TargetFile\":\"$AGY_WS/app/nested/a.ts\",\"CodeContent\":\"// ${SUPP_MARK}-next-line\\nconst x: any = 1\"}}}" \
+  "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
+agy_derives '.decision == "allow"' \
+  "antigravity: a tool call outside a Juscribe project is left alone" \
+  "{\"conversationId\":\"agyout\",\"toolCall\":{\"name\":\"run_command\",\"args\":{\"CommandLine\":\"git push --force origin main\",\"Cwd\":\"$AGY_OUTSIDE\"}}}" \
+  "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-force-push.sh"
+
+# ── Stop, which really does block here ───────────────────────────────────────
+# ⚠️ NOT ADVISORY, unlike Cursor and Kimi. `decision: "continue"` refuses the
+# stop and re-enters the loop with `reason` injected as a system message.
 AGY_DIRTY=$(mktemp -d)
 git -C "$AGY_DIRTY" init -q
+mkdir -p "$AGY_DIRTY/.jus"
 echo "uncommitted" > "$AGY_DIRTY/scratch.txt"
 
-agy_says '.decision == "deny" and (.deny_reason | test("dirty"))' \
-  "antigravity: Stop with a dirty tree answers deny (advisory on this tool, but the verdict is carried)" \
-  "{\"sessionId\":\"agy1\",\"cwd\":\"$AGY_DIRTY\",\"stop_hook_active\":false}" \
-  "$AGY_ADAPT" "$SCRIPTS_DIR/jus-stop-uncommitted.sh"
+# Stop carries no cwd of its own, so the shim replays the one the tool events
+# recorded for this conversation — which is the whole reason it records it.
+printf '{"conversationId":"agystop","toolCall":{"name":"run_command","args":{"CommandLine":"ls","Cwd":"%s"}}}' "$AGY_DIRTY" \
+  | env -u JUS_HOOKS_EVERYWHERE "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-force-push.sh" >/dev/null 2>&1
 
-rm -rf "$AGY_DIRTY"
+agy_says '.decision == "continue" and (.reason | test("dirty")) and (has("allow_tool") | not)' \
+  "antigravity: Stop with a dirty tree answers continue, replaying the remembered cwd" \
+  '{"conversationId":"agystop","executionNum":0,"terminationReason":"NO_TOOL_CALL","fullyIdle":true}' \
+  env -u JUS_HOOKS_EVERYWHERE "$AGY_ADAPT" Stop "$SCRIPTS_DIR/jus-stop-uncommitted.sh"
 
-# ⚠️ FAIL-OPEN, AND IT MUST STILL SPEAK. A crashing hook that printed nothing
-# would leave the agent without the answer Antigravity requires.
-agy_says '.decision == "allow" and .allow_tool == true' \
-  "antigravity: a crashing hook answers allow rather than staying silent" \
-  '{"sessionId":"agy1","cwd":"/tmp","toolCall":{"name":"run_command","args":{"CommandLine":"ls"}}}' \
-  "$AGY_ADAPT" /usr/bin/false
+AGY_CLEAN=$(mktemp -d)
+git -C "$AGY_CLEAN" init -q
+mkdir -p "$AGY_CLEAN/.jus"
+agy_says '. == {}' \
+  "antigravity: Stop with nothing to say answers an empty object" \
+  "{\"conversationId\":\"agyclean\",\"cwd\":\"$AGY_CLEAN\",\"executionNum\":0}" \
+  "$AGY_ADAPT" Stop "$SCRIPTS_DIR/jus-stop-uncommitted.sh"
 
-agy_says '.decision == "allow" and .allow_tool == true' \
+rm -rf "$AGY_DIRTY" "$AGY_CLEAN"
+
+# ── PreInvocation, and the PostToolUse text it delivers ──────────────────────
+# ⚠️ `PreInvocation` REJECTS `decision` OUTRIGHT — protojson failed at line 1:2,
+# the first key. Its only channel to the model is `injectSteps`.
+AGY_STUBS=$(mktemp -d)
+AGY_NUDGE="$AGY_STUBS/nudge.sh"
+cat > "$AGY_NUDGE" <<'NUDGESH'
+#!/usr/bin/env bash
+echo "a nudge for the model" >&2
+exit 0
+NUDGESH
+chmod +x "$AGY_NUDGE"
+
+# ⚠️ NOT `/bin/true` — it does not exist on macOS, only `/usr/bin/true`, and the
+# shim treats a non-executable target as "nothing to ask" and answers neutrally.
+# A quiet hook that really runs is the only way to tell the two apart.
+AGY_QUIET="$AGY_STUBS/quiet.sh"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$AGY_QUIET"
+chmod +x "$AGY_QUIET"
+
+agy_says '.injectSteps[0].ephemeralMessage == "a nudge for the model" and (has("decision") | not)' \
+  "antigravity: PreInvocation carries a nudge as injectSteps, never as decision" \
+  '{"conversationId":"agynudge","invocationNum":0}' \
+  "$AGY_ADAPT" PreInvocation "$AGY_NUDGE"
+
+agy_says '. == {}' \
+  "antigravity: PreInvocation with nothing to say answers an empty object" \
+  '{"conversationId":"agyquiet","invocationNum":0}' \
+  "$AGY_ADAPT" PreInvocation "$AGY_QUIET"
+
+# ⚠️ A PostToolUse HOOK HAS NO CHANNEL TO THE MODEL — its contract is `{}` and
+# there is no field to carry a message. So the shim buffers the text and the
+# next PreInvocation delivers it, which is the same route Kimi's adapter takes
+# for the same reason. Without this, two of the twelve are inert.
+agy_says '. == {}' \
+  "antigravity: PostToolUse answers an empty object even when the hook spoke" \
+  '{"conversationId":"agybuf","stepIdx":1,"toolCall":{"name":"run_command","args":{"CommandLine":"ls","Cwd":"/tmp"}}}' \
+  "$AGY_ADAPT" PostToolUse "$AGY_NUDGE"
+
+agy_says '.injectSteps[0].ephemeralMessage | test("a nudge for the model")' \
+  "antigravity: the next PreInvocation delivers what PostToolUse could not say" \
+  '{"conversationId":"agybuf","invocationNum":1}' \
+  "$AGY_ADAPT" PreInvocation "$AGY_QUIET"
+
+agy_says '. == {}' \
+  "antigravity: the buffer is drained, not replayed forever" \
+  '{"conversationId":"agybuf","invocationNum":2}' \
+  "$AGY_ADAPT" PreInvocation "$AGY_QUIET"
+
+# ── fail-open, per event ─────────────────────────────────────────────────────
+# ⚠️ A CRASHING HOOK MUST STILL SPEAK, AND IN THE RIGHT SHAPE. Antigravity fails
+# the tool call when a PreToolUse hook's answer does not parse, so the fallback
+# is the one path that absolutely cannot emit a foreign key.
+agy_says '.decision == "allow"' \
+  "antigravity: a crashing PreToolUse hook answers allow rather than staying silent" \
+  '{"conversationId":"agy1","toolCall":{"name":"run_command","args":{"CommandLine":"ls","Cwd":"/tmp"}}}' \
+  "$AGY_ADAPT" PreToolUse /usr/bin/false
+
+agy_says '. == {}' \
+  "antigravity: a crashing Stop hook answers an empty object, not an allow" \
+  '{"conversationId":"agy1","executionNum":0}' \
+  "$AGY_ADAPT" Stop /usr/bin/false
+
+agy_says '.decision == "allow"' \
   "antigravity: malformed JSON answers allow" \
   'not json at all' \
-  "$AGY_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh"
+  "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-force-push.sh"
+
+agy_says '. == {}' \
+  "antigravity: malformed JSON on PreInvocation answers an empty object" \
+  'not json at all' \
+  "$AGY_ADAPT" PreInvocation "$SCRIPTS_DIR/jus-ticket-claim-nudge.sh"
+
+rm -rf "$AGY_WS" "$AGY_OUTSIDE" "$AGY_STATE" "$AGY_STUBS"
+unset JUS_ANTIGRAVITY_STATE
 
 # ---- qwen adapter (#4263) --------------------------------------------------
 
@@ -2051,9 +2424,13 @@ section "qwen adapter"
 
 # Qwen's hook contract is modelled on Claude Code's — exit 2 blocks and passes
 # stderr to the model, and the payload already uses our field names — so the shim
-# translates only the TOOL NAME. These exercise that rename against payloads
-# built from Qwen's published hooks documentation. qwen is not installed, so
-# nothing here is a live verification.
+# translates only the TOOL NAME. ⚠️ **The names and the field shapes below are
+# MEASURED against qwen 0.24.0, not read off the docs** (#4263): `run_shell_command`
+# carries `command`, `edit` carries `file_path`/`old_string`/`new_string`, and
+# `write_file` carries `file_path`/`content` — all read off the `tools` array qwen
+# sends its model. That check is here because #4260 shipped a Copilot shim built
+# from Claude Code's field names, which Copilot never sends, and its tests were
+# green because they shared the assumption. The live run is in the README.
 QWEN_DIR="$PLUGIN_ROOT/hooks/qwen"
 QWEN_ADAPT="$QWEN_DIR/scripts/jus-qwen-adapt.sh"
 
@@ -2177,6 +2554,25 @@ rm -rf "$QWEN_DIRTY"
 qwen_hook 0 "qwen: malformed JSON fails open" \
   'not json at all' \
   "$QWEN_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh"
+
+# ⚠️ THE NUDGES SPEAK TO THE MODEL THROUGH A JSON OBJECT, NOT THROUGH PLAIN TEXT,
+# and only one of those two channels exists. Measured on qwen 0.24.0: a PostToolUse
+# hook printing bare text injects NOTHING, while
+# `hookSpecificOutput.additionalContext` is added to the model's context — which is
+# exactly the shape jus-start-comment-nudge.sh and jus-docs-nudge.sh emit. So the
+# shim must leave stdout alone. A shim that "tidied" it would silence every nudge
+# while every blocker kept working, and no test that only checks exit codes
+# would notice.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="qwen: a nudge's additionalContext JSON survives the shim unaltered"
+qwen_nudge_out=$(printf '%s' '{"session_id":"q1","cwd":"/tmp","tool_name":"edit","tool_input":{"file_path":"/tmp/a.rb"}}' \
+  | "$QWEN_ADAPT" /bin/echo '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"nudge text"}}' 2>/dev/null)
+if jq -e '.hookSpecificOutput.additionalContext == "nudge text"' >/dev/null 2>&1 <<<"$qwen_nudge_out"; then
+  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s\n' "$TEST_NAME"
+fi
 
 # ---- windsurf adapter (#4264) ----------------------------------------------
 

@@ -9,9 +9,10 @@
 #
 #   Cursor event           carries                    normalized to
 #   ---------------------  -------------------------  -----------------------
-#   preToolUse             tool_name, tool_input      passthrough
+#   preToolUse             tool_name, tool_input,     tool_name re-inferred
+#                          cwd ("" for a shell call)
 #   postToolUse            tool_name, tool_input,     tool_response = tool_output
-#                          tool_output
+#                          cwd, tool_output
 #   beforeShellExecution   command, cwd, sandbox      tool_name "Bash"
 #   afterShellExecution    command, output, duration  tool_name "Bash" + response
 #   afterFileEdit          file_path, edits[]         tool_name "MultiEdit"
@@ -55,9 +56,20 @@ event=$(jq -r '.hook_event_name // ""' <<<"$input")
 
 # `workspace_roots` is the only cwd the shell-less events carry. `cwd` wins where
 # an event has one, because a shell can run outside the first root.
+#
+# ⚠️ AND `cwd` IS THE EMPTY STRING, NOT NULL, ON EVERY EVENT THAT HAS THE FIELD.
+# Measured on cursor-agent 2026.09.15-d2fe57e (#4261): `beforeShellExecution`,
+# `preToolUse` and `postToolUse` all arrive with `"cwd": ""`. jq's `//` falls
+# back on `null` and `false` only, so `.cwd // .workspace_roots[0]` keeps the
+# empty string and every hook loses its repository — at which point
+# `juscribe_sop_require_jus_project` exits 0 and the guard silently allows what
+# it exists to block. It did not show up live only because Cursor happens to
+# spawn hooks with the workspace root as their working directory, which is the
+# shared scripts' own `$PWD` fallback covering for us. Test it with a payload
+# whose `cwd` is `""` from a process standing outside a Juscribe project.
 normalized=$(jq '
   . as $in
-  | (.cwd // (.workspace_roots // [] | .[0]) // "") as $cwd
+  | (if (.cwd // "") == "" then ((.workspace_roots // [] | .[0]) // "") else .cwd end) as $cwd
   | (.hook_event_name // "") as $event
   | {
       session_id: ($in.conversation_id // ""),
@@ -81,9 +93,11 @@ normalized=$(jq '
 ' <<<"$input" 2>/dev/null) || exit 0
 
 # ⚠️ Cursor has no before-file-edit event, so the lint-suppression guard rides
-# `preToolUse` — where the tool NAME is undocumented, exactly as on Copilot. The
-# shape is forced and the name is not, so infer from the shape. Confined to
-# `preToolUse`: every other event above already knows what it is.
+# `preToolUse`. Cursor DOES send a real name there — measured on 2026.09.15-d2fe57e,
+# a shell call arrives as `Shell` and a whole-file write as `Write` — but it is its
+# own vocabulary, not Claude's, and it is undocumented, so the shape is what this
+# infers from. The two agree on every shape seen so far. Confined to `preToolUse`:
+# every other event above already knows what it is.
 if [[ "$event" == "preToolUse" ]]; then
   normalized=$(jq '
     if (.tool_input | has("edits")) then .tool_name = "MultiEdit"
