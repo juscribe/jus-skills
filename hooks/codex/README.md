@@ -23,7 +23,36 @@ Codex's wire contract matches Claude Code's closely — JSON payload on stdin wi
 with stderr as the reason — so the Bash blockers, the pre-commit gate, the Bash
 tracker, and the Stop gate run **unchanged**.
 
-**Two divergences, not one:**
+> ## ⚠️ A HOOK CODEX HAS NOT TRUSTED DOES NOT RUN, AND SAYS NOTHING
+>
+> Codex requires **persisted hook trust** before it will run an enabled hook, and
+> trust is granted by an interactive prompt. So a correct manifest in the right
+> place still fires nothing until trust exists — and there is no diagnostic:
+>
+> - a **malformed** hooks config is reported loudly and inline —
+>   `warning: failed to parse hooks config …: unknown field …`;
+> - a config that is **valid and untrusted** produces no warning, no error and no
+>   log line. The run simply proceeds as though the file were not there.
+>
+> Measured on codex-cli 0.154.0 (#4410), a `UserPromptSubmit` hook exiting 2 —
+> unauthenticated, so reaching the network is itself the tell that nothing blocked:
+>
+> | Arm                               | Output                           | Reached the network |
+> | --------------------------------- | -------------------------------- | ------------------- |
+> | untrusted                         | **nothing at all**               | yes                 |
+> | `--dangerously-bypass-hook-trust` | `hook: UserPromptSubmit Blocked` | no                  |
+>
+> **Interactively, run codex once and accept the prompt.** For automation there is
+> no prompt to accept, so pass `--dangerously-bypass-hook-trust`; its own help text
+> describes this case — _"intended only for automation that already vets hook
+> sources"_. A jus dispatch passes it since #4450.
+>
+> ⚠️ **It is not `--dangerously-bypass-approvals-and-sandbox`.** The names are
+> close and the effects are opposite: that one gives up codex's kernel sandbox,
+> this one gives up nothing the kernel enforces and only lets the hooks you
+> installed run.
+
+**So exit `2` blocks once the hooks are trusted. Two divergences, not one:**
 
 1. **File edits.** Codex reports them as `tool_name "apply_patch"` with
    `tool_input.command` holding raw patch text, so those hooks run behind

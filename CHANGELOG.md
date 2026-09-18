@@ -22,6 +22,12 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.29] — 2026-09-17
+
+### Changed
+
+- Say that codex hooks need trust, and correct the docker row (#4450)
+
 ## [1.4.28] — 2026-09-17
 
 ### Changed
