@@ -1,0 +1,107 @@
+#!/usr/bin/env bash
+# jus-liveness — did the jus enforcement hooks actually RUN? (#4416)
+#
+# ⚠️ EVERY OTHER CHECK WE HAVE ANSWERS "IS THIS WIRED", ONCE, AT INSTALL TIME.
+# None of them survives the tool changing its mind. Four silencers — a non-2
+# exit, a tool name the guards do not match, a cwd outside a Juscribe project,
+# and a manifest the tool never loaded — each produce NO OUTPUT AT ALL, so a
+# fully installed, correctly configured hook set can protect nothing and look
+# completely healthy. On #4261 that state shipped with tests, a README and a
+# live verification all passing over it.
+#
+# This reads the record `scripts/lib/state.sh` writes on every invocation, and
+# separates the three states nothing else can tell apart:
+#
+#   ran and allowed / ran and blocked   → alive. Both are proof of life.
+#   ran, and could not tell WHERE       → a shim lost the cwd (the #4261 shape)
+#   no record at all                    → never ran
+#
+# Usage:
+#   jus-liveness              # the most recently active session
+#   jus-liveness <session-id>
+#
+# Exit 0 when the hooks are alive, 1 when they are not. Prints either way —
+# this is the command a person runs, not something a hook emits.
+
+set -uo pipefail
+
+BASE="${CLAUDE_PLUGIN_DATA:-${TMPDIR:-/tmp}/jus}"
+SESSIONS="$BASE/sessions"
+
+session="${1:-}"
+if [[ -z "$session" ]]; then
+  # The most recently written liveness.log. `ls -t` rather than `find -printf`,
+  # which BSD find does not have.
+  newest=$(ls -t "$SESSIONS"/*/liveness.log 2>/dev/null | head -1)
+  if [[ -n "$newest" ]]; then
+    session=$(basename "$(dirname "$newest")")
+  fi
+fi
+
+log="$SESSIONS/${session:-_none}/liveness.log"
+
+if [[ ! -s "$log" ]]; then
+  printf '\033[31m✗ NO jus hook has run%s.\033[0m\n' \
+    "${session:+ in session $session}"
+  cat <<'WHY'
+
+Nothing recorded means one of:
+
+  - the manifest was never installed, or the tool never loaded it. Several
+    tools say so themselves — Antigravity logs `loaded N named hooks from N
+    hooks.json file(s)`, and `kimi doctor` validates its config.
+  - the tool fired no event this session (a session with no tool calls
+    records nothing, correctly).
+  - the hook command could not be found. Every manifest routes through
+    ~/.jus-skills/..., and the tilde is expanded by the SHELL, so it only
+    works at the start of a word — a quoted path is exit 127, and a non-2
+    exit is fail-open.
+
+WHY
+  printf 'Looked in: %s\n' "$log"
+  exit 1
+fi
+
+total=$(grep -c . "$log")
+no_cwd=$(grep -c 'cwd=no-cwd' "$log")
+
+printf 'session: %s\n' "$session"
+printf 'records: %s\n\n' "$total"
+
+# script × tool × cwd-source × outcome, one row per distinct combination. The
+# line is key=value, so the fields are read by NAME rather than by position —
+# a new key added later cannot silently shift this.
+awk -F' ' '{
+  delete f;
+  for (i = 1; i <= NF; i++) { split($i, kv, "="); f[kv[1]] = kv[2]; }
+  key = sprintf("%-32s %-8s %-9s %s", f["script"], (f["tool"] == "" ? "-" : f["tool"]), f["cwd"], f["outcome"]);
+  count[key]++;
+}
+END { for (key in count) printf "  %s  ×%d\n", key, count[key]; }' "$log" | sort
+
+# ⚠️ THE #4261 SHAPE, AND IT LOOKS HEALTHY WITHOUT THIS. The guards ran. They
+# read a cwd their shim had already lost — Cursor sends the empty STRING and
+# jq's `//` keeps it — found no repository, and exited 0. Every one of them.
+if [[ "$no_cwd" -gt 0 && "$no_cwd" -eq "$total" ]]; then
+  printf '\n\033[31m✗ every record says cwd=no-cwd.\033[0m\n'
+  cat <<'WHY'
+
+The hooks ran and could not tell which project they were in, so all of them
+declined. That is a broken payload shim, not a quiet session — and it is
+indistinguishable from a healthy run in every other signal we have.
+
+Look at the adapter's normalizer for a fallback chain that keeps an empty
+string: jq's `//` falls back on null and false ONLY. See
+hooks/README.md → "An empty string is not a missing value".
+WHY
+  exit 1
+fi
+
+printf '\n\033[32m✓ the jus hooks are alive.\033[0m\n'
+
+if [[ "$no_cwd" -gt 0 ]]; then
+  printf '\033[33m⚠ %s of %s records lost the payload cwd (cwd=no-cwd).\033[0m\n' "$no_cwd" "$total"
+  printf '  Those ran against $PWD rather than the cwd they were handed.\n'
+fi
+
+exit 0

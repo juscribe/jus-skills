@@ -22,6 +22,19 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.32] — 2026-09-19
+
+### Changed
+
+- Retire the self-hosted CLI tarball and installer (#4571)
+- Name Claude Code as an AGENTS.md reader in all three tables (#4516)
+- Gemini CLI hook adapter, and correct the sunset claim (#4419)
+- Notice and refresh a stale hook manifest (#4421)
+- Say when Cursor has no command blockers (#4430)
+- jus doctor — is the SOP surface actually loaded? (#4508)
+- A liveness record, so a dead hook set stops looking healthy (#4416)
+- Audit the empty-string fallback class across all seven shims (#4428)
+
 ## [1.4.31] — 2026-09-18
 
 ### Changed

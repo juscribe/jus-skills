@@ -158,15 +158,34 @@ args=$(jq '
 ' <<<"$args" 2>/dev/null) || args='{}'
 
 normalized=$(jq --argjson args "$args" --arg name "$claude_name" '
+  # ⚠️ `//` IS NOT A FALLBACK OPERATOR FOR STRINGS. It falls back on `null` and
+  # `false` only, so an empty string WINS a chain and a better later source is
+  # never reached (#4261, audited across all seven shims on #4428). The two
+  # camelCase/snake_case pairs below read as that class, so they go through
+  # `pick` — but neither is REACHABLE today, and saying so is the point of the
+  # note. The passthrough branch above returns early on
+  # `has("tool_name") or has("session_id")`, so by the time this program runs
+  # the payload provably has no `session_id` and the second candidate is always
+  # absent. `pick` is what keeps them correct if that branch is ever narrowed;
+  # it is not a defect being fixed.
+  #
+  # ⚠️ `cwd` KEEPS `//` DELIBERATELY: Copilot sends no second source for it, so
+  # the chain has one candidate and both spellings agree. An empty `cwd` there
+  # reaches the shared scripts and lands on their own `$PWD` fallback, which
+  # stays deliberately — the reasoning is on
+  # `juscribe_sop_require_jus_project` in ../../scripts/lib/state.sh.
+  # ⚠️ UNVERIFIED: Copilot is not installed on the machine this was written on,
+  # so whether it ever sends an empty string is unmeasured.
+  def pick: map(select(. != null and . != false and . != "")) | first // "";
   . as $in
   | {
-      session_id: ($in.sessionId // $in.session_id // ""),
+      session_id: ([$in.sessionId, $in.session_id] | pick),
       cwd: ($in.cwd // ""),
       tool_name: $name,
       tool_input: $args,
       prompt: ($in.prompt // ""),
       stop_hook_active: ($in.stop_hook_active // false),
-      transcript_path: ($in.transcriptPath // $in.transcript_path // "")
+      transcript_path: ([$in.transcriptPath, $in.transcript_path] | pick)
     }
   | if ($in | has("toolResult")) then .tool_response = $in.toolResult else . end
 ' <<<"$input" 2>/dev/null) || exit 0

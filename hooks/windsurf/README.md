@@ -141,6 +141,12 @@ Registering them there adds invocations that can never fire, which reads as
 coverage on an audit and is not. Covering it needs a guard that matches MCP tool
 _names_, which is its own ticket.
 
+⚠️ **The `cwd` chain is UNVERIFIED against Cascade and hardened anyway.** Windsurf
+is not installed on the machine this was written on and has no headless mode, so
+whether it ever sends an empty string is unmeasured — the tests pin the shim's
+contract rather than a captured payload. The class and the audit:
+[`../README.md`](../README.md) (#4428).
+
 ## Event mapping
 
 | Shared hook                           | Claude event       | Cascade event                                |

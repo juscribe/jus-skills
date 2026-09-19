@@ -99,17 +99,24 @@ remembered_cwd=""
 # an Antigravity payload, so every edit reached the guards unrecognised and
 # passed.
 normalized=$(jq --arg remembered "$remembered_cwd" '
+  # ⚠️ `//` IS NOT A FALLBACK OPERATOR FOR STRINGS. It falls back on `null` and
+  # `false` only, so an empty string WINS a chain and a better later source is
+  # never reached (#4261, audited across all seven shims on #4428). Here that
+  # would cost the REMEMBERED cwd — the one thing the state file below exists
+  # for — to an empty `workspacePaths[0]` or an empty `.cwd` on a payload that
+  # carries the key with nothing in it.
+  def pick: map(select(. != null and . != false and . != "")) | first // "";
   . as $in
   | ($in.toolCall.args // {}) as $args
   | (($args.CommandLine // "") | tostring) as $cmd
   | (($args.TargetFile // "") | tostring) as $file
-  | (
-      ($args.Cwd // "")
-      | if . != "" then .
-        elif $file != "" then ($file | sub("/[^/]*$"; ""))
-        else (($in.workspacePaths // []) | first // $in.cwd // $remembered // "")
-        end
-    ) as $cwd
+  | ([
+      $args.Cwd,
+      (if $file != "" then ($file | sub("/[^/]*$"; "")) else null end),
+      (($in.workspacePaths // []) | map(select(. != null and . != "")) | first),
+      $in.cwd,
+      $remembered
+    ] | pick) as $cwd
   | {
       session_id: ($in.conversationId // ""),
       cwd: ($cwd | tostring),

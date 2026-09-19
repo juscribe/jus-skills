@@ -26,7 +26,20 @@ command -v jq >/dev/null 2>&1 || exit 0
 input=$(cat)
 jq . >/dev/null 2>&1 <<<"$input" || exit 0
 
-normalized=$(jq 'if (.tool_input | type == "object") and (.tool_input.path? != null)
+# ⚠️ AN EMPTY `path` MUST NOT BE COPIED, AND MUST NEVER OVERWRITE A GOOD
+# `file_path`. This is the empty-string-versus-null class (#4261, audited across
+# all seven shims on #4428) in its inverted shape: the test was `!= null`, so a
+# `"path": ""` both propagated as an empty `file_path` and clobbered whatever
+# was already there.
+#
+# ⚠️ HYPOTHETICAL RATHER THAN MEASURED, AND SAYING SO IS THE POINT. Kimi was
+# driven against a local stub on 2026-09-19 (kimi-code, `Edit` / `Write`): every
+# payload carried an absolute `tool_input.path` and no `file_path` sibling at
+# all, so neither half has been seen live. The model chooses that argument, so
+# an empty one is reachable; the guard costs a clause.
+normalized=$(jq 'if (.tool_input | type == "object")
+    and ((.tool_input.path? // "") != "")
+    and ((.tool_input.file_path? // "") == "")
   then .tool_input.file_path = .tool_input.path
   else . end' <<<"$input" 2>/dev/null) || exit 0
 

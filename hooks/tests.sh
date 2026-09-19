@@ -2610,6 +2610,35 @@ agy_derives '.decision == "allow"' \
   "{\"conversationId\":\"agyout\",\"toolCall\":{\"name\":\"run_command\",\"args\":{\"CommandLine\":\"git push --force origin main\",\"Cwd\":\"$AGY_OUTSIDE\"}}}" \
   "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-force-push.sh"
 
+# ⚠️ AN EMPTY STRING IN THE CWD CHAIN BEATS THE REMEMBERED DIRECTORY (#4428).
+# jq's `//` falls back on `null` and `false` only, so `workspacePaths[0]` of
+# `""` — or a `cwd` key present and empty — used to win over `$remembered`, the
+# one thing #4262 built the state file for. Same symptom as every other case in
+# this class: the guard allows, silently, and nothing anywhere says why.
+#
+# Primed with a real tool event so the conversation HAS a remembered cwd; the
+# second call is the one under test, and it names only empty sources.
+AGY_EMPTY=$(mktemp -d)
+git -C "$AGY_EMPTY" init -q
+mkdir -p "$AGY_EMPTY/.jus"
+
+printf '{"conversationId":"agyempty","toolCall":{"name":"run_command","args":{"CommandLine":"ls","Cwd":"%s"}}}' "$AGY_EMPTY" \
+  | ( cd "$AGY_OUTSIDE" && env -u JUS_HOOKS_EVERYWHERE "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-force-push.sh" ) >/dev/null 2>&1
+
+agy_derives '.decision == "deny"' \
+  "antigravity: an empty workspacePaths entry does not beat the remembered cwd" \
+  "{\"conversationId\":\"agyempty\",\"workspacePaths\":[\"\"],\"cwd\":\"\",\"toolCall\":{\"name\":\"run_command\",\"args\":{\"CommandLine\":\"git push --force origin main\"}}}" \
+  "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-force-push.sh"
+
+# The other direction: a real Cwd still wins over everything remembered, because
+# a command can run outside the directory the last one did.
+agy_derives '.decision == "allow"' \
+  "antigravity: a real Cwd still wins over the remembered one" \
+  "{\"conversationId\":\"agyempty\",\"toolCall\":{\"name\":\"run_command\",\"args\":{\"CommandLine\":\"git push --force origin main\",\"Cwd\":\"$AGY_OUTSIDE\"}}}" \
+  "$AGY_ADAPT" PreToolUse "$SCRIPTS_DIR/jus-block-force-push.sh"
+
+rm -rf "$AGY_EMPTY"
+
 # ── Stop, which really does block here ───────────────────────────────────────
 # ⚠️ NOT ADVISORY, unlike Cursor and Kimi. `decision: "continue"` refuses the
 # stop and re-enters the loop with `reason` injected as a system message.
@@ -2712,6 +2741,114 @@ agy_says '. == {}' \
 
 rm -rf "$AGY_WS" "$AGY_OUTSIDE" "$AGY_STATE" "$AGY_STUBS"
 unset JUS_ANTIGRAVITY_STATE
+
+# ---- gemini adapter (#4419) ------------------------------------------------
+
+section "gemini adapter"
+
+# ⚠️ GEMINI CLI IS NOT SUNSET, WHATEVER TWO OF OUR DOCS SAID. The Antigravity
+# adapter was built on the premise that it had been replaced on 2026-06-18.
+# Measured 2026-09-19 against the npm registry: `latest` 0.60.0, `nightly`
+# 0.62.0-nightly.20260919 cut that morning, Apache-2.0.
+#
+# ⚠️ AND IT IS THE THINNEST SHIM IN THE BUNDLE. Every field the shared scripts
+# read already carries Claude Code's name — session_id, transcript_path, cwd,
+# hook_event_name, tool_name, tool_input, file_path, old_string, new_string,
+# content, command, stop_hook_active — read out of the published 0.60.0
+# package's own `bundle/docs/hooks/reference.md` and `bundle/docs/tools/`. So
+# only the TOOL NAME is translated.
+#
+# ⚠️ NOT LIVE-VERIFIED. Gemini CLI is not installed on the authoring machine, and
+# the README says so in its first box. These tests are what machine-checkable
+# evidence there is.
+GEM_DIR="$PLUGIN_ROOT/hooks/gemini"
+GEM_ADAPT="$GEM_DIR/scripts/jus-gemini-adapt.sh"
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="gemini settings.json is valid JSON in Gemini's hooks shape"
+if jq -e '(.hooks.BeforeTool | length > 0) and (.hooks.AfterTool | length > 0)
+          and .hooks.BeforeAgent[0].hooks[0].command
+          and .hooks.AfterAgent[0].hooks[0].command' \
+  "$GEM_DIR/settings.json" >/dev/null 2>&1; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="gemini settings.json references only scripts that exist in the bundle"
+missing=0
+while IFS= read -r cmd; do
+  for word in $cmd; do
+    case "$word" in
+      "$SKILLS_PREFIX"*)
+        resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
+        [[ -x "$resolved" ]] || missing=$((missing + 1))
+        ;;
+    esac
+  done
+done < <(jq -r '.hooks[][].hooks[].command' "$GEM_DIR/settings.json" 2>/dev/null)
+if [[ "$missing" -eq 0 ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (%d missing)\n' "$TEST_NAME" "$missing"
+fi
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="gemini registers every shared hook"
+gem_scripts=$(jq -r '.hooks[][].hooks[].command' "$GEM_DIR/settings.json" \
+  | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-gemini-adapt.sh' | sort -u)
+if [[ "$gem_scripts" == "$shared_scripts" ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+  comm -23 <(printf '%s\n' "$shared_scripts") <(printf '%s\n' "$gem_scripts") | sed 's/^/      missing: /'
+fi
+
+# ⚠️ THE MATCHER IS THE WHOLE POINT. Every guard gates on `tool_name == "Bash"`,
+# and Gemini's shell tool is `run_shell_command` — so a matcher written `Bash`
+# would fire on nothing while the configured list looked complete.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="gemini matches Gemini's own tool names, not Claude's"
+if jq -e '[.hooks.BeforeTool[].matcher] | (index("^run_shell_command$") != null)
+          and (index("^(replace|write_file)$") != null)' \
+  "$GEM_DIR/settings.json" >/dev/null 2>&1; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+fi
+
+# The four names, each mapped to what the shared scripts gate on.
+# ⚠️ `/bin/cat` AS THE TARGET, so the assertion reads the NORMALISED payload
+# rather than a guard's exit code. The shim `exec`s its target with the rewritten
+# JSON on stdin, so cat hands it straight back.
+gem_maps() { # <gemini tool> <expected>
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local raw="$1" want="$2" got
+  got=$(printf '{"tool_name":"%s","tool_input":{"command":"ls"}}' "$raw" \
+    | "$GEM_ADAPT" /bin/cat 2>/dev/null | jq -r '.tool_name' 2>/dev/null) || got=""
+  if [[ "$got" == "$want" ]]; then
+    printf '  \033[32m✓\033[0m gemini: %s maps to %s\n' "$raw" "$want"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("gemini: $raw maps to $want")
+    printf '  \033[31m✗\033[0m gemini: %s maps to %s (got %s)\n' "$raw" "$want" "${got:-<nothing>}"
+  fi
+}
+
+gem_maps run_shell_command Bash
+gem_maps replace Edit
+gem_maps write_file Write
+gem_maps read_file Read
+
+# ⚠️ AN UNKNOWN NAME MUST NOT BE DROPPED. MCP tools arrive as
+# `mcp_<server>_<tool>`, and a map that answered "" for them would hand every
+# guard an empty tool_name — which reads as "not a tool this guard cares about"
+# and passes silently. The shape fallback catches it.
+gem_maps mcp_srv_thing Bash
 
 # ---- qwen adapter (#4263) --------------------------------------------------
 
@@ -3000,6 +3137,61 @@ fi
 
 rm -rf "$WS_DIRTY"
 
+# ⚠️ AN EMPTY `tool_info.cwd` BEATS BOTH FALLBACKS, `$PWD` INCLUDED (#4428).
+# jq's `//` falls back on `null` and `false` only, so the three-deep chain
+# collapses to the empty string and every guard loses its repository — which
+# `juscribe_sop_require_jus_project` answers by exiting 0.
+#
+# ⚠️ IT HAS TO RUN FROM OUTSIDE A JUSCRIBE PROJECT, because `$PWD` is the third
+# candidate and the shared scripts fall back to it as well: from inside a wired
+# repository the broken chain is rescued twice over and the test passes on a
+# shim that still has the bug.
+#
+# ⚠️ AND IT HAS TO DROP `JUS_HOOKS_EVERYWHERE`, WHICH THIS HARNESS EXPORTS
+# GLOBALLY (line 38) — that flag is the first thing the project check reads, so
+# with it set the lookup never runs and this passes vacuously.
+#
+# ⚠️ UNVERIFIED AGAINST CASCADE ITSELF. Windsurf is not installed on the machine
+# this was written on and has no headless mode, so whether it ever sends an
+# empty string is unmeasured. This pins the shim's contract, not a captured
+# payload.
+WS_WIRED=$(mktemp -d)
+git -C "$WS_WIRED" init -q
+mkdir -p "$WS_WIRED/.jus"
+WS_OUTSIDE=$(mktemp -d)
+
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME='windsurf: an empty tool_info.cwd falls back to root_workspace_path'
+ws_empty_ec=0
+( cd "$WS_OUTSIDE" && env -u JUS_HOOKS_EVERYWHERE "$WS_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh" ) \
+  >/dev/null 2>&1 \
+  <<<"{\"agent_action_name\":\"pre_run_command\",${WS_ENV},\"tool_info\":{\"command_line\":\"git push --force origin main\",\"cwd\":\"\",\"root_workspace_path\":\"$WS_WIRED\"}}" \
+  || ws_empty_ec=$?
+if [[ "$ws_empty_ec" -eq 2 ]]; then
+  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (exit=%d, want 2)\n' "$TEST_NAME" "$ws_empty_ec"
+fi
+
+# The other direction: a non-empty cwd still wins over root_workspace_path,
+# because a command can run outside the workspace root.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME='windsurf: a non-empty tool_info.cwd still wins over root_workspace_path'
+ws_explicit_ec=0
+( cd "$WS_WIRED" && env -u JUS_HOOKS_EVERYWHERE "$WS_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh" ) \
+  >/dev/null 2>&1 \
+  <<<"{\"agent_action_name\":\"pre_run_command\",${WS_ENV},\"tool_info\":{\"command_line\":\"git push --force origin main\",\"cwd\":\"$WS_OUTSIDE\",\"root_workspace_path\":\"$WS_WIRED\"}}" \
+  || ws_explicit_ec=$?
+if [[ "$ws_explicit_ec" -eq 0 ]]; then
+  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (exit=%d, want 0)\n' "$TEST_NAME" "$ws_explicit_ec"
+fi
+
+rm -rf "$WS_WIRED" "$WS_OUTSIDE"
+
 ws_hook 0 "windsurf: malformed JSON fails open" \
   'not json at all' \
   "$WS_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh"
@@ -3142,6 +3334,7 @@ CLAUDE_REGISTERED=$(adapter_registered "$HOOKS_DIR/hooks.json")
 # plugin-relative paths. Either can drift from the other, and a hook present in
 # one and absent from the other is invisible to a guard that reads one of them.
 for adapter_spec in "codex:$PLUGIN_ROOT/hooks/codex/hooks.json" \
+                    "gemini:$PLUGIN_ROOT/hooks/gemini/settings.json" \
                     "kimi-code:$PLUGIN_ROOT/hooks/kimi-code/config-hooks.toml" \
                     "kimi-plugin:$PLUGIN_ROOT/kimi.plugin.json"; do
   adapter_name="${adapter_spec%%:*}"
@@ -3315,6 +3508,42 @@ codex_hook 0 "kimi: Edit REMOVING a suppression passes through the path shim" \
 
 codex_hook 2 "kimi: Write with a suppression in content is blocked through the shim" \
   "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"km1\",\"cwd\":\"/tmp\",\"tool_call_id\":\"call_4\",\"tool_name\":\"Write\",\"tool_input\":{\"path\":\"app/b.ts\",\"content\":\"// ${SUPP_MARK}\\nconst y: any = 2\"}}" \
+  "$KIMI_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
+# ⚠️ AN EMPTY `path` MUST NOT CLOBBER A `file_path` THAT IS ALREADY RIGHT
+# (#4428). The shim's test was `.path? != null`, and jq's `//` family treats the
+# empty string as a value — so a `"path": ""` both propagated as an empty
+# `file_path` and overwrote whatever was there.
+#
+# The consequence runs the OTHER way from every sibling in this class, and that
+# is why it needs a test of its own rather than a reading of the diff: an empty
+# `file_path` is fail-CLOSED in jus-block-lint-suppression.sh (the file type
+# stays unknown, so every pattern stays active). So the cost is a false BLOCK —
+# an `eslint-disable` written into a `.rb` file, which no Ruby linter reads and
+# the type column exists to allow.
+#
+# ⚠️ CONTRACT, NOT CAPTURE. Driven against a local stub on 2026-09-19, every
+# kimi `Edit` / `Write` payload carried an absolute `tool_input.path` and no
+# `file_path` sibling at all, so neither half of this has been seen live. The
+# model chooses that argument, so an empty one is reachable.
+#
+# ⚠️ AND THIS PAIR KEEPS `JUS_HOOKS_EVERYWHERE` SET, UNLIKE THE CURSOR,
+# ANTIGRAVITY AND WINDSURF TESTS IN THIS CLASS. Those drop it because the cwd is
+# what they are testing, and the project gate reads the cwd first. Here the cwd
+# is not in question and the gate is upstream of everything that is: unset the
+# flag and both arms exit 0 before the suppression table is ever consulted,
+# which is this rule's own vacuity trap wearing the opposite sign. The control
+# arm below is what keeps the pair honest instead.
+codex_hook 0 "kimi: an empty path does not clobber a file_path that is already right" \
+  "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"km1\",\"cwd\":\"/tmp\",\"tool_call_id\":\"call_6\",\"tool_name\":\"Edit\",\"tool_input\":{\"path\":\"\",\"file_path\":\"lib/a.rb\",\"old_string\":\"x = 1\",\"new_string\":\"// ${SUPP_MARK}\\nx = 1\"}}" \
+  "$KIMI_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
+
+# The control arm, and it is what makes the one above mean anything: the SAME
+# edit with the file_path missing has no type to gate on, so every pattern
+# applies and it blocks. Without this the test above passes over a shim that
+# simply stopped blocking.
+codex_hook 2 "kimi: the same edit with no file_path at all stays fail-closed" \
+  "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"km1\",\"cwd\":\"/tmp\",\"tool_call_id\":\"call_7\",\"tool_name\":\"Edit\",\"tool_input\":{\"path\":\"\",\"old_string\":\"x = 1\",\"new_string\":\"// ${SUPP_MARK}\\nx = 1\"}}" \
   "$KIMI_ADAPT" "$SCRIPTS_DIR/jus-block-lint-suppression.sh"
 
 # track-edits through the shim records the path into edits.log
@@ -3869,6 +4098,174 @@ for guard_hook in "$SCRIPTS"/jus-*.sh; do
 done
 
 rm -rf "$GUARD_BARE" "$GUARD_WIRED" "$GUARD_NEST" "$GUARD_NOGIT"
+# ---- the liveness record (#4416) ------------------------------------------
+
+section "hook liveness"
+
+# ⚠️ NOTHING ANYWHERE PROVED A HOOK HAD RUN. Four silencers — a non-2 exit, a
+# tool name the guards do not match, a cwd outside a Juscribe project, and a
+# manifest the tool never loaded — each produce NO OUTPUT AT ALL. So "installed,
+# configured, protecting nothing" read exactly like "installed, configured,
+# nothing to block", and on #4261 that state shipped with tests, a README and a
+# live verification all passing over it.
+#
+# ⚠️ THE FLAG STAYS UNSET FOR THIS WHOLE SECTION. `JUS_HOOKS_EVERYWHERE=1`
+# short-circuits the project guard before it reads the cwd, so with it set the
+# two outcomes this section exists to tell apart never occur.
+#
+# ⚠️ EVERY PAYLOAD IS BUILT INTO A VARIABLE FIRST, AND THAT IS NOT STYLE.
+# A JSON literal written inline inside `"$( … "{\"a\":1,\"b\":2}" )"` loses its
+# quoting: the escapes belong to the OUTER double-quoted string, so by the time
+# the command substitution re-parses, the braces are bare and bash BRACE-EXPANDS
+# on the commas. Measured while writing this section — one call became five,
+# each carrying a single `"key":"value"` fragment, every one exit 127. The
+# assertion then reads an empty log and fails for a reason that has nothing to
+# do with the code under test.
+unset JUS_HOOKS_EVERYWHERE
+
+LIVE_HOME=$(mktemp -d)
+LIVE_WIRED=$(mktemp -d)
+git -C "$LIVE_WIRED" init -q
+mkdir -p "$LIVE_WIRED/.jus"
+LIVE_BARE=$(mktemp -d)
+git -C "$LIVE_BARE" init -q
+LIVE_OUTSIDE=$(mktemp -d)
+
+# One invocation, its own plugin-data root, and the recorded line handed back.
+# Runs from OUTSIDE any Juscribe project, because the shared scripts fall back
+# to $PWD and that fallback is what hid #4261.
+live_run() { # <session> <script> <payload> [env assignments...]
+  local session="$1" script="$2" payload="$3"; shift 3
+  ( cd "$LIVE_OUTSIDE" && env CLAUDE_PLUGIN_DATA="$LIVE_HOME" "$@" "$script" <<<"$payload" ) \
+    >/dev/null 2>&1 || true
+  cat "$LIVE_HOME/sessions/$session/liveness.log" 2>/dev/null || true
+}
+
+live_payload() { # <session> <tool> <command> [cwd]
+  printf '{"session_id":"%s","hook_event_name":"PreToolUse","cwd":"%s","tool_name":"%s","tool_input":{"command":"%s"}}' \
+    "$1" "${4-$LIVE_WIRED}" "$2" "$3"
+}
+
+LIVE_GUARD="$SCRIPTS/jus-block-force-push.sh"
+LIVE_FORCE="git push ${FORCE_FLAG:---force} origin main"
+
+live_allowed=$(live_run s1 "$LIVE_GUARD" "$(live_payload s1 Bash 'git status')")
+
+t "a guard that allows records that it ran"
+assert_stdout "$TEST_NAME" "outcome=allowed" "$live_allowed"
+
+t "the record names the script that ran"
+assert_stdout "$TEST_NAME" "script=jus-block-force-push.sh" "$live_allowed"
+
+t "the record names the event"
+assert_stdout "$TEST_NAME" "event=PreToolUse" "$live_allowed"
+
+t "the record names the tool"
+assert_stdout "$TEST_NAME" "tool=Bash" "$live_allowed"
+
+# ⚠️ A HOOK THAT RAN AND ALLOWED IS PROOF OF LIFE. Only one that never ran is
+# the defect, so the blocking case must record too — otherwise a healthy session
+# with nothing to block looks identical to a dead one.
+t "a guard that blocks records that it blocked"
+assert_stdout "$TEST_NAME" "outcome=blocked" \
+  "$(live_run s4 "$LIVE_GUARD" "$(live_payload s4 Bash "$LIVE_FORCE")")"
+
+# ⚠️ SILENCER 3, AND THE WHOLE REASON THE RECORD LIVES OUTSIDE THE PROJECT. A
+# record written under `.jus/` cannot be written in exactly the case it exists
+# to report.
+live_bare=$(live_run s5 "$LIVE_GUARD" "$(live_payload s5 Bash "$LIVE_FORCE" "$LIVE_BARE")")
+
+t "a guard outside a Juscribe project records why, rather than nothing"
+assert_stdout "$TEST_NAME" "outcome=not-a-jus-project" "$live_bare"
+
+t "and it does not claim to have lost the cwd — it had one"
+assert_stdout "$TEST_NAME" "cwd=payload" "$live_bare"
+
+# ⚠️ THE THIRD VALUE, AND THE ONE #4261 NEEDED. The Cursor shim handed over
+# `"cwd": ""`, so the guards ran, could not tell where they were, and exited 0.
+# That is not "outside a Juscribe project" and it is not "never ran" — and a
+# two-valued record would have reported one of those and been wrong.
+t "an EMPTY cwd is recorded as cwd=no-cwd"
+assert_stdout "$TEST_NAME" "cwd=no-cwd" \
+  "$(live_run s6 "$LIVE_GUARD" "$(live_payload s6 Bash "$LIVE_FORCE" "")")"
+
+t "malformed JSON is recorded as bad-json"
+assert_stdout "$TEST_NAME" "outcome=bad-json" \
+  "$(live_run _anonymous "$LIVE_GUARD" 'not json at all')"
+
+# ⚠️ SILENCER 2 NEEDS NO OUTCOME OF ITS OWN — the line carries the tool name, so
+# a session full of `tool=Shell outcome=allowed` reads itself out as the
+# .claude/settings.json-under-Cursor case.
+t "a tool the guards do not match still records, with its tool name"
+assert_stdout "$TEST_NAME" "tool=Shell" \
+  "$(live_run s7 "$LIVE_GUARD" "$(live_payload s7 Shell "$LIVE_FORCE")")"
+
+# ⚠️ SILENCER 1, AND THE ONLY OUTCOME THAT CANNOT USE jq TO WRITE ITSELF.
+t "a missing jq is recorded as no-jq"
+# ⚠️ `dirname` IS LOAD-BEARING IN THIS LIST. Every guard opens with
+# `source "$(dirname "$0")/lib/state.sh"`, so a sandbox PATH without it kills
+# the script before lib/state.sh is even read — and the test then reports "no
+# record" for a reason that has nothing to do with jq.
+LIVE_NOJQ=$(mktemp -d)
+for live_tool in bash cat dirname git grep sed awk mkdir printf; do
+  live_src=$(command -v "$live_tool" 2>/dev/null) && ln -sf "$live_src" "$LIVE_NOJQ/$live_tool"
+done
+assert_stdout "$TEST_NAME" "outcome=no-jq" \
+  "$(live_run _anonymous "$LIVE_GUARD" '{}' PATH="$LIVE_NOJQ")"
+rm -rf "$LIVE_NOJQ"
+
+# ⚠️ THE RECORDING ITSELF MUST STAY SILENT. A hook that prints on the happy path
+# is noise in every session forever, and the check is what people run.
+t "recording adds nothing to a guard's own output"
+live_payload_quiet=$(live_payload s8 Bash 'git status')
+live_quiet=$( cd "$LIVE_OUTSIDE" && env CLAUDE_PLUGIN_DATA="$LIVE_HOME" \
+  "$LIVE_GUARD" <<<"$live_payload_quiet" 2>&1 )
+assert_stdout "$TEST_NAME" "" "$live_quiet"
+
+# ---- the check command ----------------------------------------------------
+
+LIVENESS="$HOOKS_DIR/jus-liveness"
+
+live_check() { # <session>
+  ( env CLAUDE_PLUGIN_DATA="$LIVE_HOME" "$LIVENESS" "$1" 2>&1 ) || true
+}
+
+live_check_ec() { # <session>
+  local ec=0
+  ( env CLAUDE_PLUGIN_DATA="$LIVE_HOME" "$LIVENESS" "$1" ) >/dev/null 2>&1 || ec=$?
+  # ⚠️ Bracketed, because assert_stdout matches a SUBSTRING: a bare "1" is
+  # inside "127", so a crashing check would pass an exit-1 assertion.
+  printf '[%s]' "$ec"
+}
+
+t "jus-liveness reports the session's hooks as alive"
+assert_stdout "$TEST_NAME" "alive" "$(live_check s1)"
+
+t "jus-liveness names each script that ran"
+assert_stdout "$TEST_NAME" "jus-block-force-push.sh" "$(live_check s4)"
+
+t "jus-liveness exits 0 on a healthy session"
+assert_stdout "$TEST_NAME" "[0]" "$(live_check_ec s1)"
+
+# ⚠️ THE ALARM, and the only state that is unambiguously wrong. Silencer 4 — a
+# manifest the tool never loaded — reaches the check this way too.
+t "jus-liveness reports a session with no records at all"
+assert_stdout "$TEST_NAME" "NO jus hook" "$(live_check never-ran)"
+
+t "a session with no records exits 1"
+assert_stdout "$TEST_NAME" "[1]" "$(live_check_ec never-ran)"
+
+# ⚠️ RAN AND COULD NOT TELL WHERE IT WAS is a distinct alarm from both of the
+# above, and it is the #4261 shape. A session whose every record is cwd=no-cwd
+# is a broken shim, not a quiet one.
+t "jus-liveness calls out a session whose every record lost its cwd"
+assert_stdout "$TEST_NAME" "every record says cwd=no-cwd" "$(live_check s6)"
+
+t "jus-liveness exits 1 when every record lost its cwd"
+assert_stdout "$TEST_NAME" "[1]" "$(live_check_ec s6)"
+
+rm -rf "$LIVE_HOME" "$LIVE_WIRED" "$LIVE_BARE" "$LIVE_OUTSIDE"
+
 export JUS_HOOKS_EVERYWHERE=1
 
 # ---- the undefined-helper guard -------------------------------------------

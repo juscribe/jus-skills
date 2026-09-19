@@ -38,7 +38,7 @@ This file is the lifecycle. The operational detail sits beside it and is **not**
 
 This SOP drives the Juscribe board through the **`jus` CLI**. The bundle ships the **skills and hooks only — not the CLI binary**, so before any phase below will work the user needs:
 
-1. **The CLI** — `brew install juscribe/tap/jus` (or the curl installer at `app.juscribe.ai/install.sh`).
+1. **The CLI** — `brew install juscribe/tap/jus`.
 2. **Auth + workspace** — `jus login` (API token) or `jus init` (token + workspace + `bin/jus` symlink). `jus init` also sets the `{ws}` used throughout this skill.
 
 **Preflight.** If you're about to run `jus` and aren't sure it's configured, run `jus whoami` first and read the failure:
@@ -49,6 +49,18 @@ This SOP drives the Juscribe board through the **`jus` CLI**. The bundle ships t
   - An **agent** token needs a **rotate** (Settings → API Tokens), _not_ another `jus login` — re-authenticating hands back the same dead secret.
   - Tell the user which, then stop.
 - `Error: Could not reach the Juscribe server at <base URL>` → **nothing is known about the token.** The request never got a reply, so this is a network problem: no connectivity, a sandbox denying outbound connections, or a wrong `JUSCRIBE_BASE_URL`. Curl's own line above it names which. ⚠️ **Do not rotate anything** — a fresh token fails identically. Relay the base URL it tried, and stop.
+
+⚠️ **`jus whoami` says nothing about whether THESE SKILLS loaded, and that is a separate failure.** A wizard can finish clean and leave the bundle absent — at which point an agent reads an SOP telling it the skills cover the workflow in more depth, goes looking, and finds nothing. `jus doctor` is the check:
+
+```sh
+jus doctor
+```
+
+Non-interactive, exit-coded, prompts for nothing. It reports the token, the workspace, the git repository and the skills surface — the plugin and its scope for Claude Code, the clone and the `.agents/skills/` links for every other tool — and prints the exact fix for whatever failed.
+
+⚠️ **And a clone pull does NOT update an installed hook manifest.** Skills are symlinks and the shared hook scripts are referenced by absolute path, so both move with a `git -C ~/.jus-skills pull`. Every manifest is a **copy**, so a change to which events an adapter registers reaches nobody who already installed. `jus doctor` names the missing registrations; `jus refresh-hooks` adds them, additively, so a hand edit survives.
+
+⚠️ **A passing verdict still names the reload, and that is not noise.** "Installed, but this session started before the install" leaves no trace on disk, so a clean registry is the only moment that case can be raised. It is the third of three states and the one people hit.
 
 **Do not loop `jus` commands against an unconfigured CLI, or against a 401.** A 401 never heals by retrying; it is a credential the user must replace. Surface the single setup step the error points to and stop — one clear instruction beats a wall of repeated errors. Everything below assumes this preflight passed.
 

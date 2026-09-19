@@ -120,6 +120,14 @@ Host prerequisites match the shared scripts: `bash` 4+, `jq`, `git`.
 config root, so a check never has to touch `~/.kimi-code/config.toml` — the
 user's real file, mode `0600`.
 
+⚠️ **`path` → `file_path` is the empty-string class in its inverted shape**: an
+empty `path` used to overwrite a `file_path` that was already right. Measured
+2026-09-19 against a local stub, kimi always sends an absolute `path` and never a
+`file_path` sibling, so the guard is a contract rather than a fix. Notably the
+cost runs the OTHER way from every sibling — an empty `file_path` is fail-CLOSED
+in the suppression guard, so the symptom would be a false BLOCK. See
+[`../README.md`](../README.md) (#4428).
+
 ## Tests
 
 `../tests.sh` carries a **"kimi-code adapter"** section: config-snippet and

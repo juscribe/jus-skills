@@ -1,0 +1,118 @@
+{
+  "hooks": {
+    "BeforeTool": [
+      {
+        "matcher": "^run_shell_command$",
+        "hooks": [
+          {
+            "name": "jus-block-force-push",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-force-push.sh",
+            "timeout": 10000
+          },
+          {
+            "name": "jus-block-no-verify",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-no-verify.sh",
+            "timeout": 10000
+          },
+          {
+            "name": "jus-pre-commit-gate",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-pre-commit-gate.sh",
+            "timeout": 10000
+          },
+          {
+            "name": "jus-block-accepted-manifest-edit",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-accepted-manifest-edit.sh",
+            "timeout": 10000
+          },
+          {
+            "name": "jus-blocker-date-nudge",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-blocker-date-nudge.sh",
+            "timeout": 10000
+          }
+        ]
+      },
+      {
+        "matcher": "^(replace|write_file)$",
+        "hooks": [
+          {
+            "name": "jus-block-lint-suppression",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-lint-suppression.sh",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "AfterTool": [
+      {
+        "matcher": "^run_shell_command$",
+        "hooks": [
+          {
+            "name": "jus-post-bash-tracker",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-post-bash-tracker.sh",
+            "timeout": 10000
+          },
+          {
+            "name": "jus-docs-nudge",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh",
+            "timeout": 10000
+          }
+        ]
+      },
+      {
+        "matcher": "^(replace|write_file)$",
+        "hooks": [
+          {
+            "name": "jus-track-edits",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-track-edits.sh",
+            "timeout": 10000
+          },
+          {
+            "name": "jus-start-comment-nudge",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-start-comment-nudge.sh",
+            "timeout": 10000
+          },
+          {
+            "name": "jus-docs-nudge",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh",
+            "timeout": 10000
+          }
+        ]
+      }
+    ],
+    "BeforeAgent": [
+      {
+        "hooks": [
+          {
+            "name": "jus-ticket-claim-nudge",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-ticket-claim-nudge.sh",
+            "timeout": 15000
+          }
+        ]
+      }
+    ],
+    "AfterAgent": [
+      {
+        "hooks": [
+          {
+            "name": "jus-stop-uncommitted",
+            "type": "command",
+            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-stop-uncommitted.sh",
+            "timeout": 15000
+          }
+        ]
+      }
+    ]
+  }
+}

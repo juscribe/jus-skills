@@ -68,8 +68,14 @@ event=$(jq -r '.hook_event_name // ""' <<<"$input")
 # shared scripts' own `$PWD` fallback covering for us. Test it with a payload
 # whose `cwd` is `""` from a process standing outside a Juscribe project.
 normalized=$(jq '
+  # ⚠️ `//` IS NOT A FALLBACK OPERATOR FOR STRINGS. It falls back on `null` and
+  # `false` only, so an empty string WINS a chain and a better later source is
+  # never reached (#4261, audited across all seven shims on #4428). Every chain
+  # here with more than one source goes through `pick` instead; a chain whose
+  # only alternative is a literal keeps `//`, where the two agree.
+  def pick: map(select(. != null and . != false and . != "")) | first // "";
   . as $in
-  | (if (.cwd // "") == "" then ((.workspace_roots // [] | .[0]) // "") else .cwd end) as $cwd
+  | ([.cwd, (.workspace_roots // [] | map(select(. != null and . != "")) | first)] | pick) as $cwd
   | (.hook_event_name // "") as $event
   | {
       session_id: ($in.conversation_id // ""),

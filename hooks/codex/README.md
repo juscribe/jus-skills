@@ -283,6 +283,12 @@ model actually issued. That needs an account; the strings above and #4207's
 blocked force-push are the evidence for it, and #4207's own Guardian warning is
 why that force-push is not conclusive on its own.
 
+✅ **No empty-string exposure.** Every `//` in this shim ends at a literal, so the
+class cannot apply — it needs a chain naming a second source. Not captured on
+#4428: driving a tool call needs `--dangerously-bypass-hook-trust`, which the
+session doing the audit could not run. The class and the audit:
+[`../README.md`](../README.md).
+
 ## Tests
 
 `../tests.sh` carries a **"codex adapter"** section: manifest shape + referenced

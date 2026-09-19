@@ -169,6 +169,11 @@ object on exit 0 is already the shape Qwen expects. The shim `exec`s the target,
 so its stdout, stderr and exit code reach Qwen untouched. Wrapping either would
 be the Antigravity work (#4262) done where it is not needed.
 
+✅ **No empty-string exposure.** The shim has no multi-source fallback chain, and a
+capture on 2026-09-19 found a real `cwd`, `session_id` and `transcript_path` on
+all four registered events. The class and the seven-shim audit:
+[`../README.md`](../README.md) (#4428).
+
 ## Event mapping
 
 Thirteen registrations, twelve scripts — the same as Claude Code's manifest.

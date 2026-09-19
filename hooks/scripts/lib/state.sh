@@ -3,11 +3,66 @@
 
 set -euo pipefail
 
+# ── the liveness record (#4416) ──────────────────────────────────────────────
+#
+# ⚠️ NOTHING ANYWHERE PROVED A HOOK HAD RUN. Four silencers — a non-2 exit, a
+# tool name the guards do not match, a cwd outside a Juscribe project, and a
+# manifest the tool never loaded — each produce NO OUTPUT AT ALL, so
+# "installed, configured, protecting nothing" reads exactly like "installed,
+# configured, nothing to block". On #4261 that state shipped with tests, a
+# README and a live verification all passing over it.
+#
+# One line per invocation, key=value so a person tailing the file can read it:
+#
+#   script=jus-block-force-push.sh event=PreToolUse tool=Bash cwd=payload outcome=blocked
+#
+# ⚠️ WRITTEN OUTSIDE THE PROJECT, DELIBERATELY. A record under `.jus/` cannot be
+# written in exactly the case it exists to report. It goes to the same
+# per-session directory juscribe_sop_state_dir already returns, which is under
+# $CLAUDE_PLUGIN_DATA or $TMPDIR.
+#
+# ⚠️ NO TIMESTAMP, AND THAT IS A COST DECISION. bash 3.2 ships on macOS and has
+# neither `printf '%(%s)T'` nor `$EPOCHSECONDS`, so a timestamp means a `date`
+# fork on every hook of every tool call. The session directory answers "this
+# session?" and the file's mtime answers "recently?".
+#
+# ⚠️ IT MUST NEVER SPEAK. A hook that prints on the happy path is noise in every
+# session forever; `jus-liveness` is what people run.
+JUSCRIBE_SOP_OUTCOME=""
+JUSCRIBE_SOP_EVENT=""
+JUSCRIBE_SOP_TOOL=""
+JUSCRIBE_SOP_SESSION=""
+JUSCRIBE_SOP_CWD_SOURCE="payload"
+
+# Called by the EXIT trap, so it runs on every path out — including the early
+# `exit 0` each silencer leaves through.
+#
+# ⚠️ IT MUST NOT CHANGE THE HOOK'S EXIT STATUS. `$?` is captured first and every
+# step is guarded, because a trap that fails under `set -e` would turn an
+# allowing hook into a non-zero exit that some hosts read as a block.
+juscribe_sop_record() {
+  local status=$? outcome="${JUSCRIBE_SOP_OUTCOME:-}" dir file
+  if [[ -z "$outcome" ]]; then
+    if [[ "$status" -eq 2 ]]; then outcome=blocked; else outcome=allowed; fi
+  fi
+  dir=$(juscribe_sop_state_dir "${JUSCRIBE_SOP_SESSION:-}") || return 0
+  [[ -d "$dir" ]] || mkdir -p "$dir" 2>/dev/null || return 0
+  file="$dir/liveness.log"
+  printf 'script=%s event=%s tool=%s cwd=%s outcome=%s\n' \
+    "${0##*/}" "${JUSCRIBE_SOP_EVENT:-}" "${JUSCRIBE_SOP_TOOL:-}" \
+    "${JUSCRIBE_SOP_CWD_SOURCE:-payload}" "$outcome" >> "$file" 2>/dev/null || true
+  return 0
+}
+
 # Fail-open if `jq` is missing on the host. We never want a missing dependency
 # to break the user's session — better to skip enforcement than to wedge the
 # tool call. The README lists `jq` as a prerequisite.
 juscribe_sop_require_jq() {
   if ! command -v jq >/dev/null 2>&1; then
+    # ⚠️ THE ONE OUTCOME THAT CANNOT USE jq TO WRITE ITSELF, which is why the
+    # record is built from shell builtins and nothing else (#4416).
+    JUSCRIBE_SOP_OUTCOME=no-jq
+    juscribe_sop_record
     exit 0
   fi
 }
@@ -19,7 +74,26 @@ juscribe_sop_require_jq() {
 # abort the hook). Call immediately after reading stdin.
 # Argument: $1 = the raw stdin string.
 juscribe_sop_require_valid_json() {
-  jq . >/dev/null 2>&1 <<<"${1:-}" || exit 0
+  local fields
+  # ⚠️ THE VALIDATION AND THE EXTRACTION ARE ONE CALL, DELIBERATELY (#4416).
+  # The liveness record needs the event, the tool and the session id; forking a
+  # second jq for them would put a fork on every hook of every tool call. Asking
+  # for the fields IS the validity check — malformed input and a JSON scalar
+  # both fail here.
+  #
+  # ⚠️ A SCALAR USED TO GET FURTHER THAN THIS, AND WORSE. `jq .` accepts
+  # `"hello"`, so the old form let the script continue to `.cwd`, which errors
+  # with exit 5 — and under `set -e` that left the hook on a non-zero exit some
+  # hosts read as a BLOCK. Now it is a recorded no-op.
+  fields=$(jq -r '[.hook_event_name // "", .tool_name // "", .session_id // ""] | @tsv' <<<"${1:-}" 2>/dev/null) || {
+    JUSCRIBE_SOP_OUTCOME=bad-json
+    juscribe_sop_record
+    exit 0
+  }
+  IFS=$'\t' read -r JUSCRIBE_SOP_EVENT JUSCRIBE_SOP_TOOL JUSCRIBE_SOP_SESSION <<<"$fields" || true
+  # ⚠️ THE TRAP IS WHAT MAKES AN EARLY `exit 0` VISIBLE. Every silencer below
+  # this line leaves through one, and without the trap each of them is silence.
+  trap juscribe_sop_record EXIT
 }
 
 # Exit the hook unless it is running inside a Juscribe-wired project — a git
@@ -58,13 +132,55 @@ juscribe_sop_require_valid_json() {
 # `JUS_HOOKS_EVERYWHERE=1` restores the old machine-wide behaviour for anyone
 # who installed the bundle for the SOP and never ran `jus init`.
 #
+# ── the `$PWD` fallback STAYS, and #4428 is where that was decided ───────────
+#
+# The open question was whether `[[ -d "$dir" ]] || dir="$PWD"` should go. It is
+# what hid #4261: the Cursor shim handed over an empty cwd for weeks and the
+# adapter looked healthy, because Cursor happens to spawn hooks with the
+# workspace root as their working directory. A fallback that rescues a broken
+# shim is exactly a fallback that makes a broken shim undetectable.
+#
+# It stays, for three reasons and one replacement:
+#
+#   1. ⚠️ ON WINDSURF IT IS THE MECHANISM, NOT A RESCUE. Cascade documents
+#      `working_directory` as defaulting to the workspace root and sends no cwd
+#      at all on `post_cascade_response`. Remove the fallback and the dirty-tree
+#      gate finds no repository and stays silent — which looks exactly like a
+#      clean tree.
+#   2. ⚠️ REMOVING IT WOULD NOT MAKE ANYTHING LOUD. An empty cwd fails the
+#      `-d` test either way and this function exits 0 either way; the only
+#      change is which directory it exits 0 about. The failure mode is silence
+#      before and after, so the trade buys no diagnosis.
+#   3. On Antigravity it is actively wrong — the hook's cwd is the directory
+#      holding hooks.json — but #4262 already answered that in the right layer:
+#      that shim derives a cwd from the tool arguments and remembers it, so it
+#      never reaches this line.
+#
+# ⚠️ THE REPLACEMENT IS WHAT MAKES THAT SAFE, so do not read the decision
+# without it. Detectability moved into `../../tests.sh`: every test in the
+# empty-string class runs from a directory that is NOT a Juscribe project and
+# with `JUS_HOOKS_EVERYWHERE` unset, which is the only arrangement in which a
+# shim handing over an empty cwd shows up as a failure rather than as nothing.
+# A shim bug is now caught by the suite instead of by a live session, which is
+# what the fallback was being asked to do and was never able to.
+#
 # Argument: $1 = the payload's cwd (may be empty; falls back to $PWD).
 juscribe_sop_require_jus_project() {
   [[ "${JUS_HOOKS_EVERYWHERE:-}" == "1" ]] && return 0
   local dir="${1:-}" toplevel
-  [[ -d "$dir" ]] || dir="$PWD"
+  # ⚠️ RECORDED EVEN WHEN THE FALLBACK RESCUES IT (#4416). A payload with no
+  # usable cwd is the #4261 shape — the Cursor shim sent `""` and every guard
+  # lost its repository — and it stayed invisible for weeks precisely because
+  # `$PWD` happened to be right. `cwd=no-cwd` on a line that otherwise reads
+  # healthy is that bug announcing itself.
+  if [[ ! -d "$dir" ]]; then
+    JUSCRIBE_SOP_CWD_SOURCE=no-cwd
+    dir="$PWD"
+  fi
   toplevel=$(juscribe_sop_repo_toplevel "$dir")
-  [[ -n "$toplevel" && -d "${toplevel}/.jus" ]] || exit 0
+  [[ -n "$toplevel" && -d "${toplevel}/.jus" ]] && return 0
+  JUSCRIBE_SOP_OUTCOME=not-a-jus-project
+  exit 0
 }
 
 # Resolve the per-session state directory.

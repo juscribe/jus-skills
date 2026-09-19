@@ -45,12 +45,21 @@ input=$(cat)
 jq . >/dev/null 2>&1 <<<"$input" || exit 0
 
 normalized=$(jq --arg pwd "$PWD" '
+  # ⚠️ `//` IS NOT A FALLBACK OPERATOR FOR STRINGS. It falls back on `null` and
+  # `false` only, so an empty string WINS a chain and a better later source is
+  # never reached (#4261, audited across all seven shims on #4428). The cwd
+  # chain below is three deep and an empty `tool_info.cwd` would take out both
+  # of the others, `$PWD` included — which is the one Cascade documents.
+  # ⚠️ UNVERIFIED HERE: Windsurf is not installed on the machine this was
+  # written on, so whether Cascade ever sends an empty string is unmeasured.
+  # The shim is hardened either way, because the symptom is silence.
+  def pick: map(select(. != null and . != false and . != "")) | first // "";
   . as $in
   | (.agent_action_name // "") as $event
   | (.tool_info // {}) as $t
   | {
       session_id: ($in.trajectory_id // ""),
-      cwd: ($t.cwd // $t.root_workspace_path // $pwd),
+      cwd: ([$t.cwd, $t.root_workspace_path, $pwd] | pick),
       transcript_path: ($t.transcript_path // ""),
       prompt: ($t.user_prompt // ""),
       stop_hook_active: false,

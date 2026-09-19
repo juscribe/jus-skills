@@ -208,6 +208,13 @@ must succeed and move the remote tip. Without it, "the command did not run" is
 equally explained by the model declining, a bad stub response, or a typo in the
 manifest path.
 
+⚠️ **The two camelCase/snake_case chains read as the empty-string defect and are
+UNREACHABLE** — the passthrough branch returns early on `has("session_id")`, so
+the second candidate is provably absent by the time the normalizer runs. They go
+through the shared helper regardless, in case that branch is ever narrowed.
+Copilot is also not installed here, so nothing about its payload is measured.
+The class and the audit: [`../README.md`](../README.md) (#4428).
+
 ## Event mapping
 
 | Shared hook                           | Claude event       | Copilot event         |

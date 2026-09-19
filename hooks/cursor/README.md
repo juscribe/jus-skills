@@ -298,11 +298,27 @@ Cursor.** No Claude event maps to `beforeShellExecution`, so a repo relying on
 `.claude/settings.json` alone has **no command blockers under Cursor at all** —
 it just looks like it does, because the hooks are configured and running.
 
+✅ **`jus doctor` reports this, so it is no longer only written down** (#4430).
+Documentation was the wrong instrument: the person at risk is precisely the one
+who believes they are already set up and therefore does not read this section.
+The check fires on three terms together — jus hooks in a Claude settings file,
+evidence that Cursor is in use, and no `.cursor/hooks.json` — and the
+session-start `agent_state` call prints the same line.
+
+⚠️ **The third term is what keeps it honest.** Without it the check nags every
+correctly-configured Claude Code project, which is exactly what jus hooks in
+`.claude/settings.json` and no `.cursor/hooks.json` looks like. Evidence means
+the recorded tool is Cursor, or the project carries a `.cursor/` directory.
+
 **So: install this manifest either way.** The duplicate registration is thirteen
 no-op spawns per event, and it is the only thing that gives Cursor the five
 command blockers. If you want the spawns gone, the Claude hooks would have to
 leave `.claude/settings.json` — and `.claude/settings.local.json` is read by
 Cursor too, so there is no Claude-only location to move them to.
+
+⚠️ **`cwd` arrives as `""` on every event that has it, and jq's `//` keeps it** —
+the trap, the audit of all seven shims and the two conditions a test in this
+class needs are in [`../README.md`](../README.md) (#4261, #4428).
 
 ## Live-verified
 

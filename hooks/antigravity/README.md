@@ -1,8 +1,26 @@
 # jus enforcement hooks — Google Antigravity adapter
 
 Runs all twelve shared hook scripts (`../scripts/`) under Antigravity's hooks
-system (#4262). Antigravity replaced the Gemini CLI, which was sunset on
-2026-06-18.
+system (#4262).
+
+> ## ⚠️ THIS FILE SAID GEMINI CLI WAS SUNSET. IT IS NOT (#4419)
+>
+> The claim was that Antigravity replaced Gemini CLI, retired 2026-06-18, and
+> this adapter was built on it. Measured **2026-09-19** against the npm
+> registry: `@google/gemini-cli` is on `latest` **0.60.0**, cut a **nightly
+> 0.62.0-nightly.20260919 that morning**, has a `0.61.0-preview.0` in flight,
+> and is Apache-2.0. A project sunset in June does not cut a nightly in
+> September.
+>
+> **Nothing about this adapter changes.** Antigravity is a separate product with
+> its own hook contract, and everything below still holds. What changed is that
+> it is no longer Gemini CLI's successor here: Gemini CLI has its own adapter at
+> `../gemini/`, and `jus init`'s "Gemini" now means that.
+>
+> ⚠️ **The manifests are not interchangeable, and that is the practical cost of
+> the old claim.** This one registers `PreToolUse`, `PostToolUse`, `Stop` and
+> `PreInvocation`; **Gemini CLI fires none of those names**, so it would have
+> registered nothing at all.
 
 > ## ⚠️ THE DOCUMENTATION IS INSIDE THE BINARY, NOT ON THE WEB
 >
@@ -192,6 +210,11 @@ ancestor.
 
 The remembered cwd lives in `${JUS_ANTIGRAVITY_STATE:-$TMPDIR/jus/antigravity}`,
 keyed by conversation, written by the tool events.
+
+⚠️ **The cwd chain here also had the empty-string defect**, where an empty
+`workspacePaths` entry beat the remembered directory this shim exists to keep.
+Fixed on #4428; the class and the seven-shim audit are in
+[`../README.md`](../README.md).
 
 ## Payload mapping
 
