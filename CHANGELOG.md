@@ -22,6 +22,15 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.31] — 2026-09-18
+
+### Changed
+
+- Stop the CLI reporting an unreachable server as a dead token (#4520)
+- Fail the hooks suite on an undefined assertion helper (#4462)
+- A runner prefix was a one-word bypass of every git guard (#4446)
+- Match the class of hook bypass, not one spelling of it (#4446)
+
 ## [1.4.30] — 2026-09-18
 
 ### Changed

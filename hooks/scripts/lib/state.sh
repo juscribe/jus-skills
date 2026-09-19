@@ -433,11 +433,30 @@ juscribe_sop_command_segments() {
 # Does a segment invoke git — optionally a specific subcommand ($2, a word or
 # ERE)? Tolerates leading whitespace, VAR=val env prefixes, and git global
 # options between `git` and the subcommand (-C <path>, -c <k>=<v>, --long[=v]).
+# ⚠️ A RUNNER PREFIX DEFEATED EVERY CALLER UNTIL #4446, and it is one word.
+# `env git commit --no-verify` and `sudo git push --force` were both allowed:
+# the pattern anchored `git` at the head of the segment, so anything in front of
+# it meant no match at all — not a weaker match, no match. Measured against the
+# pre-#4446 guards, both returned exit 0.
+#
+# The runner list is `juscribe_sop_command_invokes`'s, deliberately identical.
+# A second list that has to be kept in step with the first is the drift this
+# file keeps warning about, and there is no reason for git to recognise fewer
+# runners than anything else.
+#
+# ⚠️ `command -v git` STILL DOES NOT MATCH, which is why `command` is safe to
+# include here though `command_invokes` excludes it: that probe has no
+# subcommand after `git`, and this pattern requires one. A probe for whether git
+# exists must not read as a git invocation.
+#
+# Widening only ever makes a caller match MORE, and every caller is a guard —
+# so the direction is toward blocking, never toward allowing.
 juscribe_sop_segment_invokes_git() {
   local seg="$1" sub="${2:-[A-Za-z-]+}"
   local assigns='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+  local runner='((xargs|env|time|nice|sudo|command)([[:space:]]+-[^[:space:]]+)*[[:space:]]+)*'
   local gitopts='([[:space:]]+(-[Cc][[:space:]]*[^[:space:]]+|--[A-Za-z][A-Za-z-]*(=[^[:space:]]*)?))*'
-  local re='^[[:space:]]*'"$assigns"'git'"$gitopts"'[[:space:]]+'"$sub"'([[:space:]]|$)'
+  local re='^[[:space:]]*'"$runner$assigns$runner"'git'"$gitopts"'[[:space:]]+'"$sub"'([[:space:]]|$)'
   [[ "$seg" =~ $re ]]
 }
 

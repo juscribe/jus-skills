@@ -41,7 +41,38 @@ export JUS_HOOKS_EVERYWHERE
 # Isolated state directory so tests don't pollute real plugin data.
 CLAUDE_PLUGIN_DATA=$(mktemp -d)
 export CLAUDE_PLUGIN_DATA
-trap 'rm -rf "$CLAUDE_PLUGIN_DATA"' EXIT
+
+# ---- the undefined-helper guard (#4462) ------------------------------------
+#
+# ⚠️ THIS HARNESS RUNS UNDER `set -uo pipefail` WITH NO `-e`, DELIBERATELY:
+# an assertion is expected to fail without aborting the run. The cost is that a
+# call to a helper that does not EXIST is just a `command not found` on stderr,
+# exit 127, walked straight past — TESTS_RUN never increments, FAILURES never
+# grows, the summary stays green. #4431 found fifteen such calls that had
+# asserted nothing for eight days, across three sections.
+#
+# So stderr is captured for the whole run and scanned by `print_summary`. The
+# per-assertion ✓/✗ lines are stdout and keep streaming live; the captured
+# stderr is replayed by the EXIT trap, so it survives an early abort too.
+#
+# ⚠️ NOT `command_not_found_handle`, which is the obvious mechanism and the
+# wrong one here: it is bash 4.0+, and the Mac whose lefthook entry runs this
+# suite is bash 3.2.57 (`.jus/docs/shell-portability.md`). That handler would
+# never be called on the one machine carrying a commit gate — a guard silently
+# inert on exactly what it guards, which is this ticket's own bug in a new hat.
+STDERR_LOG=$(mktemp)
+exec 3>&2
+exec 2>"$STDERR_LOG"
+
+harness_cleanup() {
+  exec 2>&3
+  if [[ -s "$STDERR_LOG" ]]; then
+    printf '\n\033[2m--- stderr captured during this run ---\033[0m\n' >&2
+    cat "$STDERR_LOG" >&2
+  fi
+  rm -rf "$CLAUDE_PLUGIN_DATA" "$STDERR_LOG"
+}
+trap harness_cleanup EXIT
 
 # ---- helpers ---------------------------------------------------------------
 
@@ -211,6 +242,62 @@ section() {
   printf '\n\033[1m%s\033[0m\n' "$1"
 }
 
+# undefined_commands <stderr_log>
+#
+# One line per distinct command bash could not find, as "<count> <name>"; empty
+# output means clean. This is what turns #4431's silent 127 into something the
+# summary can count and name.
+#
+# ⚠️ ENUMERATED, NOT ASSUMED — which is why there is no allowlist here.
+# Measured: a full run of this suite writes ZERO bytes to its own stderr,
+# because every test captures its subject's output with `2>&1` into a variable.
+# And every deliberate probe for an absent binary goes through `command -v`
+# (jq in the pickup/nojus/index stubs, shellcheck in the sh-lint section, and
+# the jq-sandbox loop) — a builtin that reports absence as an exit status and
+# prints nothing at all. The guard section at the bottom holds both halves of
+# that claim as tests, so a future probe that DOES write there turns this red
+# rather than quietly widening what the scanner ignores.
+undefined_commands() { # <stderr_log>
+  sed -n 's/.*: \([^:]*\): command not found$/\1/p' "$1" | sort | uniq -c
+}
+
+# print_summary
+#
+# The end of the run: fold any undefined commands into the tally, print the
+# counts, list the failures, exit. A function rather than the file's tail so the
+# hatch below can reach the REAL summary without running every test first.
+print_summary() {
+  local count name f
+  while read -r count name; do
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+    FAILURES+=("undefined command: $name (called $count time(s), defined nowhere)")
+    printf '  \033[31m✗\033[0m undefined command: %s (called %s time(s), defined nowhere)\n' \
+      "$name" "$count"
+  done < <(undefined_commands "$STDERR_LOG")
+
+  printf '\n%d tests run, %d failed.\n' "$TESTS_RUN" "$TESTS_FAILED"
+  if (( TESTS_FAILED > 0 )); then
+    printf '\nFailures:\n'
+    for f in "${FAILURES[@]}"; do
+      printf '  - %s\n' "$f"
+    done
+    exit 1
+  fi
+  exit 0
+}
+
+# ⚠️ THE SELF-CHECK HATCH. Set JUS_TESTS_SELFCHECK to the name of a command
+# that does not exist and this file calls it, then goes straight to the real
+# summary — which is how the suite proves, end to end and through this very
+# file, that an undefined helper turns the run red and gets named. Its only
+# caller is the "undefined-helper guard" section at the bottom. It exits before
+# a single test runs, so that child costs one bash startup rather than a second
+# full suite.
+if [[ -n "${JUS_TESTS_SELFCHECK:-}" ]]; then
+  "$JUS_TESTS_SELFCHECK"
+  print_summary
+fi
+
 # ---- jus-block-accepted-manifest-edit.sh ---------------------------------------
 
 section "jus-block-accepted-manifest-edit.sh"
@@ -263,6 +350,13 @@ assert_exit 0 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
 # ---- jus-block-force-push.sh ---------------------------------------------------
 
 section "jus-block-force-push.sh"
+
+# #4446 — the shared git matcher anchored `git` at the head of the segment, so a
+# runner prefix meant no match at all. This guard never blocked
+# `sudo git push --force`; it does now, via the same one-line fix.
+t "blocks a runner-prefixed force push (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-force-push.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"sudo git push --force"}}'
 
 t "allows plain git push"
 assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
@@ -388,6 +482,159 @@ t "still blocks chained commit --no-verify"
 assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
   '{"tool_name":"Bash","tool_input":{"command":"git add . && git commit -m x --no-verify"}}' \
   "no-verify"
+
+# #4446 — the guard knew ONE spelling. Every hook runner the bundle plausibly
+# meets has an environment variable that skips the same checks, and git's own
+# short form `-n` needs no runner at all.
+#
+# ⚠️ THE SHORT FORM IS THE SHARPEST ONE. It is git's documented spelling of
+# `--no-verify`, and the refusal text named only the long form — so a reader had
+# no reason to think they differed.
+
+t "blocks git commit -n (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git commit -n -m foo"}}' \
+  'BLOCKED: `-n` skips'
+
+t "blocks git commit -n bundled with other short flags (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git commit -nm foo"}}' \
+  'BLOCKED: `-nm` skips'
+
+# ⚠️ `-n` MEANS SOMETHING ELSE ON EVERY OTHER SUBCOMMAND, which is why it is
+# matched on `commit` alone: --dry-run on push and clean, --no-stat on merge,
+# and a commit count on log. Blocking those would be a guard people disable.
+
+t "allows git push -n, which is --dry-run (#4446)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git push -n origin main"}}'
+
+t "allows git clean -n, which is --dry-run (#4446)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git clean -n -d"}}'
+
+t "allows git log -n 5, which is a count (#4446)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git log -n 5 --oneline"}}'
+
+# The runner variables. Each is the documented skip switch of a hook runner the
+# bundle can meet, read from that runner's own docs rather than from a list.
+
+t "blocks HUSKY=0 on a commit (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"HUSKY=0 git commit -m foo"}}' \
+  'BLOCKED: `HUSKY=0` skips'
+
+t "blocks LEFTHOOK=0 on a commit (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"LEFTHOOK=0 git commit -m foo"}}' \
+  'BLOCKED: `LEFTHOOK=0` skips'
+
+# The shape dispatch 680 actually used, on #4283 — the measurement that filed
+# this ticket. It was refused by the pre-commit gate for an unrelated reason;
+# this hook said nothing.
+t "blocks LEFTHOOK_EXCLUDE on a commit (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"LEFTHOOK_EXCLUDE=rubocop,reek git commit -F /tmp/msg.txt"}}' \
+  'BLOCKED: `LEFTHOOK_EXCLUDE=rubocop,reek` skips'
+
+t "blocks SKIP on a commit (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"SKIP=flake8 git commit -m foo"}}' \
+  'BLOCKED: `SKIP=flake8` skips'
+
+t "blocks PRE_COMMIT_ALLOW_NO_CONFIG on a commit (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"PRE_COMMIT_ALLOW_NO_CONFIG=1 git commit -m foo"}}' \
+  'BLOCKED: `PRE_COMMIT_ALLOW_NO_CONFIG=1` skips'
+
+t "blocks a runner variable on a push (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"LEFTHOOK=0 git push"}}' \
+  'BLOCKED: `LEFTHOOK=0` skips'
+
+# ⚠️ THE FALSE POSITIVES ARE THE REASON THE VARIABLES ARE NAMED RATHER THAN
+# PATTERN-MATCHED. "Any VAR=value prefix on a git command" would refuse both of
+# these, and a guard that refuses ordinary work is one people turn off.
+
+t "allows CI=true on a commit (#4446)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"CI=true git commit -m foo"}}'
+
+t "allows GIT_AUTHOR_DATE on a commit (#4446)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"GIT_AUTHOR_DATE=2026-01-01T00:00:00Z git commit -m foo"}}'
+
+t "allows a non-disabling HUSKY value, which is debug mode (#4446)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"HUSKY=2 git commit -m foo"}}'
+
+# ⚠️ A RUNNER VARIABLE OUTSIDE A GIT SEGMENT IS NOT A BYPASS. Running the hook
+# runner itself, or exporting the variable for a non-git command, is ordinary.
+t "allows SKIP on something that is not git (#4446)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"SKIP=flake8 pre-commit run --all-files"}}'
+
+# The refusal has to say WHICH bypass it saw, or the reader checks their command
+# for a `--no-verify` they never typed.
+#
+# ⚠️ ASSERTED ON THE HEADLINE, NOT THE TOKEN, and the difference is the whole
+# test. The refusal BODY lists every bypass by name so the reader learns the
+# class — so `"HUSKY=0"` appears in the output even when the headline says
+# `--no-verify`. Mutation-checked: hardcoding the old headline SURVIVED the
+# first version of this test, which asserted the bare token.
+t "names the bypass it saw rather than always saying --no-verify (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"HUSKY=0 git commit -m foo"}}' \
+  'BLOCKED: `HUSKY=0` skips'
+
+# ⚠️ WIDENING THE MATCHER MADE HEREDOC STRIPPING NECESSARY (#4446, #3921 is the
+# precedent). The splitter turns every newline into a separator, so a heredoc
+# body line beginning `LEFTHOOK_EXCLUDE=… git commit` is a segment anchored at
+# column 0 — and the SOP mandates writing board prose through `<<'EOF'`, so a
+# comment DESCRIBING a bypass is the normal shape. #4446's own description
+# contains that exact line; without stripping, filing this ticket would have
+# been refused by the guard it was filing against.
+t "allows a heredoc body that quotes a runner bypass (#4446)"
+cmd=$'jus api POST /workspaces/1/tickets/4446/comments <<\'EOF\'\nLEFTHOOK_EXCLUDE=rubocop,reek git commit -F /tmp/msg.txt\nEOF'
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  "$(jq -nc --arg c "$cmd" '{tool_name:"Bash",tool_input:{command:$c}}')"
+
+# ⚠️ MATCHING A BARE `-n` IS ONLY SAFE BECAUSE QUOTED STRINGS ARE REMOVED by the
+# splitter before this hook sees the segment. If that ever changes, this is the
+# test that says so rather than a commit message being refused in the field.
+t "allows a commit message containing -n (#4446)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git commit -m \"fix the -n flag handling\""}}'
+
+# ⚠️ A RUNNER PREFIX WAS A ONE-WORD BYPASS OF EVERY GUARD (#4446). The git
+# matcher anchored `git` at the head of the segment, so `env` or `sudo` in front
+# meant NO match rather than a weaker one. Measured against the pre-#4446
+# scripts: `env git commit --no-verify` and `sudo git push --no-verify` both
+# returned exit 0. The fix is in `juscribe_sop_segment_invokes_git`, so the
+# force-push guard gains it too — see its own section below.
+
+t "blocks env-prefixed --no-verify (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"env git commit --no-verify"}}' \
+  'BLOCKED: `--no-verify` skips'
+
+t "blocks sudo-prefixed --no-verify (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"sudo git push --no-verify"}}' \
+  'BLOCKED: `--no-verify` skips'
+
+t "blocks a runner variable behind env (#4446)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"env HUSKY=0 git commit -m x"}}' \
+  'BLOCKED: `HUSKY=0` skips'
+
+# ⚠️ `command -v git` MUST NOT READ AS A GIT INVOCATION. It is how a script asks
+# whether git is installed, and counting it would have the guards firing on a
+# probe. It is safe because the pattern requires a subcommand after `git`.
+t "allows command -v git, which is a probe (#4446)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"command -v git"}}'
 
 # ---- jus-block-lint-suppression.sh --------------------------------------------
 
@@ -3624,14 +3871,56 @@ done
 rm -rf "$GUARD_BARE" "$GUARD_WIRED" "$GUARD_NEST" "$GUARD_NOGIT"
 export JUS_HOOKS_EVERYWHERE=1
 
+# ---- the undefined-helper guard -------------------------------------------
+
+section "the undefined-helper guard"
+
+# #4462. Everything else in this file asserts on a hook. This section asserts on
+# the harness: that a call to a helper which does not exist can no longer pass
+# for 342 green tests, which is what it did for eight days until #4431.
+
+t "an undefined helper turns the run red, and names it"
+TESTS_RUN=$((TESTS_RUN + 1))
+UG_EC=0
+UG_OUT=$(JUS_TESTS_SELFCHECK=assert_helper_that_does_not_exist \
+  bash "$HOOKS_DIR/tests.sh" 2>&1) || UG_EC=$?
+if [[ $UG_EC -eq 1 && "$UG_OUT" == *"undefined command: assert_helper_that_does_not_exist"* ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (exit=%s, out=%s)\n' "$TEST_NAME" "$UG_EC" "${UG_OUT:0:240}"
+fi
+
+UG_LOG=$(mktemp)
+printf '%s\n' \
+  "$HOOKS_DIR/tests.sh: line 700: assert_stdout: command not found" \
+  "$HOOKS_DIR/tests.sh: line 712: assert_stdout: command not found" \
+  "$HOOKS_DIR/tests.sh: line 980: assert_stdout_lacks: command not found" > "$UG_LOG"
+
+# Both names, because #4431's two helpers were called 15 times between them: a
+# scanner that reported only the first would have hidden half of it.
+t "the scanner counts the repeat calls to one missing helper"
+assert_stdout "$TEST_NAME" "2 assert_stdout" "$(undefined_commands "$UG_LOG")"
+
+t "the scanner names a second missing helper separately"
+assert_stdout "$TEST_NAME" "1 assert_stdout_lacks" "$(undefined_commands "$UG_LOG")"
+
+t "unrelated stderr is not read as a missing command"
+printf '%s\n' "warning: something happened" "npm WARN deprecated foo" > "$UG_LOG"
+assert_stdout "$TEST_NAME" "" "$(undefined_commands "$UG_LOG")"
+
+rm -f "$UG_LOG"
+
+# ⚠️ THE FALSE-POSITIVE SURFACE, ENUMERATED. This suite deliberately asks
+# whether binaries are present — jq, shellcheck, and the loop that builds the
+# jq-less sandbox PATH — and every one of those asks with `command -v`. It is a
+# BUILTIN: absence is an exit status, and it prints nothing, so no probe in this
+# file can reach the scanner. That is the whole reason the guard needs no
+# allowlist, and this is it stated as a test rather than as a comment.
+t "a command -v probe for an absent binary writes nothing to stderr"
+UG_PROBE=$(command -v jus_no_such_binary_4462 2>&1 >/dev/null)
+assert_stdout "$TEST_NAME" "" "$UG_PROBE"
+
 # ---- summary --------------------------------------------------------------
 
-printf '\n%d tests run, %d failed.\n' "$TESTS_RUN" "$TESTS_FAILED"
-if (( TESTS_FAILED > 0 )); then
-  printf '\nFailures:\n'
-  for f in "${FAILURES[@]}"; do
-    printf '  - %s\n' "$f"
-  done
-  exit 1
-fi
-exit 0
+print_summary
