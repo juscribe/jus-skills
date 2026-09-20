@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.33] — 2026-09-19
+
+### Changed
+
+- Guard the adapter count the same prose keeps getting wrong (#4603)
+- Name every hook adapter the bundle ships in hard-rules (#4603)
+
 ## [1.4.32] — 2026-09-19
 
 ### Changed
