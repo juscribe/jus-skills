@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.35] — 2026-09-21
+
+### Changed
+
+- Let jus api omit the workspace prefix (#4729)
+- The Cursor editor is verified, and a Tab edit now reaches the edit hooks (#4429)
+
 ## [1.4.34] — 2026-09-20
 
 ### Changed

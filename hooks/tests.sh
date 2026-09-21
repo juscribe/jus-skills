@@ -2359,6 +2359,40 @@ else
   printf '  \033[31m\xe2\x9c\x97\033[0m %s (got %s)\n' "$TEST_NAME" "${cursor_edit:0:160}"
 fi
 
+# ⚠️ A TAB COMPLETION IS A SECOND EDIT EVENT, AND ONLY THE EDITOR HAS IT (#4429).
+# Measured in Cursor 3.21.16 on 2026-09-20: an agent edit fires `afterFileEdit`
+# and an accepted Tab completion fires `afterTabFileEdit` — never both, never
+# the other one. So a manifest registering only the first is blind to every
+# edit a Tab user makes, with nothing failing. The payload below is the one
+# captured that day: the same `{file_path, edits[]}` shape, `model: "tab"`, a
+# null `transcript_path`, and NO `cwd` FIELD AT ALL — not even the empty string
+# the shell events send, so `workspace_roots` is the only workspace there is.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="cursor: afterTabFileEdit becomes MultiEdit and takes its cwd from workspace_roots"
+cursor_tab=$(printf '%s' "{\"conversation_id\":\"cv1\",\"hook_event_name\":\"afterTabFileEdit\",\"model\":\"tab\",\"workspace_roots\":[\"/tmp\"],\"transcript_path\":null,\"file_path\":\"app/a.ts\",\"edits\":[{\"old_string\":\"\",\"new_string\":\"return x + 4\",\"range\":{\"start_line_number\":14}}]}" \
+  | "$CURSOR_ADAPT" /bin/cat 2>/dev/null)
+if jq -e '.tool_name == "MultiEdit" and .tool_input.file_path == "app/a.ts" and (.tool_input.edits | length == 1) and .cwd == "/tmp"' \
+  >/dev/null 2>&1 <<<"$cursor_tab"; then
+  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (got %s)\n' "$TEST_NAME" "${cursor_tab:0:160}"
+fi
+
+# Normalising the shape is half of it: the event also has to be REGISTERED, and
+# for the same scripts, or a Tab edit normalises perfectly and reaches nobody.
+TESTS_RUN=$((TESTS_RUN + 1))
+TEST_NAME="cursor: afterTabFileEdit registers the same scripts as afterFileEdit"
+cursor_edit_scripts=$(jq -r '.hooks.afterFileEdit[].command' "$CURSOR_DIR/hooks.json" | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-cursor-adapt.sh' | sort)
+cursor_tab_scripts=$(jq -r '.hooks.afterTabFileEdit[].command' "$CURSOR_DIR/hooks.json" | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-cursor-adapt.sh' | sort)
+if [[ -n "$cursor_tab_scripts" && "$cursor_tab_scripts" == "$cursor_edit_scripts" ]]; then
+  printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s\n' "$TEST_NAME"
+  comm -13 <(printf '%s\n' "$cursor_tab_scripts") <(printf '%s\n' "$cursor_edit_scripts") | sed 's/^/      missing on afterTabFileEdit: /'
+fi
+
 # ⚠️ CURSOR'S OWN TRANSPORT, WHICH IS WHAT SETTLES THE `~` QUESTION (#4261).
 # The tests above pipe a payload straight into the shim, so they prove the
 # NORMALISATION and nothing about whether Cursor can reach these scripts at all.

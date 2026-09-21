@@ -16,6 +16,7 @@
 #   beforeShellExecution   command, cwd, sandbox      tool_name "Bash"
 #   afterShellExecution    command, output, duration  tool_name "Bash" + response
 #   afterFileEdit          file_path, edits[]         tool_name "MultiEdit"
+#   afterTabFileEdit       file_path, edits[], no cwd  tool_name "MultiEdit"
 #   beforeSubmitPrompt     prompt, attachments        prompt (unchanged)
 #   stop                   status, loop_count         cwd + stop_hook_active
 #
@@ -29,6 +30,16 @@
 # before-file-edit event at all — `afterFileEdit` fires once the write has
 # happened.
 #
+# ⚠️ A TAB COMPLETION IS ITS OWN EVENT, AND IT IS THE EDITOR'S ONLY EDIT PATH
+# FOR SOME PEOPLE (#4429). `afterTabFileEdit` carries the same `{file_path,
+# edits[]}` shape as `afterFileEdit`, so it shares that branch — but it exists
+# only in the Cursor EDITOR, has no `cwd` field at all (not even the empty
+# string), and sends `model: "tab"` with a null `transcript_path`. Measured in
+# Cursor 3.21.16, 2026-09-20: an agent edit fires `afterFileEdit` and a Tab
+# completion fires `afterTabFileEdit`, never the other way round, so a manifest
+# registering only the first sees no Tab edit at all and `jus-track-edits.sh`
+# and `jus-start-comment-nudge.sh` are blind to a whole way of working.
+
 # ⚠️ `stop` CARRIES NEITHER `cwd` NOR `stop_hook_active`, AND BOTH MATTER.
 # The workspace comes from the common `workspace_roots` array; the loop guard
 # comes from `loop_count`, which Cursor increments each time the stop hook has
@@ -85,7 +96,7 @@ normalized=$(jq '
     }
   | if $event == "beforeShellExecution" or $event == "afterShellExecution" then
       .tool_name = "Bash" | .tool_input = { command: ($in.command // "") }
-    elif $event == "afterFileEdit" then
+    elif $event == "afterFileEdit" or $event == "afterTabFileEdit" then
       .tool_name = "MultiEdit"
       | .tool_input = { file_path: ($in.file_path // ""), edits: ($in.edits // []) }
     else

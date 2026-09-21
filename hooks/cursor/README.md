@@ -3,22 +3,27 @@
 Runs all thirteen shared hook scripts (`../scripts/`) under Cursor's native
 hooks system (#4261).
 
-> ## ✅ LIVE-VERIFIED against cursor-agent 2026.09.15-d2fe57e, 2026-09-17
+> ## ✅ LIVE-VERIFIED ON BOTH HOSTS — the CLI and the editor
 >
-> A model-issued `git push --force origin main` was **blocked by
-> `beforeShellExecution`** — the agent quoted this bundle's own refusal text back
-> — and the remote tip did not move. The control arm, same repository and the
-> same prompt with the manifest removed, force-pushed and moved the tip
-> `a4f9dbb → c7835b5`.
+> | Host               | Build              | Date       | Overwrite attempt                              |
+> | ------------------ | ------------------ | ---------- | ---------------------------------------------- |
+> | `cursor-agent` CLI | 2026.09.15-d2fe57e | 2026-09-17 | blocked; control arm moved `a4f9dbb → c7835b5` |
+> | Cursor editor      | 3.21.16            | 2026-09-20 | blocked; control arm moved `b515bc3 → ec2bdf8` |
 >
-> ⚠️ **The first control arm proved nothing, and that is worth knowing before
-> you repeat this.** Asked plainly, the model declined on its own —
-> indistinguishable from a hook refusing. Both arms were re-run with one prompt
-> that explicitly confirms the intent, and only then did the two diverge.
+> On both hosts a model-issued `git push --force origin main` was **blocked by
+> `beforeShellExecution`**, the agent quoted this bundle's own refusal text back,
+> and the remote tip did not move. Each has a control arm — the same repository
+> and the same prompt with the guards removed — that pushed and moved the tip.
 >
-> ⚠️ **Two of the thirteen hooks do not run in a headless `cursor-agent -p`
-> session at all** — see degradation 4. This box is about the command blockers,
-> which run everywhere.
+> ⚠️ **An unmoved tip is a result only if the tip COULD have moved, and that
+> has failed twice, differently.** On the CLI the model declined the overwrite on
+> its own (#4261). In the editor a previous arm's overwrite had already landed,
+> so the remote matched local and nothing could have moved it (#4429). Both look
+> exactly like a working hook.
+>
+> ⚠️ **The two hosts differ in one direction only:** a headless `cursor-agent -p`
+> run fires neither `stop` nor `beforeSubmitPrompt`; the editor fires both, and
+> has a second edit event the CLI cannot produce. See degradations 4 and 5.
 >
 > Method, event-by-event firing table and the payload shapes: _Live-verified_ below.
 
@@ -86,6 +91,12 @@ Measured 2026-09-17 in a git repository cursor-agent had never opened: the run
 proceeded, and a hook registered in `.cursor/hooks.json` fired on the first shell
 command. `--trust` exists and is harmless; this adapter does not depend on it.
 
+✅ **The Cursor EDITOR has no workspace-trust gate either.** Measured 2026-09-20
+on 3.21.16: a folder Cursor had never opened produced no trust dialog, hooks
+fired on the first turn of that session, and Cursor's own state holds no
+trusted-folder record at all — the only `trust` key in it names extension
+publishers. So neither host puts an approval in front of the hooks.
+
 ⚠️ **A hooks config whose path passes through a symlink loads NOTHING, and
 says nothing.** Same directory, same manifest, `.cursor/hooks.json` replaced by a
 symlink to an identical file: hooks fired **1** time before and **0** after. So
@@ -122,6 +133,7 @@ What does need a shim is that Cursor splits shells, edits and prompts into their
 | `beforeShellExecution`       | `command`, `cwd`, `sandbox`     | `tool_name: "Bash"`        |
 | `afterShellExecution`        | `command`, `output`, `duration` | `Bash` + `tool_response`   |
 | `afterFileEdit`              | `file_path`, `edits[]`          | `tool_name: "MultiEdit"`   |
+| `afterTabFileEdit`           | same, and no `cwd` at all       | `tool_name: "MultiEdit"`   |
 | `beforeSubmitPrompt`         | `prompt`, `attachments`         | `prompt`, unchanged        |
 | `stop`                       | `status`, `loop_count`          | `cwd` + `stop_hook_active` |
 | `preToolUse` / `postToolUse` | `tool_name`, `tool_input`       | passthrough                |
@@ -131,7 +143,7 @@ What does need a shim is that Cursor splits shells, edits and prompts into their
 blockers never have to guess what Cursor calls its shell tool — the failure mode
 that forces shape-inference on Copilot (#4260) does not arise here.
 
-## The four degradations
+## The five degradations
 
 **1. ⚠️ `stop` CANNOT BLOCK, so the dirty-tree gate becomes advice.**
 
@@ -177,13 +189,18 @@ missing `cwd` means the hook never finds a repository and never fires; a missing
 loop guard means it fires forever.
 
 **4. ⚠️ A HEADLESS `cursor-agent -p` RUN FIRES NEITHER `stop` NOR
-`beforeSubmitPrompt`.**
+`beforeSubmitPrompt`. THE EDITOR FIRES BOTH.**
 
-Measured 2026-09-17 by registering a probe on all nineteen events Cursor defines
-and running the same task twice. In `-p` (print / non-interactive) mode the run
+Measured 2026-09-17 by registering a probe on all 21 events Cursor defines and
+running the same task twice. In `-p` (print / non-interactive) mode the run
 fires `sessionStart`, the tool events and `sessionEnd`, and neither
 `beforeSubmitPrompt` nor `stop`. Driven through a pty in the interactive TUI the
 same build fires both, as documented.
+
+✅ **The editor fires both as well** — two to three of each per arm, across
+three arms in Cursor 3.21.16 on 2026-09-20 (#4429). So this degradation belongs
+to the headless CLI rather than to Cursor, and the two hooks it kills are live
+for anyone working in the editor.
 
 So on a headless run `jus-stop-uncommitted.sh` and `jus-ticket-claim-nudge.sh`
 are **dead**, while the board of configured hooks looks full. The shim maps both
@@ -195,6 +212,32 @@ There, `stop` fires and cannot refuse, so the message at least prints. Here it
 does not fire, so nothing prints either. `sessionEnd` is the only event at the
 end of a headless turn; it is not registered, because it cannot block and would
 turn one silent gap into two places to look.
+
+⚠️ **The editor has the mirror gap: no `sessionStart`, `sessionEnd` or
+`workspaceOpen` fires there at all.** Zero of each across three arms, 96
+invocations and two window reloads (2026-09-20). Nothing in this bundle rides
+those events, so it costs nothing today — but a hook that needs a session
+boundary has one host where it never runs, and it is the other host.
+
+**5. ⚠️ A TAB COMPLETION IS A DIFFERENT EDIT EVENT, AND NOTHING CAN REFUSE IT.**
+
+Only the editor has one. An accepted Tab completion fires `afterTabFileEdit`
+carrying the same `{file_path, edits[]}` shape as `afterFileEdit` plus
+`model: "tab"` — and it fires **instead of** `afterFileEdit`, never as well. A
+manifest registering only `afterFileEdit` therefore sees no Tab edit at all, and
+`jus-track-edits.sh`, `jus-start-comment-nudge.sh` and `jus-docs-nudge.sh` go
+blind to a whole way of working with nothing failing anywhere.
+
+✅ **Since #4429 this manifest registers `afterTabFileEdit` for those same three
+hooks**, and the shim maps it through the `afterFileEdit` branch. What stays
+degraded is that a Tab edit **cannot be refused**: like `afterFileEdit` it fires
+after the write, and Cursor has no before-tab-edit event — degradation 2 with a
+second doorway.
+
+⚠️ **Its payload carries no `cwd` field at all** — not the empty string the
+shell events send, no key. `workspace_roots` is the only workspace in it, which
+the shim's `pick` already handles; a shim reading `.cwd` directly would hand
+every guard an empty string.
 
 ## `beforeMCPExecution` is NOT registered, and that is a decision
 
@@ -215,22 +258,37 @@ _tool names_ — and there is no portable answer to what a force-push-equivalent
 MCP tool is called on someone else's setup. That is its own ticket. The gap is
 named here so the next person meets it as a decision rather than an oversight.
 
+## `beforeTabFileRead` is NOT registered, and that is also a decision
+
+Its sibling `afterTabFileEdit` is, because a Tab completion is a real edit and
+three hooks care about edits. `beforeTabFileRead` is the other half of the Tab
+pair and it stays off, for two reasons that are not the MCP one.
+
+**It can only read.** Nothing in this bundle inspects a file about to be read,
+so a registration there would fire constantly and do nothing — seven times in
+one short editor session, against one file.
+
+**Its payload is the whole file.** `beforeTabFileRead` ships `content` — the
+entire buffer, every keystroke-triggered completion — into a hook process. That
+is a cost and an exposure with no guard behind it. Register it only alongside a
+hook that genuinely needs pre-read content, and say so here when you do.
+
 ## Event mapping
 
-| Shared hook                           | Claude event       | Cursor event                                  |
-| ------------------------------------- | ------------------ | --------------------------------------------- |
-| `jus-block-force-push.sh`             | `PreToolUse`       | `beforeShellExecution`                        |
-| `jus-block-no-verify.sh`              | `PreToolUse`       | `beforeShellExecution`                        |
-| `jus-pre-commit-gate.sh`              | `PreToolUse`       | `beforeShellExecution`                        |
-| `jus-block-accepted-manifest-edit.sh` | `PreToolUse`       | `beforeShellExecution`                        |
-| `jus-blocker-date-nudge.sh`           | `PreToolUse`       | `beforeShellExecution`                        |
-| `jus-block-lint-suppression.sh`       | `PreToolUse`       | `preToolUse`                                  |
-| `jus-post-bash-tracker.sh`            | `PostToolUse`      | `afterShellExecution`                         |
-| `jus-track-edits.sh`                  | `PostToolUse`      | `afterFileEdit`                               |
-| `jus-start-comment-nudge.sh`          | `PostToolUse`      | `afterFileEdit`                               |
-| `jus-docs-nudge.sh`                   | `PostToolUse` ×2   | `afterShellExecution` **and** `afterFileEdit` |
-| `jus-stop-uncommitted.sh`             | `Stop`             | `stop` — **advisory, never under `-p`**       |
-| `jus-ticket-claim-nudge.sh`           | `UserPromptSubmit` | `beforeSubmitPrompt` — **never under `-p`**   |
+| Shared hook                           | Claude event       | Cursor event                                                      |
+| ------------------------------------- | ------------------ | ----------------------------------------------------------------- |
+| `jus-block-force-push.sh`             | `PreToolUse`       | `beforeShellExecution`                                            |
+| `jus-block-no-verify.sh`              | `PreToolUse`       | `beforeShellExecution`                                            |
+| `jus-pre-commit-gate.sh`              | `PreToolUse`       | `beforeShellExecution`                                            |
+| `jus-block-accepted-manifest-edit.sh` | `PreToolUse`       | `beforeShellExecution`                                            |
+| `jus-blocker-date-nudge.sh`           | `PreToolUse`       | `beforeShellExecution`                                            |
+| `jus-block-lint-suppression.sh`       | `PreToolUse`       | `preToolUse`                                                      |
+| `jus-post-bash-tracker.sh`            | `PostToolUse`      | `afterShellExecution`                                             |
+| `jus-track-edits.sh`                  | `PostToolUse`      | `afterFileEdit` **+ `afterTabFileEdit`**                          |
+| `jus-start-comment-nudge.sh`          | `PostToolUse`      | `afterFileEdit` **+ `afterTabFileEdit`**                          |
+| `jus-docs-nudge.sh`                   | `PostToolUse` ×2   | `afterShellExecution`, `afterFileEdit` **and `afterTabFileEdit`** |
+| `jus-stop-uncommitted.sh`             | `Stop`             | `stop` — **advisory, never under `-p`**                           |
+| `jus-ticket-claim-nudge.sh`           | `UserPromptSubmit` | `beforeSubmitPrompt` — **never under `-p`**                       |
 
 ✅ **`jus-docs-nudge.sh` is registered twice here and that is correct**, unlike on
 Copilot. Claude registers it under two matchers of one event; Cursor has two
@@ -322,7 +380,12 @@ class needs are in [`../README.md`](../README.md) (#4261, #4428).
 
 ## Live-verified
 
-**cursor-agent 2026.09.15-d2fe57e, macOS, 2026-09-17 (#4261).** The fixture is a
+Two hosts, measured separately. **Read the heading before citing a claim from
+this section** — a sentence here is about one of them, not about Cursor.
+
+### The CLI — cursor-agent 2026.09.15-d2fe57e
+
+**macOS, 2026-09-17 (#4261).** The fixture is a
 throwaway git repository with a **local bare remote** beside it, a `.jus/`
 directory at its toplevel, and `.cursor/hooks.json` copied from this manifest
 with `~/.jus-skills/hooks` rewritten to a staged copy of the bundle. Local and
@@ -343,8 +406,8 @@ nothing here.
 
 ### Which events actually fire
 
-A probe registered on **all nineteen** events Cursor defines
-(`index.js`'s own event map), run against the same task:
+A probe registered on **all 21** events Cursor defines (`index.js`'s own event
+map), run against the same task:
 
 | Event                                          | headless `-p`                         | interactive TUI     |
 | ---------------------------------------------- | ------------------------------------- | ------------------- |
@@ -365,6 +428,12 @@ Prompted to use its edit tool instead, the event fires with
 `MultiEdit`. **If you re-measure this, say which tool made the edit**; the two
 are indistinguishable in the firing table alone.
 
+⚠️ **"All nineteen" was this section's own count until #4429, and it was two
+short.** Every one of the 21 names the probe registers is present in
+2026.09.15-d2fe57e's bundle; the record does not say which two the earlier count
+omitted, so do not reconstruct it — register the map and let the table say what
+fired.
+
 ### ⚠️ `cwd` is the empty string, and it defeated `//`
 
 `beforeShellExecution`, `preToolUse` and `postToolUse` all arrive carrying
@@ -381,6 +450,68 @@ carrying the adapter. The shim now treats an empty `cwd` as absent, and
 `JUS_HOOKS_EVERYWHERE` unset — both conditions are needed, or the test passes
 over the bug.
 
+### The editor — Cursor 3.21.16
+
+**macOS, 2026-09-20 (#4429).** Same fixture shape, driven by hand in the editor
+because no agent can type into a GUI. Three arms, each a recorder on all 21
+events: `probe` (recorder only), `hook` (recorder **and** this bundle's guards,
+pointed at a staged copy), `control` (recorder only again). 96 hook invocations.
+
+| Arm     | Guards | Overwrite                                      | Remote tip                |
+| ------- | ------ | ---------------------------------------------- | ------------------------- |
+| probe   | no     | landed                                         | moved                     |
+| hook    | yes    | **blocked**, `failure_type: permission_denied` | unmoved `b515bc3`         |
+| control | no     | landed                                         | moved `b515bc3 → ec2bdf8` |
+
+The hook arm's refusal arrives back at the model as a `postToolUseFailure`
+carrying this bundle's own text — `[jus:hard-rules] BLOCKED: git push --force
+(and variants) is forbidden.` — which is the event the CLI measurement never
+saw fire, because nothing there was ever denied.
+
+⚠️ **The hook arm had to be run twice, for a reason worth knowing.** The first
+run inherited the probe arm's already-landed overwrite, so the remote matched
+local: the guard refused, the tip did not move, and neither fact meant anything
+because no push could have moved it. **Re-diverge between arms** — an unmoved
+tip is a result only against a remote that a push would otherwise have changed.
+
+#### Which events fire in the editor
+
+| Event                                           | Editor                                        |
+| ----------------------------------------------- | --------------------------------------------- |
+| `beforeShellExecution` / `afterShellExecution`  | fires                                         |
+| `preToolUse` / `postToolUse`                    | fires                                         |
+| `postToolUseFailure`                            | fires — **on a hook denial**, with the text   |
+| `afterFileEdit`                                 | fires, for an agent edit only                 |
+| `beforeTabFileRead` / `afterTabFileEdit`        | fires — **a Tab completion, editor-only**     |
+| `beforeReadFile`                                | fires                                         |
+| `beforeSubmitPrompt` / `stop`                   | fires — unlike a headless `-p` run            |
+| `afterAgentThought` / `afterAgentResponse`      | fires                                         |
+| `sessionStart` / `sessionEnd` / `workspaceOpen` | **never** — across three arms and two reloads |
+| `beforeMCPExecution` / `afterMCPExecution`      | not exercised — no MCP server in the fixture  |
+| `preCompact` / `subagentStart` / `subagentStop` | not exercised                                 |
+
+✅ **An agent edit and a Tab completion are different events, and never both.**
+The agent's edit (tool `Write`) fired `afterFileEdit` with
+`{file_path, edits: [{old_string, new_string}]}`. An accepted Tab completion
+fired `afterTabFileEdit` with `model: "tab"`, a null `transcript_path` and an
+`edits[]` whose entries add a `range` — and no `afterFileEdit`. Degradation 5.
+
+⚠️ **Say which tool made the edit, on either host.** A zero on `afterFileEdit`
+means "the model used a shell redirect" as readily as "the event does not fire",
+and the firing table cannot tell them apart — the #4261 trap, still live here.
+
+#### `cwd` in the editor: absent as often as empty
+
+| Event                                             | `cwd`               |
+| ------------------------------------------------- | ------------------- |
+| `beforeShellExecution`, `postToolUseFailure`      | `""`                |
+| `preToolUse`, `postToolUse`, `afterFileEdit`, Tab | **no field at all** |
+
+Both are the #4428 class and both are handled, because the shim treats empty and
+absent alike and falls through to `workspace_roots` — present on every editor
+payload measured. A shim written against the CLI's `""` alone would still be
+correct here; one written against `.cwd // …` would not.
+
 ### Repeating it
 
 1. `cursor-agent login`, then check with `cursor-agent --list-models`. ⚠️ **Not
@@ -392,11 +523,28 @@ over the bug.
    the test meaningful: the hook denial has to beat auto-approval.
 4. Note the remote tip before and after, on both arms.
 
+**In the editor**, the same three arms by hand — there is no `-p` to script:
+
+1. Open the fixture as a folder in Cursor. No trust step exists; note it if one
+   ever appears.
+2. Ask the agent to edit a file **with its edit tool, not a shell redirect**,
+   then to overwrite the remote, using a prompt that states the repository is
+   disposable and confirms the intent.
+3. Accept one Tab completion, in a file with an obvious pattern — prose rarely
+   triggers one, and a zero on `afterTabFileEdit` means nothing unless a Tab
+   edit actually happened.
+4. Re-diverge the fixture, then repeat for the hook arm and the control arm.
+   Reload the window when the manifest changes.
+
+⚠️ **Nothing about the run tells you the manifest was reloaded**, so change it
+between arms only with a window reload, and read the arm's own recording rather
+than assuming which manifest was live.
+
 ## Tests
 
 `jus/hooks/tests.sh`, in the `cursor adapter` section: the manifest is valid JSON
 in Cursor's shape, every script it names exists, all thirteen are registered, and
-the shim normalises each of the six event shapes — including that `stop` derives
+the shim normalises each of the seven event shapes — including that `stop` derives
 its `cwd` from `workspace_roots` and its loop guard from `loop_count`.
 
 Three of them use **Cursor's own transport** rather than piping into the shim:

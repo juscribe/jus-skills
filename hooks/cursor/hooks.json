@@ -42,6 +42,17 @@
         "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh"
       }
     ],
+    "afterTabFileEdit": [
+      {
+        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-track-edits.sh"
+      },
+      {
+        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-start-comment-nudge.sh"
+      },
+      {
+        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh"
+      }
+    ],
     "stop": [
       {
         "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-stop-uncommitted.sh"
