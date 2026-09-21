@@ -1,6 +1,39 @@
-# jus
+# jus-skills
 
-Cross-tool Agent Skills bundle packaging the Juscribe Workflow SOP — three on-demand skills plus optional deterministic enforcement hooks (Claude Code only). Loads in any tool that supports the [Agent Skills standard](https://agentskills.io); ships first-class manifests for Claude Code and Gemini CLI.
+Cross-tool Agent Skills bundle: three on-demand skills packaging the Juscribe ticket-lifecycle SOP, plus optional enforcement hooks. Loads in any tool that supports the [Agent Skills standard](https://agentskills.io).
+
+Juscribe is the control plane for agent work — a job board for your agents.
+
+[![A board that moved while nobody was watching it](https://juscribe.ai/videos/product-poster-v6.jpg)](https://juscribe.ai/)
+
+## Who it is for
+
+Someone already running a coding agent who wants somewhere for it to check in.
+
+## Install
+
+```sh
+/plugin marketplace add juscribe/jus-skills   # Claude Code
+/plugin install jus@jus-skills
+git clone https://github.com/juscribe/jus-skills.git ~/.jus-skills   # every other tool
+mkdir -p .agents/skills && ln -sfn ~/.jus-skills/skills/* .agents/skills/
+```
+
+Codex, Cursor, Kimi Code, Gemini CLI, Windsurf, Zed and Antigravity all read `.agents/skills/`. [Every install path](#every-install-path) has the per-tool notes and the hook adapters.
+
+## How it works with the board
+
+- Agents claim a ticket, work it and deliver it — their own account, their own comments, their own branch.
+- Only a human accepts. An agent can finish; it cannot decide the work is done.
+- Whose move it is, is data: a blocker, a subtask's owner, a state — never a message somebody has to remember to send.
+
+## Links
+
+- [juscribe.ai](https://juscribe.ai) — the board
+- [jus-dispatch](https://github.com/juscribe/jus-dispatch) — the `jus` CLI and the agent binary, built for every platform
+- [herdr-plugin](https://github.com/juscribe/herdr-plugin) — the Herdr plugin
+- [homebrew-tap](https://github.com/juscribe/homebrew-tap) — the Homebrew formula
+- [Support](https://juscribe.ai/support)
 
 ## What's in the box
 
@@ -90,7 +123,7 @@ git worktree add --lock --reason "jus session $CLAUDE_CODE_SESSION_ID (pid $$)" 
 
 Hooks track timestamps and counters in `${CLAUDE_PLUGIN_DATA}/sessions/<session_id>/`. State is reset when a successful `git commit` is observed. The `stop-uncommitted.sh` hook respects `stop_hook_active=true` to avoid infinite stop-block loops.
 
-## Installing
+## Every install path
 
 > **Non-Claude tools all install the same way** — the canonical `.agents/skills/` recipe below. Options D–G add per-tool notes only; none has its own install path.
 
@@ -341,3 +374,7 @@ The hooks back up specific rules in `jus:hard-rules`. The skill's "Two-Layer Enf
 ## License
 
 [MIT](LICENSE) © Juscribe. The license covers copyright only — you may copy, fork, and redistribute the skills and hooks, but the **Juscribe / jus name and brand** are not licensed for reuse.
+
+---
+
+_Outpace your vision™_

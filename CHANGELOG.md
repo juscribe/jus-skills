@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.34] — 2026-09-20
+
+### Changed
+
+- Keep the premise paragraphs the openings displaced (#4640)
+- One opening and one sign-off across the four public READMEs (#4640)
+
 ## [1.4.33] — 2026-09-19
 
 ### Changed
