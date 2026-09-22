@@ -86,16 +86,27 @@ _"Fixed a bug where the `/hooks` command wrote configurations to
 ⚠️ **A hook declared in both scopes runs twice** — both are loaded and merged.
 Pick one.
 
-## How the `~` in every command is expanded — the one adapter that may be exempt
+## Every command is `jus hook`, so `jus` has to be on PATH
 
-`../tests.sh` holds every path in this manifest at the start of a word, because
-that is the only position a shell expands `~` (#4417). Antigravity is the one
-adapter where that guard may be stricter than the engine requires, and it is
-unresolved.
+Since #4759 no command in this manifest names a location — each is
+`jus hook [--adapt antigravity] <name>`, and `jus` resolves the bundle at run time.
+`../tests.sh` holds every manifest to that shape, and refuses one carrying a
+path, a `~` or a `$`.
 
-**What its own shipped code says.** The lifecycle-hooks guide is embedded in the
-`agy` binary rather than published on the web, and on the `command` field it
-reads:
+⚠️ **The chain is a FALLBACK, and `JUS_SKILLS_DIR` comes FIRST — it wins even
+when the directory it names does not exist.** `JUS_SKILLS_DIR`, then the
+Homebrew prefix, then `~/.jus-skills`: the first one found answers. So a typo in
+that variable silently disables every guard while a healthy clone sits in
+`~/.jus-skills`. It is **not** layered overrides with the most specific last,
+which is how an eye trained on git config or eslint will read it.
+
+⚠️ **This is the one adapter with no end-to-end measurement.** The harness
+drives five — qwen, codex, gemini, copilot and kimi — and Antigravity is not one
+of them: an isolated `HOME` carries no Antigravity credentials, so a probe run
+stops at the OAuth prompt and the control arm never fires either. What stands in
+for it is the engine's own shipped documentation. The lifecycle-hooks guide is
+embedded in the `agy` binary rather than published, and on the `command` field
+it reads:
 
 > **`command`** (string, required): The shell command to execute (run via `sh -c`
 > on Unix, `cmd /c` on Windows). `~` is expanded to the home directory.
@@ -106,18 +117,18 @@ Read it yourself:
 strings -a "$(command -v agy)" | grep -A60 '^# Lifecycle Hooks'
 ```
 
-⚠️ **It says `~` is expanded. It does not say WHERE in the string.** If the
-engine expands only a leading tilde, or leaves it to the `sh -c` it also names,
-the positional rule holds here exactly as everywhere else. If it expands
-anywhere, this adapter is genuinely exempt — and a vendor guarantee is still not
-a local check, so the guard stays either way.
+`sh -c` is a `PATH` lookup, so the launcher form is what that sentence
+describes. **It is a vendor statement, not a local check** — treat this adapter
+as the least-evidenced of the eight until someone drives it against a real
+`HOME`.
 
-⚠️ **The live probe is still owed.** Three `PreInvocation` hooks — bare tilde,
-quoted tilde, and an absolute path as the control arm — never reached the
-engine: an isolated `HOME` carries no Antigravity credentials, so the run stopped
-at the OAuth prompt and the control arm did not fire either. That is
-inconclusive, not negative. Settling it needs the real `HOME`, which means
-writing to your own `~/.gemini/config/hooks.json`.
+⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until #4759
+every command named `~/.jus-skills/…`; a shell expands `~` only at the START of
+a word, so a tilde one character later was a literal, the command was not found,
+the exit was 127, and a non-2 exit is fail-**open** — every hook silently dead
+with the session looking healthy (#4417). A missing `jus` on `PATH` produces
+exactly that, so it is the first thing to check when the guards go quiet:
+`jus hook --where` prints which bundle answered, and `jus doctor` says so too.
 
 ## ⚠️ One malformed entry disables the whole file
 

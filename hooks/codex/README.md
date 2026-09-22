@@ -140,9 +140,10 @@ suspected and eliminated in turn.
 ## Install
 
 Prerequisite: the canonical bundle install (`git clone
-https://github.com/juscribe/jus-skills.git ~/.jus-skills`) — every command in
-`hooks.json` references `~/.jus-skills/…`. If your clone lives elsewhere,
-rewrite the paths (e.g. `sed 's|~/.jus-skills|/your/path|g'`).
+https://github.com/juscribe/jus-skills.git ~/.jus-skills`) and `jus` on `PATH`.
+Since #4759 every command in `hooks.json` is `jus hook <name>` and names no
+path, so a clone somewhere else needs no rewriting — set `JUS_SKILLS_DIR` and
+`jus` resolves it. `jus hook --where` prints which bundle answered.
 
 ⚠️ **`jus init` DOES THIS FOR YOU since #4239.** Pick `ChatGPT / Codex` at the
 tool prompt and it merges the rules below into `<repo>/.codex/hooks.json` —
@@ -158,11 +159,24 @@ other way.
 Codex **merges hook layers** — project + user + managed all run — so install
 in one place only, or the hooks fire twice.
 
-## The `~` in every command expands, and it is positional (#4417)
+## Every command is `jus hook`, so `jus` has to be on PATH
 
-**Measured 2026-09-17 on codex-cli 0.154.0**, three `SessionStart` hooks under an
-isolated `HOME` and `CODEX_HOME`. No API call is needed: the hooks fire before
-the run 401s.
+Since #4759 no command in this manifest names a location — each is
+`jus hook [--adapt codex] <name>`, and `jus` resolves the bundle at run time.
+`../tests.sh` holds every manifest to that shape, and refuses one carrying a
+path, a `~` or a `$`.
+
+⚠️ **The chain is a FALLBACK, and `JUS_SKILLS_DIR` comes FIRST — it wins even
+when the directory it names does not exist.** `JUS_SKILLS_DIR`, then the
+Homebrew prefix, then `~/.jus-skills`: the first one found answers. So a typo in
+that variable silently disables every guard while a healthy clone sits in
+`~/.jus-skills`. It is **not** layered overrides with the most specific last,
+which is how an eye trained on git config or eslint will read it.
+
+✅ **Codex resolves a command through something that expands `~`, which is what
+makes a `PATH` lookup work.** Measured 2026-09-17 on codex-cli 0.154.0, three
+`SessionStart` hooks under an isolated `HOME` and `CODEX_HOME` — no API call is
+needed, because hooks fire before the run 401s:
 
 | Arm                | `command`             | Fired |
 | ------------------ | --------------------- | ----- |
@@ -170,15 +184,23 @@ the run 401s.
 | quoted             | `"~/probe-quoted.sh"` | ❌    |
 | absolute (control) | `$T/probe-abs.sh`     | ✅    |
 
-So a tilde anywhere but the start of a word is a literal here too — command not
-found, exit 127, and a non-2 exit is fail-**open**, so every hook in this file
-would silently do nothing. **This manifest carries the most exposure in the
-bundle: 17 tilde paths over 13 command keys.** `../tests.sh` guards all of them.
+The manifest no longer contains a tilde for that rule to govern, but the arms
+still answer the question the launcher asks: a bare word is expanded, so it is
+being resolved the way a shell resolves one. `script/dev/drive-adapter codex`
+then confirms it end to end — on #4759 and #4412 it PASSed with the launcher on
+`PATH`, deny arm refused and control arm committed.
 
-⚠️ **WHICH shell does the expanding is not established, only that the rule
-holds.** The binary carries no `/bin/sh` literal and bundles `shlex`, a splitter
-that expands nothing, so the engine may well do it itself. The guard depends on
-the behaviour above, not on the mechanism.
+⚠️ **WHICH shell does the expanding is still not established**, only that the
+behaviour holds. The binary carries no `/bin/sh` literal and bundles `shlex`, a
+splitter that expands nothing, so the engine may well do it itself.
+
+⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until #4759
+every command named `~/.jus-skills/…`; a shell expands `~` only at the START of
+a word, so a tilde one character later was a literal, the command was not found,
+the exit was 127, and a non-2 exit is fail-**open** — every hook silently dead
+with the session looking healthy (#4417). A missing `jus` on `PATH` produces
+exactly that, so it is the first thing to check when the guards go quiet:
+`jus hook --where` prints which bundle answered, and `jus doctor` says so too.
 
 ## Trust flow
 
@@ -273,15 +295,33 @@ so a dispatch whose hook blocked it sees a successful, empty turn.
 
 ⚠️ **The reason never reaches the operator on `codex exec`.** The README above
 says exit 2 blocks "with stderr as the reason". The block is real; the reason is
-not printed on either stream. Against `PreToolUse` the binary does carry
-`Command blocked by PreToolUse hook: <reason>` and
-`Tool call blocked by PreToolUse hook: <reason>`, so the reason is plumbed where
-it is fed back to the model — but do not expect to see it in a log.
+not printed on either stream — but it **does** reach the model, which is where
+it matters and which is now measured rather than inferred from binary strings.
 
-**What is NOT measured**: a `PreToolUse` denial end to end, on a tool call a
-model actually issued. That needs an account; the strings above and #4207's
-blocked force-push are the evidence for it, and #4207's own Guardian warning is
-why that force-push is not conclusive on its own.
+✅ **A `PreToolUse` denial is measured end to end, on a tool call the model
+issued** (#4412, 2026-09-21, codex-cli 0.154.0). `script/dev/drive-adapter codex
+--layer hooks` in the orb, against a local OpenAI-compatible stub — **no
+account, no key**. The captured `/v1/responses` bodies are the evidence:
+
+| Turn          | What the body carries                                                                                                                            |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 2 (request)   | `{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"git commit --no-verify -m harness-deny\"}"}` — the model attempted it     |
+| 2 (same body) | `{"type":"function_call_output","output":"Command blocked by PreToolUse hook: [jus:hard-rules] BLOCKED: \`--no-verify\` skips the git hooks.…"}` |
+| control arm   | the same command **without** the flag committed                                                                                                  |
+| liveness      | at least one guard recorded an invocation                                                                                                        |
+
+**So the stderr reason reaches the model verbatim**, as the tool result of the
+call it made. The `Stop` guard's text arrives the same way, as a
+`<hook_prompt …>` user message.
+
+⚠️ **THE CONTROL ARM IS WHAT MAKES THIS MEAN ANYTHING.** #4288's first pass
+reported two refusals that turned out to be the model never attempting the
+command. Here the attempt is in the request body and the allow arm committed,
+so "refused" and "never tried" are distinguishable.
+
+⚠️ **It is a stub, not OpenAI's own service.** The same footing every adapter
+in the harness is measured on: what is under test is the tool's hook machinery,
+not the model's judgement.
 
 ✅ **No empty-string exposure.** Every `//` in this shim ends at a literal, so the
 class cannot apply — it needs a chain naming a second source. Not captured on

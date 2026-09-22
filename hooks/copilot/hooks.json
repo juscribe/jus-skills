@@ -5,68 +5,68 @@
     "preToolUse": [
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-force-push.sh",
+        "bash": "jus hook --adapt copilot jus-block-force-push",
         "timeoutSec": 10
       },
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-no-verify.sh",
+        "bash": "jus hook --adapt copilot jus-block-no-verify",
         "timeoutSec": 10
       },
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-pre-commit-gate.sh",
+        "bash": "jus hook --adapt copilot jus-pre-commit-gate",
         "timeoutSec": 10
       },
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-accepted-manifest-edit.sh",
+        "bash": "jus hook --adapt copilot jus-block-accepted-manifest-edit",
         "timeoutSec": 10
       },
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-blocker-date-nudge.sh",
+        "bash": "jus hook --adapt copilot jus-blocker-date-nudge",
         "timeoutSec": 10
       },
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-lint-suppression.sh",
+        "bash": "jus hook --adapt copilot jus-block-lint-suppression",
         "timeoutSec": 10
       }
     ],
     "postToolUse": [
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-track-edits.sh",
+        "bash": "jus hook --adapt copilot jus-track-edits",
         "timeoutSec": 10
       },
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-post-bash-tracker.sh",
+        "bash": "jus hook --adapt copilot jus-post-bash-tracker",
         "timeoutSec": 10
       },
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-start-comment-nudge.sh",
+        "bash": "jus hook --adapt copilot jus-start-comment-nudge",
         "timeoutSec": 10
       },
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh",
+        "bash": "jus hook --adapt copilot jus-docs-nudge",
         "timeoutSec": 10
       }
     ],
     "agentStop": [
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-stop-uncommitted.sh",
+        "bash": "jus hook --adapt copilot jus-stop-uncommitted",
         "timeoutSec": 15
       }
     ],
     "userPromptSubmitted": [
       {
         "type": "command",
-        "bash": "~/.jus-skills/hooks/copilot/scripts/jus-copilot-adapt.sh ~/.jus-skills/hooks/scripts/jus-ticket-claim-nudge.sh",
+        "bash": "jus hook --adapt copilot jus-ticket-claim-nudge",
         "timeoutSec": 15
       }
     ]

@@ -20,11 +20,60 @@ unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX GIT_OBJECT_DIRECTORY GIT_C
 HOOKS_DIR="$(cd "$(dirname "$0")" && pwd)"
 SCRIPTS="$HOOKS_DIR/scripts"
 
-# The literal string hooks.json uses to reference bundled scripts. The tilde is
-# text to be matched, not a path to expand, so it is escaped rather than quoted:
-# escaping says "this character is literal", while quoting it reads as a home
-# directory someone forgot to expand (#2077).
-SKILLS_PREFIX=\~/.jus-skills/
+# Every bundle file a manifest command names, one per line (#4759). A command is
+# `jus hook [--adapt <tool>] [--event <e>] <ref>`, so what it names is the shared
+# script — plus that tool's adapter, when one is asked for.
+#
+# ⚠️ IT REPLACES A `~/.jus-skills/` PREFIX MATCH, AND THE SWAP IS WHY EVERY
+# CALLER NOW COUNTS. The old form found path words; this one finds none in a
+# command it does not understand, so a manifest in a shape this cannot read
+# yields zero targets, zero missing files, and a PASS that asserted nothing.
+manifest_targets() { # <command>
+  local -a mt_words=()
+  read -ra mt_words <<<"$1"
+  [[ "${mt_words[0]:-}" == "jus" && "${mt_words[1]:-}" == "hook" ]] || return 0
+
+  local mt_i=2 mt_adapt="" mt_ref="" mt_adapter_file
+  while [[ "$mt_i" -lt "${#mt_words[@]}" ]]; do
+    case "${mt_words[$mt_i]}" in
+      --adapt) mt_adapt="${mt_words[$((mt_i + 1))]:-}"; mt_i=$((mt_i + 2)) ;;
+      --event) mt_i=$((mt_i + 2)) ;;
+      *) mt_ref="${mt_words[$mt_i]}"; mt_i=$((mt_i + 1)) ;;
+    esac
+  done
+  [[ -n "$mt_ref" ]] || return 0
+
+  case "$mt_ref" in
+    */*) printf '%s\n' "$HOOKS_DIR/${mt_ref%/*}/scripts/${mt_ref##*/}.sh" ;;
+    *) printf '%s\n' "$HOOKS_DIR/scripts/${mt_ref}.sh" ;;
+  esac
+
+  [[ -n "$mt_adapt" ]] || return 0
+  # Kimi's directory and its adapter's name disagree; everyone else's match.
+  case "$mt_adapt" in
+    kimi-code) mt_adapter_file="jus-kimi-adapt.sh" ;;
+    *) mt_adapter_file="jus-${mt_adapt}-adapt.sh" ;;
+  esac
+  printf '%s\n' "$HOOKS_DIR/$mt_adapt/scripts/$mt_adapter_file"
+}
+
+# The shared-hook basenames a stream of manifest text names, however each
+# command is written (#4759). A launcher command names `jus-docs-nudge`; a
+# plugin-relative one still names `jus-docs-nudge.sh`. Both normalise to the
+# `.sh` basename, which is what every comparison in this file is written
+# against — including the kimi pair, where one manifest is on the launcher and
+# the other is plugin-relative and must stay that way.
+#
+# Reads stdin, prints one name per line, UNSORTED: `sort` and `sort -u` are
+# different assertions here and the caller owns the choice. An adapter's own
+# shim is dropped — it is not a shared hook and must not count toward parity.
+shared_hook_names() {
+  # ⚠️ URLs FIRST, AND THAT IS NOT DEFENSIVE TIDYING. Dropping the `.sh`
+  # requirement made `jus-skills` in kimi.plugin.json's `homepage` read as a
+  # registered hook, and the kimi-pair check went red over a repository name.
+  sed -E 's#https?://[^" ]*##g' \
+    | grep -oE 'jus-[a-z-]+(\.sh)?' | sed -E 's/\.sh$//;s/$/.sh/' | grep -v -- '-adapt\.sh$'
+}
 
 TESTS_RUN=0
 TESTS_FAILED=0
@@ -1862,22 +1911,19 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="codex hooks.json references only scripts that exist in the bundle"
 missing=0
+resolved_targets=0
 [[ -f "$CODEX_DIR/hooks.json" ]] || missing=1
 while IFS= read -r cmd; do
-  for word in $cmd; do
-    case "$word" in
-      "$SKILLS_PREFIX"*)
-        resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
-        [[ -x "$resolved" ]] || missing=$((missing + 1))
-        ;;
-    esac
-  done
+  while IFS= read -r resolved; do
+    resolved_targets=$((resolved_targets + 1))
+    [[ -x "$resolved" ]] || missing=$((missing + 1))
+  done < <(manifest_targets "$cmd")
 done < <(jq -r '.hooks[][].hooks[].command' "$CODEX_DIR/hooks.json" 2>/dev/null)
-if [[ "$missing" -eq 0 ]]; then
+if [[ "$missing" -eq 0 && "$resolved_targets" -gt 0 ]]; then
   printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-  printf '  \033[31m✗\033[0m %s (%d missing)\n' "$TEST_NAME" "$missing"
+  printf '  \033[31m✗\033[0m %s (%d missing of %d)\n' "$TEST_NAME" "$missing" "$resolved_targets"
 fi
 
 # codex_hook <expected_exit> <name> <payload> <script...>
@@ -1987,21 +2033,18 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="copilot hooks.json references only scripts that exist in the bundle"
 missing=0
+resolved_targets=0
 while IFS= read -r cmd; do
-  for word in $cmd; do
-    case "$word" in
-      "$SKILLS_PREFIX"*)
-        resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
-        [[ -x "$resolved" ]] || missing=$((missing + 1))
-        ;;
-    esac
-  done
+  while IFS= read -r resolved; do
+    resolved_targets=$((resolved_targets + 1))
+    [[ -x "$resolved" ]] || missing=$((missing + 1))
+  done < <(manifest_targets "$cmd")
 done < <(jq -r '.hooks[][].bash' "$COPILOT_DIR/hooks.json" 2>/dev/null)
-if [[ "$missing" -eq 0 ]]; then
+if [[ "$missing" -eq 0 && "$resolved_targets" -gt 0 ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%d missing)\n' "$TEST_NAME" "$missing"
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%d missing of %d)\n' "$TEST_NAME" "$missing" "$resolved_targets"
 fi
 
 # ⚠️ THIRTEEN, AND THE COUNT IS THE POINT. An adapter that registers twelve is
@@ -2011,7 +2054,7 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="copilot registers every shared hook exactly once"
 copilot_scripts=$(jq -r '.hooks[][].bash' "$COPILOT_DIR/hooks.json" \
-  | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-copilot-adapt.sh' | sort)
+  | shared_hook_names | sort)
 shared_scripts=$(find "$HOOKS_DIR/scripts" -maxdepth 1 -name 'jus-*.sh' -exec basename {} \; | sort)
 if [[ "$copilot_scripts" == "$shared_scripts" ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
@@ -2174,21 +2217,18 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="cursor hooks.json references only scripts that exist in the bundle"
 missing=0
+resolved_targets=0
 while IFS= read -r cmd; do
-  for word in $cmd; do
-    case "$word" in
-      "$SKILLS_PREFIX"*)
-        resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
-        [[ -x "$resolved" ]] || missing=$((missing + 1))
-        ;;
-    esac
-  done
+  while IFS= read -r resolved; do
+    resolved_targets=$((resolved_targets + 1))
+    [[ -x "$resolved" ]] || missing=$((missing + 1))
+  done < <(manifest_targets "$cmd")
 done < <(jq -r '.hooks[][].command' "$CURSOR_DIR/hooks.json" 2>/dev/null)
-if [[ "$missing" -eq 0 ]]; then
+if [[ "$missing" -eq 0 && "$resolved_targets" -gt 0 ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%d missing)\n' "$TEST_NAME" "$missing"
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%d missing of %d)\n' "$TEST_NAME" "$missing" "$resolved_targets"
 fi
 
 # ⚠️ jus-docs-nudge.sh IS registered twice here, unlike on Copilot — Cursor has
@@ -2197,7 +2237,7 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="cursor registers every shared hook"
 cursor_scripts=$(jq -r '.hooks[][].command' "$CURSOR_DIR/hooks.json" \
-  | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-cursor-adapt.sh' | sort -u)
+  | shared_hook_names | sort -u)
 if [[ "$cursor_scripts" == "$shared_scripts" ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
@@ -2383,8 +2423,8 @@ fi
 # for the same scripts, or a Tab edit normalises perfectly and reaches nobody.
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="cursor: afterTabFileEdit registers the same scripts as afterFileEdit"
-cursor_edit_scripts=$(jq -r '.hooks.afterFileEdit[].command' "$CURSOR_DIR/hooks.json" | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-cursor-adapt.sh' | sort)
-cursor_tab_scripts=$(jq -r '.hooks.afterTabFileEdit[].command' "$CURSOR_DIR/hooks.json" | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-cursor-adapt.sh' | sort)
+cursor_edit_scripts=$(jq -r '.hooks.afterFileEdit[].command' "$CURSOR_DIR/hooks.json" | shared_hook_names | sort)
+cursor_tab_scripts=$(jq -r '.hooks.afterTabFileEdit[].command' "$CURSOR_DIR/hooks.json" | shared_hook_names | sort)
 if [[ -n "$cursor_tab_scripts" && "$cursor_tab_scripts" == "$cursor_edit_scripts" ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
@@ -2411,6 +2451,21 @@ CURSOR_STAGE=$(mktemp -d)
 mkdir -p "$CURSOR_STAGE/.jus-skills"
 cp -R "$PLUGIN_ROOT/hooks" "$CURSOR_STAGE/.jus-skills/hooks"
 
+# ⚠️ THE MANIFEST LINE IS NOW `jus hook …` (#4759), SO THIS NEEDS A `jus`.
+# The repository's own CLI first, because a machine-installed one may predate
+# the `hook` subcommand and fail here for a reason that has nothing to do with
+# Cursor's transport; the installed one otherwise, which is what a user running
+# the published bundle has. Not finding either is a FAILURE rather than a skip —
+# a silent skip here is the whole check quietly disappearing.
+CURSOR_JUS=""
+if [[ -x "$PLUGIN_ROOT/../.jus/bin/jus" ]]; then
+  CURSOR_JUS="$(cd "$PLUGIN_ROOT/.." && pwd)/.jus/bin/jus"
+elif command -v jus >/dev/null 2>&1; then
+  CURSOR_JUS="$(command -v jus)"
+fi
+mkdir -p "$CURSOR_STAGE/bin"
+[[ -n "$CURSOR_JUS" ]] && ln -sf "$CURSOR_JUS" "$CURSOR_STAGE/bin/jus"
+
 # cursor_transport <expected_exit> <name> <payload>
 # Reproduces Cursor's heredoc transport verbatim for the FIRST beforeShellExecution
 # command in the manifest — the force-push guard.
@@ -2419,7 +2474,12 @@ cursor_transport() {
   local expected="$1" name="$2" payload="$3" ec=0
   local cmd
   cmd=$(jq -r '.hooks.beforeShellExecution[0].command' "$CURSOR_DIR/hooks.json")
-  HOME="$CURSOR_STAGE" /bin/sh -c "$cmd <<'CURSOR_HOOK_EOF'
+  if [[ -z "$CURSOR_JUS" ]]; then
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$name")
+    printf '  \033[31m\xe2\x9c\x97\033[0m %s (no jus on PATH and none in this checkout)\n' "$name"
+    return
+  fi
+  HOME="$CURSOR_STAGE" PATH="$CURSOR_STAGE/bin:$PATH" /bin/sh -c "$cmd <<'CURSOR_HOOK_EOF'
 $payload
 CURSOR_HOOK_EOF" >/dev/null 2>&1 || ec=$?
   if [[ "$ec" -eq "$expected" ]]; then
@@ -2488,26 +2548,26 @@ agy_commands() {
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="antigravity hooks.json references only scripts that exist in the bundle"
 missing=0
+resolved_targets=0
 while IFS= read -r line; do
-  for word in $line; do
-    case "$word" in
-      "$SKILLS_PREFIX"*)
-        resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
-        [[ -x "$resolved" ]] || missing=$((missing + 1))
-        ;;
-    esac
-  done
+  # ⚠️ `agy_commands` PREFIXES THE EVENT KEY, so the command starts at the
+  # second word. Passing the whole line made `manifest_targets` see a first
+  # word that is not `jus`, resolve nothing, and pass over an empty walk.
+  while IFS= read -r resolved; do
+    resolved_targets=$((resolved_targets + 1))
+    [[ -x "$resolved" ]] || missing=$((missing + 1))
+  done < <(manifest_targets "${line#* }")
 done < <(agy_commands)
-if [[ "$missing" -eq 0 ]]; then
+if [[ "$missing" -eq 0 && "$resolved_targets" -gt 0 ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%d missing)\n' "$TEST_NAME" "$missing"
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%d missing of %d)\n' "$TEST_NAME" "$missing" "$resolved_targets"
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="antigravity registers every shared hook"
-agy_scripts=$(agy_commands | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-antigravity-adapt.sh' | sort -u)
+agy_scripts=$(agy_commands | shared_hook_names | sort -u)
 if [[ "$agy_scripts" == "$shared_scripts" ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
@@ -2525,7 +2585,10 @@ TEST_NAME="antigravity: every command passes the event it is registered under"
 agy_event_mismatch=0
 while IFS= read -r line; do
   registered="${line%% *}"
-  passed=$(printf '%s' "$line" | grep -oE 'jus-antigravity-adapt\.sh [A-Za-z]+' | awk '{print $2}')
+  # ⚠️ `--event <name>` SINCE #4759, where it used to be a bare argument
+  # after the adapter path. The registered key and the passed event still have
+  # to agree; only where the value sits has changed.
+  passed=$(printf '%s' "$line" | grep -oE '\-\-event [A-Za-z]+' | awk '{print $2}')
   [[ "$registered" == "$passed" ]] || agy_event_mismatch=$((agy_event_mismatch + 1))
 done < <(agy_commands)
 if [[ "$agy_event_mismatch" -eq 0 ]]; then
@@ -2813,27 +2876,24 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="gemini settings.json references only scripts that exist in the bundle"
 missing=0
+resolved_targets=0
 while IFS= read -r cmd; do
-  for word in $cmd; do
-    case "$word" in
-      "$SKILLS_PREFIX"*)
-        resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
-        [[ -x "$resolved" ]] || missing=$((missing + 1))
-        ;;
-    esac
-  done
+  while IFS= read -r resolved; do
+    resolved_targets=$((resolved_targets + 1))
+    [[ -x "$resolved" ]] || missing=$((missing + 1))
+  done < <(manifest_targets "$cmd")
 done < <(jq -r '.hooks[][].hooks[].command' "$GEM_DIR/settings.json" 2>/dev/null)
-if [[ "$missing" -eq 0 ]]; then
+if [[ "$missing" -eq 0 && "$resolved_targets" -gt 0 ]]; then
   printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-  printf '  \033[31m✗\033[0m %s (%d missing)\n' "$TEST_NAME" "$missing"
+  printf '  \033[31m✗\033[0m %s (%d missing of %d)\n' "$TEST_NAME" "$missing" "$resolved_targets"
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="gemini registers every shared hook"
 gem_scripts=$(jq -r '.hooks[][].hooks[].command' "$GEM_DIR/settings.json" \
-  | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-gemini-adapt.sh' | sort -u)
+  | shared_hook_names | sort -u)
 if [[ "$gem_scripts" == "$shared_scripts" ]]; then
   printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
 else
@@ -2913,27 +2973,24 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="qwen settings.json references only scripts that exist in the bundle"
 missing=0
+resolved_targets=0
 while IFS= read -r cmd; do
-  for word in $cmd; do
-    case "$word" in
-      "$SKILLS_PREFIX"*)
-        resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
-        [[ -x "$resolved" ]] || missing=$((missing + 1))
-        ;;
-    esac
-  done
+  while IFS= read -r resolved; do
+    resolved_targets=$((resolved_targets + 1))
+    [[ -x "$resolved" ]] || missing=$((missing + 1))
+  done < <(manifest_targets "$cmd")
 done < <(jq -r '.hooks[][].hooks[].command' "$QWEN_DIR/settings.json" 2>/dev/null)
-if [[ "$missing" -eq 0 ]]; then
+if [[ "$missing" -eq 0 && "$resolved_targets" -gt 0 ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%d missing)\n' "$TEST_NAME" "$missing"
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%d missing of %d)\n' "$TEST_NAME" "$missing" "$resolved_targets"
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="qwen registers every shared hook"
 qwen_scripts=$(jq -r '.hooks[][].hooks[].command' "$QWEN_DIR/settings.json" \
-  | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-qwen-adapt.sh' | sort -u)
+  | shared_hook_names | sort -u)
 if [[ "$qwen_scripts" == "$shared_scripts" ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
@@ -3065,27 +3122,24 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="windsurf hooks.json references only scripts that exist in the bundle"
 missing=0
+resolved_targets=0
 while IFS= read -r cmd; do
-  for word in $cmd; do
-    case "$word" in
-      "$SKILLS_PREFIX"*)
-        resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
-        [[ -x "$resolved" ]] || missing=$((missing + 1))
-        ;;
-    esac
-  done
+  while IFS= read -r resolved; do
+    resolved_targets=$((resolved_targets + 1))
+    [[ -x "$resolved" ]] || missing=$((missing + 1))
+  done < <(manifest_targets "$cmd")
 done < <(jq -r '.hooks[][].command' "$WS_DIR/hooks.json" 2>/dev/null)
-if [[ "$missing" -eq 0 ]]; then
+if [[ "$missing" -eq 0 && "$resolved_targets" -gt 0 ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%d missing)\n' "$TEST_NAME" "$missing"
+  printf '  \033[31m\xe2\x9c\x97\033[0m %s (%d missing of %d)\n' "$TEST_NAME" "$missing" "$resolved_targets"
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="windsurf registers every shared hook"
 ws_scripts=$(jq -r '.hooks[][].command' "$WS_DIR/hooks.json" \
-  | grep -oE 'jus-[a-z-]+\.sh' | grep -v 'jus-windsurf-adapt.sh' | sort -u)
+  | shared_hook_names | sort -u)
 if [[ "$ws_scripts" == "$shared_scripts" ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
@@ -3103,7 +3157,7 @@ ws_blockers_wrong=$(jq -r '
   .hooks | to_entries[]
   | select(.key | startswith("pre_") | not)
   | .value[].command
-' "$WS_DIR/hooks.json" | grep -oE 'jus-block-[a-z-]+\.sh|jus-pre-commit-gate\.sh' | sort -u)
+' "$WS_DIR/hooks.json" | shared_hook_names | grep -E '^jus-block-|^jus-pre-commit-gate\.sh$' | sort -u)
 if [[ -z "$ws_blockers_wrong" ]]; then
   printf '  \033[32m\xe2\x9c\x93\033[0m %s\n' "$TEST_NAME"
 else
@@ -3246,8 +3300,8 @@ section "kimi manifest agreement"
 # an exception entry covering both surfaces excuses the pair together.
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="the two kimi manifests register the same shared hooks"
-km_toml=$(grep -oE 'jus-[a-z-]+\.sh' "$PLUGIN_ROOT/hooks/kimi-code/config-hooks.toml" | sort -u)
-km_json=$(grep -oE 'jus-[a-z-]+\.sh' "$PLUGIN_ROOT/kimi.plugin.json" | sort -u)
+km_toml=$(shared_hook_names < "$PLUGIN_ROOT/hooks/kimi-code/config-hooks.toml" | sort -u)
+km_json=$(shared_hook_names < "$PLUGIN_ROOT/kimi.plugin.json" | sort -u)
 if [[ "$km_toml" == "$km_json" ]]; then
   printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
 else
@@ -3357,7 +3411,7 @@ ADAPTER_EXCEPTIONS=(
 SHARED_HOOKS=$(cd "$HOOKS_DIR/scripts" && ls jus-*.sh 2>/dev/null | sort)
 
 adapter_registered() {   # <manifest-path>
-  grep -oE 'jus-[a-z-]+\.sh' "$1" 2>/dev/null | sort -u
+  shared_hook_names < "$1" 2>/dev/null | sort -u
 }
 
 CLAUDE_REGISTERED=$(adapter_registered "$HOOKS_DIR/hooks.json")
@@ -3467,22 +3521,19 @@ fi
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="kimi config snippet references only scripts that exist in the bundle"
 missing=0
+resolved_targets=0
 [[ -f "$KIMI_DIR/config-hooks.toml" ]] || missing=1
 while IFS= read -r cmd; do
-  for word in $cmd; do
-    case "$word" in
-      "$SKILLS_PREFIX"*)
-        resolved="$PLUGIN_ROOT/${word#"$SKILLS_PREFIX"}"
-        [[ -x "$resolved" ]] || missing=$((missing + 1))
-        ;;
-    esac
-  done
+  while IFS= read -r resolved; do
+    resolved_targets=$((resolved_targets + 1))
+    [[ -x "$resolved" ]] || missing=$((missing + 1))
+  done < <(manifest_targets "$cmd")
 done < <(sed -n 's/^command = "\(.*\)"$/\1/p' "$KIMI_DIR/config-hooks.toml" 2>/dev/null)
-if [[ "$missing" -eq 0 ]]; then
+if [[ "$missing" -eq 0 && "$resolved_targets" -gt 0 ]]; then
   printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-  printf '  \033[31m✗\033[0m %s (%d missing)\n' "$TEST_NAME" "$missing"
+  printf '  \033[31m✗\033[0m %s (%d missing of %d)\n' "$TEST_NAME" "$missing" "$resolved_targets"
 fi
 
 TESTS_RUN=$((TESTS_RUN + 1))
@@ -3624,40 +3675,28 @@ codex_hook 0 "kimi: prompt nudge fails open on malformed input" \
   "not json at all" "$KIMI_NUDGE"
 rm -rf "$KIMI_NUDGE_REPO"
 
-# ---- the ~ word-start guard, every adapter (#4417) --------------------------
+# ---- no location in any manifest, every adapter (#4759) --------------------
 
-section "manifest ~ expansion (all adapters)"
+section "manifest commands name no location (all adapters)"
 
-# Every manifest routes through `~/.jus-skills/…`, and a shell expands `~` only
-# at the START of a word. `--flag=~/x`, `"~/x"`, or a tilde anywhere but the
-# first character of a word is a literal: command not found, exit 127, and
-# every adapter's fail-open default turns that into a tool whose hooks are ALL
-# dead, with no output anywhere. One stray quote in one manifest does it, and
-# nothing else in the bundle would report it.
+# ⚠️ THIS REPLACES THE `~` WORD-START GUARD (#4417), AND THE REPLACEMENT IS NOT
+# A RELAXATION. That guard existed because a tilde expands only at the START of
+# a word, so `adapt.sh "~/.jus-skills/…/guard.sh"` passed the second path
+# through literally, the script was not found, the exit was 127, and every
+# adapter reads a non-2 exit as fail-OPEN: all hooks dead, no output anywhere.
+# Since #4759 a manifest names no path at all, so the defect is not reachable —
+# and this asserts the property that makes it unreachable, which is stronger
+# than asserting where the tildes sit.
 #
-# ⚠️ THE RULE IS MEASURED ON THREE TOOLS — two from their own shipped code, one
-# live. It is an assumption on the other four, which is exactly why the guard is
-# cheap insurance rather than a formality:
-#   Cursor — wraps the command in a heredoc and hands the string to a shell, so
-#            the shell does the expanding (#4261)
-#   Qwen   — `getShellConfiguration()` returns `argsPrefix: ["-c"]` on every
-#            POSIX platform, i.e. `bash -c "<cmd>"` (#4261)
-#   Codex  — measured 2026-09-17 on codex-cli 0.154.0 (#4417): three SessionStart
-#            hooks under an isolated HOME and CODEX_HOME, bare tilde FIRED,
-#            quoted tilde did NOT fire, absolute path FIRED as the control arm
+# ⚠️ THE THREE MANIFESTS OUTSIDE hooks/<adapter>/ ARE STILL OUT OF SCOPE:
+# hooks/hooks.json, ../kimi.plugin.json and ../gemini-extension.json are each
+# installed as a plugin and reach the scripts relatively or through
+# ${CLAUDE_PLUGIN_ROOT}, which the tool substitutes. There is nothing here for
+# this rule to hold.
 #
-# ⚠️ THIS WALKS THE DIRECTORY RATHER THAN A LIST, so an eighth adapter is covered
-# the day it lands — including by FAILING if its manifest carries a name none of
-# the three known ones cover. A silent skip is the failure a check like this
-# acquires later, and it is invisible from a green run.
-#
-# ⚠️ THE THREE MANIFESTS OUTSIDE hooks/<adapter>/ ARE OUT OF SCOPE BY MEASUREMENT,
-# not by oversight: hooks/hooks.json, ../kimi.plugin.json and
-# ../gemini-extension.json carry ZERO tildes between them, because each is
-# installed as a plugin and reaches the scripts by a relative path or by
-# ${CLAUDE_PLUGIN_ROOT}. There is nothing here for this rule to hold. Adding one
-# to the walk would fail it on "no ~ paths", which is the assertion below
-# working correctly.
+# ⚠️ IT WALKS THE DIRECTORY RATHER THAN A LIST, so an eighth adapter is covered
+# the day it lands — including by FAILING when its manifest carries a name none
+# of the three known ones cover.
 
 # Emit every hook command string in a manifest, one per line.
 manifest_commands() { # <manifest-path>
@@ -3687,67 +3726,62 @@ manifest_command_keys() { # <manifest-path>
   esac
 }
 
-for tilde_dir in "$HOOKS_DIR"/*/; do
-  tilde_adapter=$(basename "$tilde_dir")
+for loc_dir in "$HOOKS_DIR"/*/; do
+  loc_adapter=$(basename "$loc_dir")
   # scripts/ holds the shared hooks themselves, not a manifest. Any OTHER new
   # directory here is an adapter until somebody says otherwise, and will fail
   # below for want of a manifest — deliberately, so that it is a decision.
-  [[ "$tilde_adapter" == "scripts" ]] && continue
+  [[ "$loc_adapter" == "scripts" ]] && continue
 
   TESTS_RUN=$((TESTS_RUN + 1))
-  TEST_NAME="$tilde_adapter: every ~ in the manifest sits at the start of a word, where a shell expands it"
+  TEST_NAME="$loc_adapter: every manifest command is 'jus hook', naming no location"
 
-  tilde_manifest=""
-  for tilde_candidate in hooks.json settings.json config-hooks.toml; do
-    if [[ -f "$tilde_dir$tilde_candidate" ]]; then
-      tilde_manifest="$tilde_dir$tilde_candidate"
+  loc_manifest=""
+  for loc_candidate in hooks.json settings.json config-hooks.toml; do
+    if [[ -f "$loc_dir$loc_candidate" ]]; then
+      loc_manifest="$loc_dir$loc_candidate"
       break
     fi
   done
-  if [[ -z "$tilde_manifest" ]]; then
+  if [[ -z "$loc_manifest" ]]; then
     TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
     printf '  \033[31m✗\033[0m %s (no hooks.json, settings.json or config-hooks.toml)\n' "$TEST_NAME"
     continue
   fi
 
-  bad_tilde=""; tilde_cmds=0; tilde_paths=0
+  loc_bad=""; loc_cmds=0; loc_launcher=0
   while IFS= read -r cmd; do
     [[ -n "$cmd" ]] || continue
-    tilde_cmds=$((tilde_cmds + 1))
-    # `read -ra` splits on IFS exactly as a shell does and, unlike `for w in
-    # $cmd`, does not glob — a command holding a `*` would otherwise be expanded
-    # against the current directory before it was ever examined.
-    read -ra tilde_words <<<"$cmd"
-    for word in ${tilde_words[@]+"${tilde_words[@]}"}; do
-      # `\~` unquoted, as SKILLS_PREFIX does above: shellcheck's SC2088 fires on
-      # a quoted tilde even where it is a case PATTERN and a literal is wanted.
-      case "$word" in
-        \~/*) tilde_paths=$((tilde_paths + 1)) ;;
-        *\~*) bad_tilde+="$word " ;;
-      esac
-    done
-  done < <(manifest_commands "$tilde_manifest")
-  tilde_keys=$(manifest_command_keys "$tilde_manifest")
+    loc_cmds=$((loc_cmds + 1))
+    case "$cmd" in
+      "jus hook "*) loc_launcher=$((loc_launcher + 1)) ;;
+      *) loc_bad+="$cmd | " ;;
+    esac
+    # A command free of `/` and `~` can still need a shell — `$HOME`, `$(…)`, a
+    # backtick — and several adapters exec it directly, so an unexpanded
+    # variable is passed through as a literal and the hook runs against a path
+    # that does not exist.
+    case "$cmd" in
+      *[\$\`~]*) loc_bad+="$cmd | " ;;
+    esac
+  done < <(manifest_commands "$loc_manifest")
+  loc_keys=$(manifest_command_keys "$loc_manifest")
 
   # ⚠️ AN EMPTY WALK LOOKS CLEAN. A manifest this extractor cannot read yields
-  # no commands, therefore no bad tildes, therefore a PASS that asserted
-  # nothing. All three counts are checked so that failure is loud instead.
-  if [[ "$tilde_cmds" -eq 0 ]]; then
+  # no commands, therefore nothing bad, therefore a PASS that asserted nothing.
+  # All three counts are checked so that failure is loud instead.
+  if [[ "$loc_cmds" -eq 0 ]]; then
     TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-    printf '  \033[31m✗\033[0m %s (no hook commands read from %s)\n' "$TEST_NAME" "$(basename "$tilde_manifest")"
-  elif [[ "$tilde_cmds" -ne "$tilde_keys" ]]; then
+    printf '  \033[31m✗\033[0m %s (no hook commands read from %s)\n' "$TEST_NAME" "$(basename "$loc_manifest")"
+  elif [[ "$loc_cmds" -ne "$loc_keys" ]]; then
     TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
     printf '  \033[31m✗\033[0m %s (read %d of the %d command keys in %s)\n' \
-      "$TEST_NAME" "$tilde_cmds" "$tilde_keys" "$(basename "$tilde_manifest")"
-  elif [[ "$tilde_paths" -eq 0 ]]; then
+      "$TEST_NAME" "$loc_cmds" "$loc_keys" "$(basename "$loc_manifest")"
+  elif [[ -n "$loc_bad" ]]; then
     TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-    printf '  \033[31m✗\033[0m %s (%d command(s), none of them a ~ path — did the install prefix change?)\n' \
-      "$TEST_NAME" "$tilde_cmds"
-  elif [[ -n "$bad_tilde" ]]; then
-    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
-    printf '  \033[31m✗\033[0m %s (%s)\n' "$TEST_NAME" "$bad_tilde"
+    printf '  \033[31m✗\033[0m %s (%s)\n' "$TEST_NAME" "$loc_bad"
   else
-    printf '  \033[32m✓\033[0m %s (%d ~ paths over %d commands)\n' "$TEST_NAME" "$tilde_paths" "$tilde_cmds"
+    printf '  \033[32m✓\033[0m %s (%d launcher command(s))\n' "$TEST_NAME" "$loc_launcher"
   fi
 done
 

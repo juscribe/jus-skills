@@ -22,6 +22,14 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.36] — 2026-09-22
+
+### Changed
+
+- Bring the adapter READMEs onto the launcher (#4792)
+- Measure the codex PreToolUse deny end to end (#4412)
+- Resolve the bundle at run time with jus hook (#4759)
+
 ## [1.4.35] — 2026-09-21
 
 ### Changed

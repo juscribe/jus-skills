@@ -58,7 +58,7 @@ jus doctor
 
 Non-interactive, exit-coded, prompts for nothing. It reports the token, the workspace, the git repository and the skills surface — the plugin and its scope for Claude Code, the clone and the `.agents/skills/` links for every other tool — and prints the exact fix for whatever failed.
 
-⚠️ **And a clone pull does NOT update an installed hook manifest.** Skills are symlinks and the shared hook scripts are referenced by absolute path, so both move with a `git -C ~/.jus-skills pull`. Every manifest is a **copy**, so a change to which events an adapter registers reaches nobody who already installed. `jus doctor` names the missing registrations; `jus refresh-hooks` adds them, additively, so a hand edit survives.
+⚠️ **And a clone pull does NOT update an installed hook manifest.** Skills are symlinks, and every registration is now `jus hook <name>` with the bundle resolved at run time, so both move with a `git -C ~/.jus-skills pull`. Every manifest is a **copy**, so a change to which events an adapter registers reaches nobody who already installed. `jus doctor` names the missing registrations; `jus refresh-hooks` adds them, additively, so a hand edit survives — and migrates a manifest still naming `~/.jus-skills` before it merges, rather than leaving both commands live.
 
 ⚠️ **A passing verdict still names the reload, and that is not noise.** "Installed, but this session started before the install" leaves no trace on disk, so a clean registry is the only moment that case can be raised. It is the third of three states and the one people hit.
 

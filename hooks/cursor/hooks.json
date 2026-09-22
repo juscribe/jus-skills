@@ -3,64 +3,64 @@
   "hooks": {
     "beforeShellExecution": [
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-force-push.sh"
+        "command": "jus hook --adapt cursor jus-block-force-push"
       },
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-no-verify.sh"
+        "command": "jus hook --adapt cursor jus-block-no-verify"
       },
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-pre-commit-gate.sh"
+        "command": "jus hook --adapt cursor jus-pre-commit-gate"
       },
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-accepted-manifest-edit.sh"
+        "command": "jus hook --adapt cursor jus-block-accepted-manifest-edit"
       },
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-blocker-date-nudge.sh"
+        "command": "jus hook --adapt cursor jus-blocker-date-nudge"
       }
     ],
     "preToolUse": [
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-lint-suppression.sh"
+        "command": "jus hook --adapt cursor jus-block-lint-suppression"
       }
     ],
     "afterShellExecution": [
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-post-bash-tracker.sh"
+        "command": "jus hook --adapt cursor jus-post-bash-tracker"
       },
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh"
+        "command": "jus hook --adapt cursor jus-docs-nudge"
       }
     ],
     "afterFileEdit": [
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-track-edits.sh"
+        "command": "jus hook --adapt cursor jus-track-edits"
       },
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-start-comment-nudge.sh"
+        "command": "jus hook --adapt cursor jus-start-comment-nudge"
       },
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh"
+        "command": "jus hook --adapt cursor jus-docs-nudge"
       }
     ],
     "afterTabFileEdit": [
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-track-edits.sh"
+        "command": "jus hook --adapt cursor jus-track-edits"
       },
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-start-comment-nudge.sh"
+        "command": "jus hook --adapt cursor jus-start-comment-nudge"
       },
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh"
+        "command": "jus hook --adapt cursor jus-docs-nudge"
       }
     ],
     "stop": [
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-stop-uncommitted.sh"
+        "command": "jus hook --adapt cursor jus-stop-uncommitted"
       }
     ],
     "beforeSubmitPrompt": [
       {
-        "command": "~/.jus-skills/hooks/cursor/scripts/jus-cursor-adapt.sh ~/.jus-skills/hooks/scripts/jus-ticket-claim-nudge.sh"
+        "command": "jus hook --adapt cursor jus-ticket-claim-nudge"
       }
     ]
   }

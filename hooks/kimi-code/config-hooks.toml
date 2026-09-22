@@ -5,7 +5,9 @@
 # Kimi plugin instead (kimi.plugin.json at the bundle root carries the same
 # rules with plugin-relative paths; see hooks/kimi-code/README.md).
 #
-# Paths assume the canonical ~/.jus-skills install. [[hooks]] accepts ONLY
+# Every command is `jus hook <name>` (#4759) — jus resolves the bundle at run
+# time, so no path is baked in here and `jus` has to be on PATH where Kimi
+# spawns a hook. [[hooks]] accepts ONLY
 # event / matcher / command / timeout — extra keys fail the whole config load.
 # The Stop rule deliberately has no matcher: Kimi matches Stop against an
 # empty string, so any non-empty matcher would never fire.
@@ -13,62 +15,62 @@
 [[hooks]]
 event = "PreToolUse"
 matcher = "^Bash$"
-command = "~/.jus-skills/hooks/scripts/jus-block-force-push.sh"
+command = "jus hook jus-block-force-push"
 timeout = 10
 
 [[hooks]]
 event = "PreToolUse"
 matcher = "^Bash$"
-command = "~/.jus-skills/hooks/scripts/jus-block-no-verify.sh"
+command = "jus hook jus-block-no-verify"
 timeout = 10
 
 [[hooks]]
 event = "PreToolUse"
 matcher = "^Bash$"
-command = "~/.jus-skills/hooks/scripts/jus-pre-commit-gate.sh"
+command = "jus hook jus-pre-commit-gate"
 timeout = 10
 
 [[hooks]]
 event = "PreToolUse"
 matcher = "^Bash$"
-command = "~/.jus-skills/hooks/scripts/jus-block-accepted-manifest-edit.sh"
+command = "jus hook jus-block-accepted-manifest-edit"
 timeout = 10
 
 [[hooks]]
 event = "PreToolUse"
 matcher = "^Bash$"
-command = "~/.jus-skills/hooks/scripts/jus-blocker-date-nudge.sh"
+command = "jus hook jus-blocker-date-nudge"
 timeout = 10
 
 [[hooks]]
 event = "PreToolUse"
 matcher = "^(Edit|Write)$"
-command = "~/.jus-skills/hooks/kimi-code/scripts/jus-kimi-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-lint-suppression.sh"
+command = "jus hook --adapt kimi-code jus-block-lint-suppression"
 timeout = 10
 
 [[hooks]]
 event = "PostToolUse"
 matcher = "^Bash$"
-command = "~/.jus-skills/hooks/scripts/jus-post-bash-tracker.sh"
+command = "jus hook jus-post-bash-tracker"
 timeout = 10
 
 [[hooks]]
 event = "PostToolUse"
 matcher = "^(Edit|Write)$"
-command = "~/.jus-skills/hooks/kimi-code/scripts/jus-kimi-adapt.sh ~/.jus-skills/hooks/scripts/jus-track-edits.sh"
+command = "jus hook --adapt kimi-code jus-track-edits"
 timeout = 10
 
 [[hooks]]
 event = "UserPromptSubmit"
-command = "~/.jus-skills/hooks/kimi-code/scripts/jus-kimi-prompt-nudge.sh"
+command = "jus hook kimi-code/jus-kimi-prompt-nudge"
 timeout = 10
 
 [[hooks]]
 event = "UserPromptSubmit"
-command = "~/.jus-skills/hooks/scripts/jus-ticket-claim-nudge.sh"
+command = "jus hook jus-ticket-claim-nudge"
 timeout = 10
 
 [[hooks]]
 event = "Stop"
-command = "~/.jus-skills/hooks/scripts/jus-stop-uncommitted.sh"
+command = "jus hook jus-stop-uncommitted"
 timeout = 15

@@ -6,31 +6,31 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-force-push.sh",
+            "command": "jus hook --adapt qwen jus-block-force-push",
             "name": "jus-block-force-push",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-no-verify.sh",
+            "command": "jus hook --adapt qwen jus-block-no-verify",
             "name": "jus-block-no-verify",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-pre-commit-gate.sh",
+            "command": "jus hook --adapt qwen jus-pre-commit-gate",
             "name": "jus-pre-commit-gate",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-accepted-manifest-edit.sh",
+            "command": "jus hook --adapt qwen jus-block-accepted-manifest-edit",
             "name": "jus-block-accepted-manifest-edit",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-blocker-date-nudge.sh",
+            "command": "jus hook --adapt qwen jus-blocker-date-nudge",
             "name": "jus-blocker-date-nudge",
             "timeout": 10
           }
@@ -41,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-lint-suppression.sh",
+            "command": "jus hook --adapt qwen jus-block-lint-suppression",
             "name": "jus-block-lint-suppression",
             "timeout": 10
           }
@@ -54,13 +54,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-post-bash-tracker.sh",
+            "command": "jus hook --adapt qwen jus-post-bash-tracker",
             "name": "jus-post-bash-tracker",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh",
+            "command": "jus hook --adapt qwen jus-docs-nudge",
             "name": "jus-docs-nudge-bash",
             "timeout": 10
           }
@@ -71,19 +71,19 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-track-edits.sh",
+            "command": "jus hook --adapt qwen jus-track-edits",
             "name": "jus-track-edits",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-start-comment-nudge.sh",
+            "command": "jus hook --adapt qwen jus-start-comment-nudge",
             "name": "jus-start-comment-nudge",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh",
+            "command": "jus hook --adapt qwen jus-docs-nudge",
             "name": "jus-docs-nudge-edit",
             "timeout": 10
           }
@@ -95,7 +95,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-stop-uncommitted.sh",
+            "command": "jus hook --adapt qwen jus-stop-uncommitted",
             "name": "jus-stop-uncommitted",
             "timeout": 15
           }
@@ -107,7 +107,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/qwen/scripts/jus-qwen-adapt.sh ~/.jus-skills/hooks/scripts/jus-ticket-claim-nudge.sh",
+            "command": "jus hook --adapt qwen jus-ticket-claim-nudge",
             "name": "jus-ticket-claim-nudge",
             "timeout": 15
           }

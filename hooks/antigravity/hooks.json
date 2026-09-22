@@ -7,32 +7,32 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh PreToolUse ~/.jus-skills/hooks/scripts/jus-block-force-push.sh",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-block-force-push",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh PreToolUse ~/.jus-skills/hooks/scripts/jus-block-no-verify.sh",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-block-no-verify",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh PreToolUse ~/.jus-skills/hooks/scripts/jus-pre-commit-gate.sh",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-pre-commit-gate",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh PreToolUse ~/.jus-skills/hooks/scripts/jus-block-accepted-manifest-edit.sh",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-block-accepted-manifest-edit",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh PreToolUse ~/.jus-skills/hooks/scripts/jus-blocker-date-nudge.sh",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-blocker-date-nudge",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh PreToolUse ~/.jus-skills/hooks/scripts/jus-block-lint-suppression.sh",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-block-lint-suppression",
             "timeout": 10
           }
         ]
@@ -44,22 +44,22 @@
         "hooks": [
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh PostToolUse ~/.jus-skills/hooks/scripts/jus-track-edits.sh",
+            "command": "jus hook --adapt antigravity --event PostToolUse jus-track-edits",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh PostToolUse ~/.jus-skills/hooks/scripts/jus-post-bash-tracker.sh",
+            "command": "jus hook --adapt antigravity --event PostToolUse jus-post-bash-tracker",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh PostToolUse ~/.jus-skills/hooks/scripts/jus-start-comment-nudge.sh",
+            "command": "jus hook --adapt antigravity --event PostToolUse jus-start-comment-nudge",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh PostToolUse ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh",
+            "command": "jus hook --adapt antigravity --event PostToolUse jus-docs-nudge",
             "timeout": 10
           }
         ]
@@ -68,14 +68,14 @@
     "PreInvocation": [
       {
         "type": "command",
-        "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh PreInvocation ~/.jus-skills/hooks/scripts/jus-ticket-claim-nudge.sh",
+        "command": "jus hook --adapt antigravity --event PreInvocation jus-ticket-claim-nudge",
         "timeout": 15
       }
     ],
     "Stop": [
       {
         "type": "command",
-        "command": "~/.jus-skills/hooks/antigravity/scripts/jus-antigravity-adapt.sh Stop ~/.jus-skills/hooks/scripts/jus-stop-uncommitted.sh",
+        "command": "jus hook --adapt antigravity --event Stop jus-stop-uncommitted",
         "timeout": 15
       }
     ]

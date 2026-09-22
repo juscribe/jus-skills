@@ -59,11 +59,22 @@ registers twice and fires twice per event — the same trap
 `installing-the-bundle.md` documents for Claude Code, with the same symptom:
 nothing fails, a counter just doubles.
 
-✅ **The `~` in every `command` DOES expand, and here is why.** Cursor documents
-project hook commands as running from the project root with relative paths like
-`.cursor/hooks/script.sh`; this manifest uses `~/.jus-skills/...` because the
-bundle lives outside the project and there is no relative path from `.cursor/` to
-a home directory. Cursor does not spawn the command directly — it builds
+## Every command is `jus hook`, so `jus` has to be on PATH
+
+Since #4759 no command in this manifest names a location — each is
+`jus hook --adapt cursor <name>`, and `jus` resolves the bundle at run time.
+`../tests.sh` holds every manifest to that shape and refuses one
+carrying a path, a `~` or a `$`.
+
+⚠️ **The chain is a FALLBACK, and `JUS_SKILLS_DIR` comes FIRST — it wins even
+when the directory it names does not exist.** `JUS_SKILLS_DIR`, then the
+Homebrew prefix, then `~/.jus-skills`: the first one found answers. So a typo in
+that variable silently disables every guard while a healthy clone sits in
+`~/.jus-skills`. It is **not** layered overrides with the most specific last,
+which is how an eye trained on git config or eslint will read it.
+
+✅ **Cursor reaches it through a shell, which is how `jus` is found on `PATH`.**
+Cursor does not spawn the command directly: `executeCommandScript` builds
 
 ```text
 <command> <<'CURSOR_HOOK_EOF'
@@ -72,17 +83,18 @@ CURSOR_HOOK_EOF
 ```
 
 and hands that whole string to a shell, which a heredoc is meaningful to and
-nothing else. **The shell is what expands the tilde**, so Cursor never has to.
+nothing else. `../tests.sh` runs the manifest's own first command through that
+exact transport, against a staged bundle, and asserts it still blocks a
+force-push.
 
-⚠️ **Which means the expansion is positional: a shell expands `~` only at the
-START of a word.** `"~/.jus-skills/..."`, `--flag=~/...` or a tilde anywhere but
-the first character is a literal, the command is not found, the exit is 127, and
-Cursor treats a non-2 exit as fail-**open** — so every hook silently does
-nothing and the session looks healthy. `../tests.sh` has a guard for exactly
-this; it was written by mutating a quoted path into the manifest and watching all
-three transport tests go to 127. Since #4417 that guard covers **all seven**
-adapter manifests rather than this one, and walks the directory rather than a
-list, so an eighth is covered the day it lands.
+⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until #4759
+every command named `~/.jus-skills/…`; a shell expands `~` only at the START of
+a word, so `"~/.jus-skills/..."` or `--flag=~/...` was a literal, the command
+was not found, the exit was 127, and Cursor reads a non-2 exit as
+fail-**open** — every hook silently dead, session looking healthy (#4417). A
+missing `jus` on `PATH` produces exactly that, so it is the first thing to
+check when the guards go quiet: `jus hook --where` prints which bundle
+answered, and `jus doctor` says so too.
 
 ## Trust and approval
 
@@ -388,7 +400,9 @@ this section** — a sentence here is about one of them, not about Cursor.
 **macOS, 2026-09-17 (#4261).** The fixture is a
 throwaway git repository with a **local bare remote** beside it, a `.jus/`
 directory at its toplevel, and `.cursor/hooks.json` copied from this manifest
-with `~/.jus-skills/hooks` rewritten to a staged copy of the bundle. Local and
+with the bundle staged under a throwaway `HOME` (before #4759 this meant
+rewriting `~/.jus-skills/hooks` in the manifest; it now means `HOME` alone).
+Local and
 remote were deliberately diverged, so a plain push is refused and only a force
 can land.
 

@@ -72,12 +72,13 @@ is selected"_ — which reads like a credential problem rather than a flag probl
 ⚠️ **Do not pass `--bare`.** It skips startup auto-discovery, and that includes
 hook discovery: the run completes, looks clean, and fires nothing.
 
-⚠️ **Do not override `HOME` to isolate the config.** Every command in this manifest
-is written `~/.jus-skills/hooks/...`, so the tilde expands into the fake home and
-every hook points at a file that does not exist — **and a hook whose command is
-missing fires nothing and says nothing.** Measured: that produced a clean
-"qwen cannot deny" result, which is the wrong answer to this adapter's deciding
-question. Symlink the bundle into the fake home, or leave `HOME` alone.
+⚠️ **Do not override `HOME` to isolate the config.** `jus` resolves the bundle
+at `~/.jus-skills` (#4759), so a fake home resolves to a bundle that is not
+there — and a hook that cannot find its bundle fails **open**, silently, which
+is the same shape as the pre-launcher trap this replaces. Measured then: a
+clean "qwen cannot deny" result, which is the wrong answer to this adapter's
+deciding question. Symlink the bundle into the fake home, point
+`JUS_SKILLS_DIR` at it, or leave `HOME` alone.
 
 ⚠️ **Always run a control arm.** The trap above was caught by the control failing
 to differ from the guarded arm, and by nothing else.
@@ -110,19 +111,36 @@ mkdir -p .qwen && cp ~/.jus-skills/hooks/qwen/settings.json .qwen/settings.json
 
 ⚠️ **Registering at project _and_ user scope fires every hook twice.** Pick one.
 
-## The `~` in every command is expanded by `bash -c`
+## Every command is `jus hook`, so `jus` has to be on PATH
 
-Qwen does not spawn a hook command directly. `getShellConfiguration()` returns
+Since #4759 no command in this manifest names a location — each is
+`jus hook [--adapt qwen] <name>`, and `jus` resolves the bundle at run time.
+`../tests.sh` holds every manifest to that shape, and refuses one carrying a
+path, a `~` or a `$`.
+
+⚠️ **The chain is a FALLBACK, and `JUS_SKILLS_DIR` comes FIRST — it wins even
+when the directory it names does not exist.** `JUS_SKILLS_DIR`, then the
+Homebrew prefix, then `~/.jus-skills`: the first one found answers. So a typo in
+that variable silently disables every guard while a healthy clone sits in
+`~/.jus-skills`. It is **not** layered overrides with the most specific last,
+which is how an eye trained on git config or eslint will read it.
+
+✅ **Qwen reaches it through a shell, which is how `jus` is found on `PATH`.**
+It does not spawn a hook command directly: `getShellConfiguration()` returns
 `argsPrefix: ["-c"]` on every POSIX platform, so the whole command string is
-handed to `bash -c` and **the shell is what expands the tilde** — read from
-qwen-code's own shipped source on #4261.
+handed to `bash -c` — read from qwen-code's own shipped source on #4261. Qwen is
+also one of the five adapters `script/dev/drive-adapter` drives end to end: on
+#4759 it PASSed with this launcher on `PATH`, and FAILed with hook liveness
+**SILENT** against the released CLI that predates `jus hook`. That pair is the
+measurement, and it is why the CLI must be published before the bundle.
 
-⚠️ **Which makes the expansion positional.** A shell expands `~` only at the
-START of a word, so `"~/.jus-skills/..."`, `--flag=~/...`, or a tilde anywhere
-but the first character is a literal: command not found, exit 127, fail-open,
-and every hook in this file silently does nothing while the session looks
-healthy. `../tests.sh` holds every path in this manifest against that rule
-(#4417).
+⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until #4759
+every command named `~/.jus-skills/…`; a shell expands `~` only at the START of
+a word, so a tilde one character later was a literal, the command was not found,
+the exit was 127, and a non-2 exit is fail-**open** — every hook silently dead
+with the session looking healthy (#4417). A missing `jus` on `PATH` produces
+exactly that, so it is the first thing to check when the guards go quiet:
+`jus hook --where` prints which bundle answered, and `jus doctor` says so too.
 
 ## ⚠️ The matcher trap, which is why this shim exists at all
 

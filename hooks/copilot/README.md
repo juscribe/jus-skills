@@ -59,18 +59,27 @@ The skills are a separate install and do not come with these. See
 `installing-the-bundle.md`; Copilot reads `.agents/skills/`, `.github/skills/`
 and `.claude/skills/`, so the canonical recipe works unchanged.
 
-## How the `~` in every command is expanded — not established here
+## Every command is `jus hook`, so `jus` has to be on PATH
 
-Every path in this manifest is `~/.jus-skills/…`, and `../tests.sh` holds each one
-at the start of a word, because that is the only position a shell expands `~`
-(#4417). **Whether Copilot spawns a hook command through a shell at all is
-unread**: it is not installed on the machine this was written on, so nothing here
-was measured against its shipped code.
+Since #4759 no command in this manifest names a location — each is
+`jus hook [--adapt copilot] <name>`, and `jus` resolves the bundle at run time.
+`../tests.sh` holds every manifest to that shape, and refuses one
+carrying a path, a `~` or a `$`.
 
-The rule is settled on three siblings — Cursor and Qwen from their own source
-(#4261), Codex live (#4417) — and the guard costs nothing if Copilot turns out to
-expand the tilde itself. If you have the tool, the probe is three hooks on one
-event: a bare tilde, a quoted tilde, and an absolute path as the control arm.
+⚠️ **The chain is a FALLBACK, and `JUS_SKILLS_DIR` comes FIRST — it wins even
+when the directory it names does not exist.** `JUS_SKILLS_DIR`, then the
+Homebrew prefix, then `~/.jus-skills`: the first one found answers. So a typo in
+that variable silently disables every guard while a healthy clone sits in
+`~/.jus-skills`. It is **not** layered overrides with the most specific last,
+which is how an eye trained on git config or eslint will read it.
+
+⚠️ **What that moves, rather than removes, is the requirement.** The old form
+needed a shell to expand `~` at the start of a word, and a tilde one character
+later was a literal, a command not found, exit 127, and an adapter reading
+fail-**open** — every hook dead with no output (#4417). The new form needs
+`jus` on `PATH` wherever Copilot spawns a hook. The failure shape is the same
+one, so if the guards go quiet, check that first: `jus hook --where` prints
+which bundle answered, and `jus doctor` says so too.
 
 ## What the shim does
 

@@ -7,31 +7,31 @@
           {
             "name": "jus-block-force-push",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-force-push.sh",
+            "command": "jus hook --adapt gemini jus-block-force-push",
             "timeout": 10000
           },
           {
             "name": "jus-block-no-verify",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-no-verify.sh",
+            "command": "jus hook --adapt gemini jus-block-no-verify",
             "timeout": 10000
           },
           {
             "name": "jus-pre-commit-gate",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-pre-commit-gate.sh",
+            "command": "jus hook --adapt gemini jus-pre-commit-gate",
             "timeout": 10000
           },
           {
             "name": "jus-block-accepted-manifest-edit",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-accepted-manifest-edit.sh",
+            "command": "jus hook --adapt gemini jus-block-accepted-manifest-edit",
             "timeout": 10000
           },
           {
             "name": "jus-blocker-date-nudge",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-blocker-date-nudge.sh",
+            "command": "jus hook --adapt gemini jus-blocker-date-nudge",
             "timeout": 10000
           }
         ]
@@ -42,7 +42,7 @@
           {
             "name": "jus-block-lint-suppression",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-block-lint-suppression.sh",
+            "command": "jus hook --adapt gemini jus-block-lint-suppression",
             "timeout": 10000
           }
         ]
@@ -55,13 +55,13 @@
           {
             "name": "jus-post-bash-tracker",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-post-bash-tracker.sh",
+            "command": "jus hook --adapt gemini jus-post-bash-tracker",
             "timeout": 10000
           },
           {
             "name": "jus-docs-nudge",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh",
+            "command": "jus hook --adapt gemini jus-docs-nudge",
             "timeout": 10000
           }
         ]
@@ -72,19 +72,19 @@
           {
             "name": "jus-track-edits",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-track-edits.sh",
+            "command": "jus hook --adapt gemini jus-track-edits",
             "timeout": 10000
           },
           {
             "name": "jus-start-comment-nudge",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-start-comment-nudge.sh",
+            "command": "jus hook --adapt gemini jus-start-comment-nudge",
             "timeout": 10000
           },
           {
             "name": "jus-docs-nudge",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-docs-nudge.sh",
+            "command": "jus hook --adapt gemini jus-docs-nudge",
             "timeout": 10000
           }
         ]
@@ -96,7 +96,7 @@
           {
             "name": "jus-ticket-claim-nudge",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-ticket-claim-nudge.sh",
+            "command": "jus hook --adapt gemini jus-ticket-claim-nudge",
             "timeout": 15000
           }
         ]
@@ -108,7 +108,7 @@
           {
             "name": "jus-stop-uncommitted",
             "type": "command",
-            "command": "~/.jus-skills/hooks/gemini/scripts/jus-gemini-adapt.sh ~/.jus-skills/hooks/scripts/jus-stop-uncommitted.sh",
+            "command": "jus hook --adapt gemini jus-stop-uncommitted",
             "timeout": 15000
           }
         ]
