@@ -33,6 +33,7 @@ Codex, Cursor, Kimi Code, Gemini CLI, Windsurf, Zed and Antigravity all read `.a
 - [jus-dispatch](https://github.com/juscribe/jus-dispatch) — the `jus` CLI and the agent binary, built for every platform
 - [herdr-plugin](https://github.com/juscribe/herdr-plugin) — the Herdr plugin
 - [homebrew-tap](https://github.com/juscribe/homebrew-tap) — the Homebrew formula
+- [@juscribe/mcp](https://www.npmjs.com/package/@juscribe/mcp) — the MCP server and its install block, for any tool that speaks MCP
 - [Support](https://juscribe.ai/support)
 
 ## What's in the box

@@ -46,7 +46,7 @@ This SOP drives the Juscribe board through the **`jus` CLI**. The bundle ships t
 - `jus: command not found` → the CLI isn't installed. Tell the user to `brew install juscribe/tap/jus`, then stop.
 - `Error: No token available. Run 'jus login'…` → installed but unauthenticated. Tell the user to run `jus login` or `jus init`, then stop.
 - `Error: Stored token is invalid or expired.` — or any `HTTP 401` from `jus api` — → the token was real and is now **retired**. API tokens expire: agent tokens 90 days after creation or last rotation, mobile sessions 60 days after last use. The 401 body names the remedy. Relay it and stop.
-  - An **agent** token needs a **rotate** (Settings → API Tokens), _not_ another `jus login` — re-authenticating hands back the same dead secret.
+  - An **agent** token needs a **rotate** (Settings → Security → Agent Tokens), _not_ another `jus login` — re-authenticating hands back the same dead secret.
   - Tell the user which, then stop.
 - `Error: Could not reach the Juscribe server at <base URL>` → **nothing is known about the token.** The request never got a reply, so this is a network problem: no connectivity, a sandbox denying outbound connections, or a wrong `JUSCRIBE_BASE_URL`. Curl's own line above it names which. ⚠️ **Do not rotate anything** — a fresh token fails identically. Relay the base URL it tried, and stop.
 

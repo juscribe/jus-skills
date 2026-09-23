@@ -22,6 +22,14 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.39] — 2026-09-23
+
+### Changed
+
+- Link the MCP install block from jus-skills, and record step 14's findings (#4655)
+- Name the agent tokens page as the app does (#4915)
+- Say the ticket index refuses an unknown parameter (#4931)
+
 ## [1.4.38] — 2026-09-22
 
 ### Changed

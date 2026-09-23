@@ -151,7 +151,15 @@ jus api PATCH /workspaces/{ws}/tickets/bulk_reorder '{"tickets":[{"id":"101","po
 
 ## Index filter params
 
-The ticket index takes a substantial filter set, and **nothing rejects a name it does not recognise, and nothing logs it either** — the index never puts the query string through strong parameters, so there is no `Unpermitted parameter` line to go looking for. A misspelled filter returns the unfiltered list with `HTTP 200`, which reads exactly like a filter that matched everything. Check `.pagination.count` against what you expected.
+The ticket index takes a substantial filter set, and **it refuses a parameter name it does not recognise**: `HTTP 422`, with every name it does accept in the error.
+
+```text
+Unknown parameter: search. Valid parameters: assignee_id, code, comments_limit, …, updated_since.
+```
+
+**Read it as a correction.** After `Unknown parameter:` comes every name it refused, not just the first. After `Valid parameters:` comes the whole set this endpoint reads, `page` and `per_page` included. Find the name you meant and send the request again. `jus api` exits `1` on the 422, so a script stops instead of reading on. A bad **value** for a name that does exist is a different 422, checked first and worded for the value: `Unknown stack mode: porject. Valid stack modes: project.`
+
+⚠️ **Only the ticket index refuses.** Every other list endpoint, `projects/{id}/tickets` included, still ignores a name it does not know and answers `HTTP 200` with the unfiltered list. That reads exactly like a filter that matched everything, so there, check `.pagination.count` against what you expected.
 
 ⚠️ **`.pagination.count` cannot tell you the list is SHORT, and `.meta.excluded_markers` is the field that can.** The count describes what came back, so it agrees with a thinned list exactly as readily as with a complete one — there is no internal inconsistency to notice. Markers are the thinning that happens by default, and `.meta.excluded_markers` says how many the exclusion removed from your own filter's population. It is **always present**, `0` when `include_markers=true` or a `ticket_type` meant nothing was withheld, so a zero is an answer rather than a silence.
 
@@ -159,7 +167,7 @@ The ticket index takes a substantial filter set, and **nothing rejects a name it
 jus api GET '/workspaces/{ws}/tickets?iteration_id={iteration}&per_page=200' | jq '.meta.excluded_markers'
 ```
 
-⚠️ **This is why "the tickets API has no text search" circulates as lore.** `query=` and `search=` are silently ignored because neither is the param name. **`q` works** — a case-insensitive substring match on title _or_ description.
+⚠️ **"The tickets API has no text search" circulates as lore, and it is wrong.** **`q` works**: a case-insensitive substring match on title _or_ description. `query=` and `search=` are the spellings people reach for, and the ticket index refuses both with the 422 above. It used to ignore them and return the whole table, which is where the lore came from.
 
 | Param | Notes |
 | --- | --- |
