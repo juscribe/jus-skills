@@ -358,11 +358,25 @@ section "jus-block-accepted-manifest-edit.sh"
 # into jq silently emptied the state, which (because this hook fails open)
 # turned the whole guard into a no-op.
 STUBDIR=$(mktemp -d)
+# stub_jus <state> [<path-prefix>] [<dir>]. Given a prefix, the stub answers only
+# for paths starting with it and 404s everything else, which is what the real
+# API does with a ticket id asked for in a workspace it is not in (#4940). The
+# prefix is matched LITERALLY: `/workspaces/{ws}/` means that text, unresolved,
+# because the hook must hand jus the path as the command wrote it and let jus
+# resolve it the way it resolved the PATCH (#4971). Given a dir, it also 404s
+# unless run from there: jus finds the workspace that `{ws}` and a bare path
+# resolve against by walking up from its own working directory.
 stub_jus() {
+  local state="$1" prefix="${2:-}" dir="${3:-}"
   cat > "$STUBDIR/jus" <<STUB
 #!/usr/bin/env bash
+if [[ "\$3" != "$prefix"* || ( -n "$dir" && "\$PWD" != "$dir" ) ]]; then
+  echo "HTTP 404"
+  echo '{"error":"Not found"}'
+  exit 1
+fi
 echo "HTTP 200"
-echo '{"ticket":{"state":"$1","id":"999"}}'
+echo '{"ticket":{"state":"$state","id":"999"}}'
 STUB
   chmod +x "$STUBDIR/jus"
 }
@@ -386,6 +400,67 @@ assert_exit 0 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
 t "allows a non-description PATCH on an accepted ticket"
 assert_exit 0 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
   '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /workspaces/1/tickets/999 \"{\\\"ticket\\\":{\\\"label_ids\\\":[1]}}\""}}'
+
+# ⚠️ WORKSPACE 1 IS OURS, NOT A DEFAULT (#4940). Every case above names
+# /workspaces/1/ and the stub answers whatever it is asked, so a hook that read
+# workspace 1 no matter what the command said passed all of them. This board
+# exists only in workspace 7: look in the wrong one and the lookup is a 404,
+# the state comes back empty, and the hook fails open.
+stub_jus accepted /workspaces/7/
+t "reads the state from the workspace the command names, not workspace 1"
+assert_exit 2 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /workspaces/7/tickets/999 \"{\\\"ticket\\\":{\\\"description\\\":\\\"x\\\"}}\""}}' \
+  "#999 is accepted"
+
+t "offers a comment command in that same workspace"
+assert_exit 2 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /workspaces/7/tickets/999 \"{\\\"ticket\\\":{\\\"description\\\":\\\"x\\\"}}\""}}' \
+  "jus api POST /workspaces/7/tickets/999/comments"
+
+# ⚠️ TWO MORE WAYS TO WRITE THE SAME EDIT (#4971). `jus api` substitutes `{ws}`
+# (since #865) and prefixes a bare `/tickets/N` with the configured workspace
+# (since #4729). The guard matched neither, so both skipped it without a word.
+stub_jus accepted '/workspaces/{ws}/'
+t "blocks a description PATCH written with the {ws} placeholder"
+assert_exit 2 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /workspaces/{ws}/tickets/999 \"{\\\"ticket\\\":{\\\"description\\\":\\\"x\\\"}}\""}}' \
+  "#999 is accepted"
+
+t "offers a {ws} comment command for a {ws} PATCH"
+assert_exit 2 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /workspaces/{ws}/tickets/999 \"{\\\"ticket\\\":{\\\"description\\\":\\\"x\\\"}}\""}}' \
+  "jus api POST /workspaces/{ws}/tickets/999/comments"
+
+t "allows a {ws} transition on an accepted ticket"
+assert_exit 0 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /workspaces/{ws}/tickets/999/transition \"{}\""}}'
+
+stub_jus accepted /tickets/
+t "blocks a description PATCH written as a bare /tickets/N"
+assert_exit 2 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /tickets/999 \"{\\\"ticket\\\":{\\\"description\\\":\\\"x\\\"}}\""}}' \
+  "#999 is accepted"
+
+t "offers a bare comment command for a bare PATCH through bin/jus"
+assert_exit 2 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"bin/jus api PATCH /tickets/999 \"{\\\"ticket\\\":{\\\"description\\\":\\\"x\\\"}}\""}}' \
+  "jus api POST /tickets/999/comments"
+
+t "allows a bare reorder on an accepted ticket"
+assert_exit 0 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"jus api PATCH /tickets/999/reorder \"{}\""}}'
+
+# The lookup runs from the session's directory, because that is where the
+# command's own jus found the workspace it resolved against.
+GUARD_PROJECT=$(mktemp -d)
+GUARD_CMD="jus api PATCH /tickets/999 '{\"ticket\":{\"description\":\"x\"}}'"
+stub_jus accepted /tickets/ "$GUARD_PROJECT"
+t "looks the ticket up from the session's cwd, where jus resolves the workspace"
+assert_exit 2 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
+  "$(jq -cn --arg cwd "$GUARD_PROJECT" --arg cmd "$GUARD_CMD" \
+    '{tool_name:"Bash",cwd:$cwd,tool_input:{command:$cmd}}')" \
+  "#999 is accepted"
+rm -rf "$GUARD_PROJECT"
 
 stub_jus prioritized
 t "allows a description PATCH on an open ticket"
@@ -4229,6 +4304,42 @@ t "a .jus outside any git repository does not wire it"
 assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
   "{\"cwd\":\"$GUARD_NOGIT\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push --force\"}}"
 
+# --- a monorepo package is wired by its own .jus (#4969) ---
+#
+# `jus init` in a package folder puts `.jus/` in the package, below the
+# toplevel, so a check on the toplevel alone left every hook silent there. It
+# was hidden until #4967 because init used to offer a nested `git init`, which
+# made the package its own toplevel.
+#
+# The ancestor `.jus` is present on purpose: the walk must stop AT the
+# toplevel, and `$GUARD_MONO` is a `mktemp -d` path that git resolves
+# differently (`/var` against `/private/var` on macOS), so a walk that compared
+# paths would sail past the toplevel and pass here.
+
+GUARD_MONO=$(mktemp -d)
+mkdir -p "$GUARD_MONO/.jus"
+( cd "$GUARD_MONO" && mkdir -p repo/packages/api/.jus/docs repo/packages/api/src repo/packages/web \
+  && cd repo && git init -q && git config user.email t@t && git config user.name t \
+  && touch a && git add a && git commit -q -m init )
+
+t "force-push guard blocks in a monorepo package holding .jus"
+assert_exit 2 "$SCRIPTS/jus-block-force-push.sh" \
+  "{\"cwd\":\"$GUARD_MONO/repo/packages/api\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push --force\"}}" \
+  "force-push"
+
+t "force-push guard blocks from a subdirectory of that package"
+assert_exit 2 "$SCRIPTS/jus-block-force-push.sh" \
+  "{\"cwd\":\"$GUARD_MONO/repo/packages/api/src\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push --force\"}}" \
+  "force-push"
+
+t "a sibling package with no .jus is not wired by its neighbour's"
+assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
+  "{\"cwd\":\"$GUARD_MONO/repo/packages/web\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push --force\"}}"
+
+t "the monorepo toplevel is not wired by a package's .jus"
+assert_exit 0 "$SCRIPTS/jus-block-force-push.sh" \
+  "{\"cwd\":\"$GUARD_MONO/repo\",\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push --force\"}}"
+
 # --- the escape hatch ---
 
 t "JUS_HOOKS_EVERYWHERE=1 restores the old machine-wide behaviour"
@@ -4263,7 +4374,7 @@ for guard_hook in "$SCRIPTS"/jus-*.sh; do
   fi
 done
 
-rm -rf "$GUARD_BARE" "$GUARD_WIRED" "$GUARD_NEST" "$GUARD_NOGIT"
+rm -rf "$GUARD_BARE" "$GUARD_WIRED" "$GUARD_NEST" "$GUARD_NOGIT" "$GUARD_MONO"
 # ---- the liveness record (#4416) ------------------------------------------
 
 section "hook liveness"

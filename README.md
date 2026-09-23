@@ -93,11 +93,13 @@ Twelve bash scripts wired into Claude Code's hook system. Each is a deterministi
 
 ### Where the hooks act
 
-**Every hook is a no-op outside a Juscribe project** (#4404). A hook runs only when its payload's `cwd` sits in a git repository whose toplevel holds a `.jus/` directory. Everywhere else all twelve exit 0 silently.
+**Every hook is a no-op outside a Juscribe project** (#4404). A hook runs only when its payload's `cwd` sits in a git repository with a `.jus/` directory in that folder or one above it, up to and including the repository's toplevel. Everywhere else all twelve exit 0 silently.
+
+In a monorepo that means the package you ran `jus init` in is wired, along with every folder inside it (#4969). A sibling package, or the monorepo root, is not: the check only ever looks **up** from the `cwd`.
 
 This is what stops an install in one project from reaching into every other checkout on the machine — a force push refused in an unrelated repository, a dirty-tree stop nag on somebody's weekend project. It also makes the install scope the only thing that decides where the bundle acts.
 
-⚠️ **A `.jus` in an ANCESTOR does not count, deliberately.** The check anchors on the git toplevel rather than walking up to `/`, because ancestors are not the project's to claim: a `.jus` in `$HOME` would wire every repository a person owns, and on the authoring machine `$TMPDIR/.jus/` already exists as litter from an unrelated tool. Not being in a git repository at all means not being in a Juscribe project — `jus init` refuses to set one up outside git.
+⚠️ **A `.jus` in an ANCESTOR does not count, deliberately.** The upward look stops at the git toplevel rather than carrying on to `/`, because ancestors are not the project's to claim: a `.jus` in `$HOME` would wire every repository a person owns, and on the authoring machine `$TMPDIR/.jus/` already exists as litter from an unrelated tool. Not being in a git repository at all means not being in a Juscribe project — `jus init` refuses to set one up outside git.
 
 Set `JUS_HOOKS_EVERYWHERE=1` to restore the old machine-wide behaviour, if you use the SOP without ever running `jus init`:
 

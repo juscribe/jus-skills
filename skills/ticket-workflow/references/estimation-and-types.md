@@ -74,16 +74,16 @@ Markers render as horizontal bars on the board, not cards. They are timeline-pla
 ## Creating a ticket with full metadata
 
 ```sh
-jus api POST /workspaces/1/tickets '{
+jus api POST /workspaces/{ws}/tickets '{
   "ticket": {
     "title": "Short imperative title",
     "description": "What and why, with acceptance criteria.",
     "ticket_type": "feature",
     "points": 2,
-    "stakeholder_id": 1,
-    "assignee_ids": [2],
-    "label_ids": [1, 5],
-    "project_id": 103,
+    "stakeholder_id": {owner_user_id},
+    "assignee_ids": [{your_user_id}],
+    "label_ids": [{label_id}],
+    "project_id": {project_id},
     "panel": "backlog",
     "insert_at": "bottom"
   }

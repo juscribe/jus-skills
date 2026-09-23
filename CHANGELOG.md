@@ -22,6 +22,14 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.40] — 2026-09-23
+
+### Changed
+
+- Wire a monorepo package by its own .jus in the hook guard (#4969)
+- Catch {ws} and bare /tickets/N description edits in the accepted-ticket guard (#4971)
+- Read the accepted-ticket guard's state from the workspace the command names (#4940)
+
 ## [1.4.39] — 2026-09-23
 
 ### Changed

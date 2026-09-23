@@ -97,7 +97,8 @@ juscribe_sop_require_valid_json() {
 }
 
 # Exit the hook unless it is running inside a Juscribe-wired project — a git
-# repository whose toplevel holds a `.jus/` directory (#4404).
+# repository with a `.jus/` directory in the cwd or in any folder above it, up
+# to and including the toplevel (#4404, #4969).
 #
 # ⚠️ WHY THIS EXISTS. Every hook here used to act in any repository at all, so
 # installing the bundle for one project vetoed commands in every other one on
@@ -113,17 +114,29 @@ juscribe_sop_require_valid_json() {
 # so a git worktree carries the marker too, which is the case that matters most
 # here: worktrees are this project's isolation strategy.
 #
-# ⚠️ IT ANCHORS ON THE GIT TOPLEVEL RATHER THAN WALKING UP TO `/`, AND THE
-# FIRST CUT DID WALK. A bare upward walk treats a `.jus` in ANY ancestor as
-# wiring the project, and ancestors are not ours: measured on this machine,
+# ⚠️ THE WALK STOPS AT THE GIT TOPLEVEL RATHER THAN AT `/`, AND THE FIRST CUT
+# WALKED TO `/`. A bare upward walk treats a `.jus` in ANY ancestor as wiring
+# the project, and ancestors are not ours: measured on this machine,
 # `$TMPDIR/.jus/baseline/` exists — litter from an edge check — so every
 # `mktemp -d` repository on it read as Juscribe-wired and the guard passed
 # everywhere it was supposed to stop. `$HOME/.jus` would do the same for every
 # project a person owns. The toplevel is the boundary the marker belongs to.
 #
-# It also makes a subdirectory free: `git rev-parse --show-toplevel` answers the
-# same from `src/deep` as from the root, so a hook firing anywhere inside a
-# wired project is inside it.
+# ⚠️ BUT IT DOES WALK UP TO THE TOPLEVEL, because the toplevel is not always
+# where `.jus/` is (#4969). `jus init` in a monorepo package puts it in the
+# package, so checking the toplevel alone left every hook silent there. A
+# sibling package with no `.jus/` of its own stays unwired, and so does the
+# monorepo root: the walk only ever goes UP from the cwd.
+#
+# ⚠️ THE WALK IS OVER `--show-prefix`, NOT `dirname` ON THE CWD. Git answers
+# the toplevel with symlinks resolved, and the cwd often is not: `mktemp -d`
+# gives `/var/folders/…` where git says `/private/var/folders/…`. A `dirname`
+# walk waiting to reach the toplevel would never see it, carry on to `/`, and
+# be the `$TMPDIR/.jus` bug above again. The prefix is the cwd relative to that
+# same resolved toplevel, so there is no path comparison to get wrong.
+#
+# The toplevel is checked first because it is where `.jus/` sits in every
+# project that is not a monorepo package, and it costs no second `git` call.
 #
 # ⚠️ NOT A GIT REPOSITORY MEANS NOT A JUSCRIBE PROJECT, deliberately. `jus init`
 # refuses to set one up outside git (#1907) and the whole workflow is
@@ -167,7 +180,7 @@ juscribe_sop_require_valid_json() {
 # Argument: $1 = the payload's cwd (may be empty; falls back to $PWD).
 juscribe_sop_require_jus_project() {
   [[ "${JUS_HOOKS_EVERYWHERE:-}" == "1" ]] && return 0
-  local dir="${1:-}" toplevel
+  local dir="${1:-}" toplevel prefix
   # ⚠️ RECORDED EVEN WHEN THE FALLBACK RESCUES IT (#4416). A payload with no
   # usable cwd is the #4261 shape — the Cursor shim sent `""` and every guard
   # lost its repository — and it stayed invisible for weeks precisely because
@@ -178,7 +191,19 @@ juscribe_sop_require_jus_project() {
     dir="$PWD"
   fi
   toplevel=$(juscribe_sop_repo_toplevel "$dir")
-  [[ -n "$toplevel" && -d "${toplevel}/.jus" ]] && return 0
+  if [[ -n "$toplevel" ]]; then
+    [[ -d "${toplevel}/.jus" ]] && return 0
+    prefix=$(git -C "$dir" rev-parse --show-prefix 2>/dev/null || true)
+    prefix="${prefix%/}"
+    while [[ -n "$prefix" ]]; do
+      [[ -d "${toplevel}/${prefix}/.jus" ]] && return 0
+      if [[ "$prefix" == */* ]]; then
+        prefix="${prefix%/*}"
+      else
+        prefix=""
+      fi
+    done
+  fi
   JUSCRIBE_SOP_OUTCOME=not-a-jus-project
   exit 0
 }
