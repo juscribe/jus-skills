@@ -3,20 +3,21 @@
 # Sourced, not executed directly.
 #
 # The Juscribe SOP forbids inline suppression of linters and type-checkers.
-# Two guards enforce it and they must never disagree about what a suppression
-# is, so the table lives here rather than inside either one:
+# Several guards enforce it and they must never disagree about what a
+# suppression is, so the table lives here rather than inside any one of them:
 #
-#   jus/hooks/scripts/jus-block-lint-suppression.sh   PreToolUse — stops the
-#       line before it exists and explains why at the moment of writing.
-#   the project's own commit-time guard — reads the staged diff, and so cannot
-#       be routed around by a heredoc, `sed`, python, or a tool nobody has
-#       thought of yet.
+#   jus/hooks/scripts/jus-block-lint-suppression.sh   PreToolUse on file edits —
+#       stops the line before it exists and explains why at the moment of
+#       writing.
+#   jus/hooks/scripts/jus-pre-commit-gate.sh          PreToolUse on `git commit`
+#       — runs the diff scan below, so a heredoc, `sed` or a script ends at the
+#       same place.
+#   a project's own git pre-commit job, where it has one — the same scan over
+#       the staged diff, for commits no agent hook sees.
 #
-# ⚠️ THE SECOND EXISTS BECAUSE THE FIRST IS MATCHED ON `Edit|Write|MultiEdit`
-# (#4347). In bypass-permissions mode the harness instructs the agent to edit
-# with `sed`, heredocs and scripts — none of which is a tool event — so the
-# PreToolUse guard fired zero times across a long session on 2026-09-16 while
-# eight of the nine types it covers had no other check anywhere.
+# ⚠️ THE EDIT GUARD ALONE IS NOT ENOUGH. It is matched on
+# `Edit|Write|MultiEdit`, and auto and bypass-permissions modes tell the agent
+# to edit through the shell, which is no tool event at all.
 
 # Each row: regex | human-readable label | the file types whose linter actually
 # reads the directive.
@@ -113,7 +114,7 @@ jus_lint_suppression_applies() {
   [[ " $1 " == *" $2 "* ]]
 }
 
-# The block text both guards print. Kept here so the two cannot drift into
+# The block text every guard prints. Kept here so they cannot drift into
 # explaining the same rule differently.
 #   $1  the findings, already formatted — one per line
 jus_lint_suppression_explain() {
@@ -134,4 +135,134 @@ Fix the underlying issue instead:
 If a suppression is structurally accepted (e.g. an established pattern in
 the codebase), discuss with the stakeholder before introducing more.
 EXPLANATION
+}
+
+# ── THE DIFF SCAN ────────────────────────────────────────────────────────────
+
+# The rows with their three fields split ONCE, into the JUS_LINT_ROW_* arrays.
+# The scan tests every added line against every applicable row, so splitting
+# inside that loop would be a fork per row per line.
+jus_lint_suppression_load_rows() {
+  JUS_LINT_ROW_REGEX=()
+  JUS_LINT_ROW_LABEL=()
+  JUS_LINT_ROW_TYPES=()
+  local row
+  while IFS= read -r row; do
+    JUS_LINT_ROW_REGEX+=("$(jus_lint_suppression_regex "$row")")
+    JUS_LINT_ROW_LABEL+=("$(jus_lint_suppression_label "$row")")
+    JUS_LINT_ROW_TYPES+=("$(jus_lint_suppression_types "$row")")
+  done < <(jus_lint_suppression_rows)
+  JUS_LINT_ROW_COUNT=${#JUS_LINT_ROW_REGEX[@]}
+}
+
+# Is this path in JUS_LINT_SUPPRESSION_EXEMPT_PATHS? A caller that sets no such
+# array exempts nothing. The `+` expansion keeps an unset array legal under
+# `set -u` on bash 3.2, which macOS ships.
+jus_lint_suppression_exempt() {
+  local candidate
+  for candidate in ${JUS_LINT_SUPPRESSION_EXEMPT_PATHS[@]+"${JUS_LINT_SUPPRESSION_EXEMPT_PATHS[@]}"}; do
+    [[ $1 == "$candidate" ]] && return 0
+  done
+  return 1
+}
+
+# Every row whose linter reads this file type, tested against one added line.
+#   $1 path  $2 line number  $3 the line  $4 the file type
+#
+# A bash regex match rather than a `grep` per row: this runs per added line on
+# every commit, and a fork there is the difference between instant and noticed.
+jus_lint_suppression_check_line() {
+  local index=0
+  while ((index < JUS_LINT_ROW_COUNT)); do
+    if jus_lint_suppression_applies "${JUS_LINT_ROW_TYPES[index]}" "$4" &&
+      [[ $3 =~ ${JUS_LINT_ROW_REGEX[index]} ]]; then
+      printf '  %s:%s  %s\n' "$1" "$2" "${JUS_LINT_ROW_LABEL[index]}"
+    fi
+    index=$((index + 1))
+  done
+}
+
+# The added lines of a `-U0` diff on stdin, as `<line number><TAB><content>`.
+# The hunk header carries the new-side start line, which is the only way to
+# report a number the reader can go to. `${header#*+}` lands on `+c,d` because
+# the `-a,b` before it has no plus. A `+++` file header precedes the first
+# hunk, so nothing before a hunk counts as an addition.
+jus_lint_suppression_added_lines() {
+  local lineno=0 line new in_hunk=0
+  while IFS= read -r line; do
+    case $line in
+      '@@'*)
+        new=${line#*+}
+        new=${new%% *}
+        lineno=${new%%,*}
+        in_hunk=1
+        ;;
+      '+'*)
+        ((in_hunk)) || continue
+        printf '%s\t%s\n' "$lineno" "${line#+}"
+        lineno=$((lineno + 1))
+        ;;
+    esac
+  done
+}
+
+# Scan the NUL-separated paths on stdin, each diffed against one source:
+#   staged     the index against HEAD — what a commit takes
+#   untracked  the whole file, which has no earlier version
+#   <tree>     the working tree against that tree
+#
+# The first line feeds the shebang clause of the type rule, so it is read from
+# what the scan is looking at: the staged blob, or the file on disk.
+jus_lint_suppression_scan_paths() {
+  local from=$1 path first file_type lineno content
+  while IFS= read -r -d '' path; do
+    jus_lint_suppression_exempt "$path" && continue
+
+    first=""
+    if [[ $from == staged ]]; then
+      first=$(git show ":$path" 2>/dev/null | head -n 1) || true
+    else
+      IFS= read -r first <"$path" 2>/dev/null || true
+    fi
+    jus_lint_suppression_type_into file_type "$path" "$first"
+
+    while IFS=$'\t' read -r lineno content; do
+      jus_lint_suppression_check_line "$path" "$lineno" "$content" "$file_type"
+    done < <(jus_lint_suppression_diff "$from" "$path" | jus_lint_suppression_added_lines)
+  done
+}
+
+# `--no-ext-diff` because a configured external diff driver would replace the
+# unified format this parser reads.
+jus_lint_suppression_diff() { # <source> <path>
+  case $1 in
+    staged) git diff --cached -U0 --no-color --no-ext-diff -- "$2" ;;
+    untracked) git diff --no-index -U0 --no-color --no-ext-diff -- /dev/null "$2" || true ;;
+    *) git diff "$1" -U0 --no-color --no-ext-diff -- "$2" ;;
+  esac
+}
+
+# One finding per ADDED suppression in the repository at the current directory,
+# as `  <path>:<line>  <label>`. Prints nothing when clean, and always returns 0
+# so a caller under `set -e` decides on the output alone.
+#   $1  staged     what the index holds against HEAD
+#       worktree   the working tree against HEAD, plus untracked files — what a
+#                  command that stages before it commits can take
+#
+# ACMR on the path lists: a deletion has no added lines. `-z` so a path git
+# would otherwise quote is passed back to it verbatim.
+jus_lint_suppression_scan() {
+  local base
+  [[ -n ${JUS_LINT_ROW_COUNT:-} ]] || jus_lint_suppression_load_rows
+
+  if [[ $1 == staged ]]; then
+    git diff --cached --name-only -z --diff-filter=ACMR | jus_lint_suppression_scan_paths staged || true
+    return 0
+  fi
+
+  # A repository with no commit yet diffs against the empty tree.
+  base=$(git rev-parse -q --verify HEAD) || base=$(git hash-object -t tree /dev/null)
+  git diff "$base" --name-only -z --diff-filter=ACMR | jus_lint_suppression_scan_paths "$base" || true
+  git ls-files -z --others --exclude-standard | jus_lint_suppression_scan_paths untracked || true
+  return 0
 }

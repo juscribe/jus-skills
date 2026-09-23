@@ -19,7 +19,7 @@ Some of these rules are also enforced **deterministically** by the jus enforceme
 | --- | :-: | --- |
 | Every piece of work has a ticket | ✅ | — |
 | Description and effort estimate required | ✅ | — |
-| Transitions at the natural moment | ✅ | — |
+| Transitions at the natural moment | ✅ | `UserPromptSubmit` — nudge only: a prompt naming a ticket gets the ticket and the command that starts it |
 | Never transition to `accepted` / `rejected` | ✅ | — |
 | **Commit immediately after code changes** | ✅ | `Stop` blocks if working tree is dirty |
 | Never move on with a dirty working tree | ✅ | — (the `Stop` row above is the end-of-turn backstop) |
@@ -27,23 +27,26 @@ Some of these rules are also enforced **deterministically** by the jus enforceme
 | Never amend a delivered commit | ✅ | — |
 | **Never `git push --force` (any variant)** | ✅ | `PreToolUse Bash` — blocks the command |
 | Never `git push` (stakeholder pushes manually) | ✅ | — |
-| **Never use `--no-verify`** | ✅ | `PreToolUse Bash` — blocks the command |
-| **Never suppress linters inline** (any `disable` / `ignore` / `expect-error` directive) | ✅ | `PreToolUse Edit/Write` — blocks the edit |
+| **Never use `--no-verify`** | ✅ | `PreToolUse Bash` — blocks the command, and the same skip through `-n`, `HUSKY=0`, `LEFTHOOK=0`, `LEFTHOOK_EXCLUDE`, `SKIP` or `PRE_COMMIT_ALLOW_NO_CONFIG` |
+| **Never suppress linters inline** (any `disable` / `ignore` / `expect-error` directive) | ✅ | `PreToolUse Edit/Write` — blocks the edit. `PreToolUse Bash(git commit)` — blocks a commit that adds one, whatever wrote it |
 | Fix all lint warnings in modified files | ✅ | — |
 | **Lint changed files BEFORE committing** | ✅ | `PreToolUse Bash(git commit)` — blocks if no lint ran since last code edit |
 | Run the tests covering the changed files before committing | ✅ | Prompt-only. The commit hook runs linters and whatever tests the project wired into it — **it does not run a full suite**. Do not read a passing commit as a passing test run. |
 | Diff coverage meets the project's bar (100% by default) | ✅ | — |
-| Follow existing standards and conventions | ✅ | — |
+| Follow existing standards and conventions | ✅ | `PostToolUse` — nudge only: names the project's own doc for an area at ticket pickup and on the first edit under a mapped path |
 | Reuse existing styles, components, patterns | ✅ | — |
 | **Never overwrite stakeholder description text (agent text stays current)** | ✅ | — |
+| **Never edit the description of an accepted or cancelled ticket** — correct it with a comment | — | `PreToolUse Bash` — blocks the edit |
 | Never deliver work that defers/skips/deviates | ✅ | — |
 | Re-read ticket before finishing | ✅ | — |
 | Every delivery comment includes verification steps + git | ✅ | — |
 | Add an External dependency when waiting on user input | ✅ | — |
+| A blocker whose condition is a time carries `due_on` and `due_kind` | ✅ | `PreToolUse Bash` — nudge only, when the text names a time and the date columns are empty |
 | A SEQUENCE of steps is subtasks, never description checkboxes (one step needs none); mixed-actor tickets assign both | ✅ | — |
 | Tick every checkbox and subtask before delivering — and never tick an unmet one | ✅ | — |
 | Never inline prose into a shell command; never hand over a wrapping command | ✅ | — |
 | Check the ticket's own claims and state what the approach assumes | ✅ | — |
+| Post the start comment before the first source edit | ✅ | `PostToolUse Edit/Write` — nudge only |
 | New tickets to the bottom of the backlog unless urgent or deliberately placed | ✅ | — |
 | Blocked on a third party: split at the boundary, deliver your half | ✅ | — |
 | Document discoveries immediately | ✅ | — |

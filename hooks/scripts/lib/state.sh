@@ -499,6 +499,22 @@ juscribe_sop_is_git_commit() {
   return 1
 }
 
+# Does the command stage files for the commit it runs? True when a segment runs
+# `git add` or `git stage`, or when the commit takes working-tree content
+# itself: `-a`, `--all`, `-i`, `--include`, `-o` or `--only`, alone or in a
+# cluster like `-am`. A commit that names paths without one of those flags is
+# not recognised. Heredoc-stripped, like every invocation check here.
+juscribe_sop_command_stages() {
+  local cmd="$1" seg
+  local flags='[[:space:]](-[A-Za-z]*[aio][A-Za-z]*|--all|--include|--only)([[:space:]]|$)'
+  while IFS= read -r seg; do
+    [[ -n "$seg" ]] || continue
+    juscribe_sop_segment_invokes_git "$seg" "(add|stage)" && return 0
+    juscribe_sop_segment_invokes_git "$seg" "commit" && [[ "$seg" =~ $flags ]] && return 0
+  done < <(juscribe_sop_command_segments "$(juscribe_sop_strip_heredocs "$cmd")")
+  return 1
+}
+
 # Recognize a code file (one whose changes should require linting before commit).
 #
 # Extension first, because it answers for most files without touching the disk.

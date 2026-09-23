@@ -79,41 +79,39 @@ tracker, and the Stop gate run **unchanged**.
 > installed — including a user-scope install that every project on the machine
 > sees. `JUS_HOOKS_EVERYWHERE=1` restores the old machine-wide behaviour.
 
-## ⚠️ A Codex PLUGIN install gives you the skills and NOT these hooks (#4234)
+## A Codex PLUGIN install carries these hooks too, once they are trusted (#4834)
 
-Codex has a plugin system — `codex plugin add`, `codex plugin marketplace add` —
-and **this bundle installs through it today with no extra files**:
+Codex has a plugin system, and this bundle installs through it:
 
 ```sh
 codex plugin marketplace add https://github.com/juscribe/jus-skills.git
 codex plugin add jus@jus-skills
 ```
 
-Measured on codex-cli 0.154.0: all three skills arrive, namespaced by plugin —
-`jus:hard-rules`, `jus:retrospective`, `jus:ticket-workflow`. Codex finds them by
-default component discovery off `skills/`, which is why no `.codex-plugin/`
-manifest is needed.
+`jus init` runs both for you since #4836. The plugin is machine-wide: Codex has
+no project scope, so the skills load in every project, and the hooks do nothing
+outside a jus project. The skills arrive namespaced by plugin: `jus:hard-rules`, `jus:retrospective`,
+`jus:ticket-workflow`. Since #4834 the bundle ships `.codex-plugin/plugin.json`,
+which Codex reads ahead of `.claude-plugin/`, with `"hooks": "./hooks/codex/hooks.json"`,
+so the plugin registers **these** hooks. ⚠️ Their scripts still run from the
+`~/.jus-skills` clone, through `jus hook`, which `jus init` makes: installed by hand
+with no clone, every hook fails open. Without the manifest Codex falls back to
+`hooks/hooks.json`, Claude Code's file, whose `Edit|Write` matchers never match
+`apply_patch`.
 
-⚠️ **THE HOOKS DO NOT COME WITH THEM, AND NOTHING SAYS SO.** A plugin install
-leaves you with the prompt-level layer and no enforcement, while looking like a
-complete install. The hooks must still be installed by the `hooks.json` route
-below — the two are complementary here, not alternatives.
+**Measured on codex-cli 0.145.0** with `script/dev/drive-adapter codex --layer
+plugin-hooks`, which installs the plugin and merges nothing by hand: `git commit
+--no-verify` refused with the guard's own text, and the same commit without the
+flag went through.
 
-**Measured, not inferred** (#4234). A `PreToolUse`/`^Bash$` hook that fires
-through a project `.codex/hooks.json` does **not** fire when delivered by a
-plugin. The control matters: same script, same repo, same prompt, traced by the
-hook's own appended line rather than by what the model said.
+⚠️ **Codex runs a plugin hook only once it is trusted, and an untrusted one is
+SILENT.** Review and trust them with `/hooks` inside Codex (the harness passes
+`--dangerously-bypass-hook-trust`). This is the likely reason #4234 measured
+plugin hooks as inert on 0.154.0: trust was found to gate hooks later, on #4410.
+0.154.0 has not been re-measured.
 
-⚠️ **A `hooks` field in the plugin manifest does not change this**, and it is
-worth knowing because the manifest is ACCEPTED. `.codex-plugin/plugin.json`
-takes `"hooks": "./hooks.json"` — the field is in Codex's own
-`plugin-json-spec.md` — and a plugin declaring it installs without complaint and
-still fires nothing. The same spec says at line 215 that "validation rejects
-unsupported manifest fields such as `hooks`". Both cannot be true; what was
-observed is neither rejection nor effect, which is the worst of the three.
-
-⚠️ **Hooks declared inline as an array, Kimi-style, are also inert.** Tested
-separately, same result.
+⚠️ **Plugin or `hooks.json` route, never both**: each registers the same
+thirteen, so every hook fires twice.
 
 ## ⚠️ `codex exec` HANGS UNLESS YOU CLOSE STDIN
 

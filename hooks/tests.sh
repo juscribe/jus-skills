@@ -1170,6 +1170,94 @@ assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
 
 rm -rf "$SH_FIX" "$SH_SCRATCH"
 
+# ---- jus-pre-commit-gate.sh: the suppression scan -----------------------------
+#
+# The Edit/Write guard never sees a change made with `sed`, a heredoc or a
+# script. The commit gate fires on every `git commit` whatever wrote the file,
+# so it scans what is about to be committed. The session below has no tracked
+# edits, so the lint-timestamp half always allows and only the scan decides.
+
+section "jus-pre-commit-gate.sh suppression scan"
+
+SUPP_REPO=$(cd "$(mktemp -d)" && pwd -P)
+( cd "$SUPP_REPO" && git init -q && git config user.email t@t && git config user.name t \
+  && printf 'x = 1\n' > app.rb && printf '# Notes\n' > notes.md \
+  && git add . && git commit -q -m init )
+
+supp_reset() {
+  git -C "$SUPP_REPO" reset -q --hard
+  git -C "$SUPP_REPO" clean -qfd
+}
+
+supp_gate() { # <expected exit> <command> [must contain]
+  assert_exit "$1" "$SCRIPTS/jus-pre-commit-gate.sh" \
+    "$(jq -nc --arg c "$2" --arg d "$SUPP_REPO" \
+      '{tool_name:"Bash",tool_input:{command:$c},session_id:"supp-scan",cwd:$d}')" \
+    "${3:-}"
+}
+
+SUPP_LINE='x = 1 # rubocop:disable Style/Foo'
+
+printf '%s\n' "$SUPP_LINE" > "$SUPP_REPO/app.rb"
+git -C "$SUPP_REPO" add app.rb
+t "refuses a staged suppression, naming the file and line"
+supp_gate 2 "git commit -m x" "app.rb:1"
+t "refuses it even when the chain runs a linter first"
+supp_gate 2 "bin/rubocop app.rb && git commit -m x" "rubocop:disable"
+t "ignores a command that is not a commit"
+supp_gate 0 "git status"
+
+supp_reset
+printf '%s\n' "$SUPP_LINE" > "$SUPP_REPO/app.rb"
+t "a plain commit scans only what is staged"
+supp_gate 0 "git commit -m x"
+t "refuses a suppression staged by the same command"
+supp_gate 2 "git add app.rb && git commit -m x" "app.rb:1"
+t "refuses one reached by commit -a"
+supp_gate 2 "git commit -am x" "app.rb:1"
+t "refuses one reached by commit --all"
+supp_gate 2 "git commit --all -m x" "app.rb:1"
+t "refuses one reached by commit -i"
+supp_gate 2 "git commit -i app.rb -m x" "app.rb:1"
+t "a heredoc body naming git add does not widen the scan"
+supp_gate 0 "$(printf 'git commit -F - <<%sEOF%s\ngit add everything\nEOF' "'" "'")"
+t "says the scan included unstaged work when it did"
+supp_gate 2 "git add notes.md && git commit -m x" "not yet staged"
+
+supp_reset
+printf '%s\n' "$SUPP_LINE" > "$SUPP_REPO/new.rb"
+t "an untracked file is not scanned by a plain commit"
+supp_gate 0 "git commit -m x"
+t "refuses an untracked file staged by the same command"
+supp_gate 2 "git add -A && git commit -m x" "new.rb:1"
+
+supp_reset
+printf '%s\n' "$SUPP_LINE" >> "$SUPP_REPO/notes.md"
+git -C "$SUPP_REPO" add notes.md
+t "allows the token in a file its linter never reads"
+supp_gate 0 "git commit -m x"
+
+supp_reset
+printf '%s\n' "$SUPP_LINE" > "$SUPP_REPO/app.rb"
+git -C "$SUPP_REPO" commit -qam seed
+printf '%s\ny = 2\n' "$SUPP_LINE" > "$SUPP_REPO/app.rb"
+t "allows a change beside a suppression already committed"
+supp_gate 0 "git commit -am x"
+printf 'x = 1\n' > "$SUPP_REPO/app.rb"
+t "allows a commit that removes one"
+supp_gate 0 "git commit -am x"
+
+SUPP_EMPTY=$(cd "$(mktemp -d)" && pwd -P)
+( cd "$SUPP_EMPTY" && git init -q && git config user.email t@t && git config user.name t )
+printf '%s\n' "$SUPP_LINE" > "$SUPP_EMPTY/first.rb"
+t "refuses one in the first commit of a repository with no HEAD"
+assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "$(jq -nc --arg d "$SUPP_EMPTY" \
+    '{tool_name:"Bash",tool_input:{command:"git add -A && git commit -m x"},session_id:"supp-scan",cwd:$d}')" \
+  "first.rb:1"
+
+rm -rf "$SUPP_REPO" "$SUPP_EMPTY"
+
 # ---- jus-docs-nudge.sh --------------------------------------------------------
 
 section "jus-docs-nudge.sh"
@@ -1953,6 +2041,16 @@ codex_hook 0 "codex: apply_patch REMOVING a suppression passes through the shim"
 codex_hook 2 "codex: Bash blocker payload blocks via the shim passthrough" \
   "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"cx1\",\"cwd\":\"/tmp\",${CODEX_ENV_EXTRA},\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git push ${FORCE_FLAG:---force} origin main\"}}" \
   "$CODEX_ADAPT" "$SCRIPTS_DIR/jus-block-force-push.sh"
+
+# A suppression written through the shell reaches the commit gate on Codex too.
+CODEX_SUPP_REPO=$(cd "$(mktemp -d)" && pwd -P)
+( cd "$CODEX_SUPP_REPO" && git init -q && git config user.email t@t && git config user.name t \
+  && printf 'const x = 1\n' > a.ts && git add a.ts && git commit -q -m init \
+  && printf '// %s-next-line\nconst x = 1\n' "$SUPP_MARK" > a.ts )
+codex_hook 2 "codex: a commit staging a shell-written suppression is blocked through the shim" \
+  "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"cx-supp\",\"cwd\":\"$CODEX_SUPP_REPO\",${CODEX_ENV_EXTRA},\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -am x\"}}" \
+  "$CODEX_ADAPT" "$SCRIPTS_DIR/jus-pre-commit-gate.sh"
+rm -rf "$CODEX_SUPP_REPO"
 
 # ⚠️ CODEX SENDS tool_response AS A STRING, AND #1873 CAME BACK THROUGH IT (#4207).
 #

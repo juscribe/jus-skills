@@ -215,17 +215,29 @@ Thirteen registrations, twelve scripts — the same as Claude Code's manifest.
 Qwen's matchers split the same event the same way. On Copilot and Antigravity it
 appears once, because those tools have no matcher to split on.
 
-## Skills — and the second install root
+## Skills — through Qwen's own extension system
 
 ⚠️ **Qwen does not read `.agents/skills/`.** It scans `.qwen/skills/` and
 `~/.qwen/skills/` and nothing else;
 [QwenLM/qwen-code#2042](https://github.com/QwenLM/qwen-code/issues/2042) asks for
-`.agents` support and is closed with no linked PR. `jus init` writes both roots
-(#4257); a hand install must too, or Qwen loads no skills and reports success.
+`.agents` support and is closed with no linked PR. So the skills come as a Qwen
+extension instead, which `jus init` installs (#4833):
 
 ```sh
-mkdir -p .qwen/skills && ln -sfn ~/.jus-skills/skills/* .qwen/skills/
+qwen extensions install https://github.com/juscribe/jus-skills:jus --consent --scope project --auto-update
 ```
+
+**It carries these hooks too** (#4834): the bundle's `qwen-extension.json` points
+the extension at `hooks/qwen/settings.json`, so a plugin install needs no merge.
+⚠️ The scripts still run from the `~/.jus-skills` clone, through `jus hook`, which
+`jus init` makes: installed by hand with no clone, every hook fails open.
+Measured on qwen 0.24.0 with `script/dev/drive-adapter qwen --layer plugin-hooks`:
+the bypass refused, the plain commit allowed, each hook fired once.
+
+⚠️ **Extension or merge, never both.** Both load, and every hook fires twice;
+`jus init` merges only when the installed extension does not register the file.
+⚠️ **Nor links in `.qwen/skills/` beside it**: Qwen then loads every skill twice,
+once as `jus:<name>` and once plain.
 
 ## Tests
 

@@ -22,6 +22,18 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.37] — 2026-09-22
+
+### Changed
+
+- A plugin brings the hook registrations, not the scripts (#4834)
+- jus init installs Codex's skills as a Codex plugin (#4836)
+- Record which tools' plugins now carry their own hooks (#4834)
+- Each tool's plugin manifest names its own hook file (#4834)
+- jus init installs Qwen's skills as a Qwen extension (#4833)
+- Correct the hook table in the bundle README (#4827)
+- Refuse lint suppressions at commit time in the bundle (#4827)
+
 ## [1.4.36] — 2026-09-22
 
 ### Changed

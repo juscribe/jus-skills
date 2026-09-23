@@ -6,11 +6,10 @@
 # Fix the underlying smell instead. This hook compares old vs. new content
 # and only blocks when the count of a suppression pattern increases.
 #
-# ⚠️ THE TABLE IS NOT HERE — it is in lib/lint_suppressions.sh, shared with the
-# commit-time guard (#4347). This hook only sees tool events, so a change made
-# with `sed` or a heredoc walks straight past it; the commit guard is what
-# closes that. Both read one array so they cannot disagree about what a
-# suppression is.
+# ⚠️ THE TABLE IS NOT HERE — it is in lib/lint_suppressions.sh. This hook only
+# sees tool events, so a change made with `sed` or a heredoc walks straight
+# past it; jus-pre-commit-gate.sh scans the commit for exactly that. Every guard
+# reads the one table, so none can disagree about what a suppression is.
 #
 # This one is kept because it is strictly better WHEN it fires: it stops the
 # line before it exists and explains why at the moment of writing.

@@ -1,6 +1,6 @@
-# Juscribe Workflow SOP — Gemini CLI / Code Assist
+# Juscribe Workflow SOP — Gemini CLI, Code Assist and Qwen Code
 
-This extension bundles three on-demand Agent Skills that codify the Juscribe ticket-management workflow. Skills auto-invoke when their `description` field matches the user's intent; you can also call them directly. Works in both Gemini CLI sessions and Gemini Code Assist (VS Code / IntelliJ) agent-mode chat panels — the same `gemini extensions install` path covers both.
+This extension bundles three on-demand Agent Skills that codify the Juscribe ticket-management workflow. Skills auto-invoke when their `description` field matches the user's intent; you can also call them directly. Works in both Gemini CLI sessions and Gemini Code Assist (VS Code / IntelliJ) agent-mode chat panels — the same `gemini extensions install` path covers both. Qwen Code installs it as well, with `qwen extensions install https://github.com/juscribe/jus-skills:jus`, and names the skills `jus:<name>`.
 
 ## Skills shipped
 
@@ -12,5 +12,5 @@ When working on a Juscribe ticket, expect both `ticket-workflow` and `hard-rules
 
 ## What's not bundled here
 
-- **Hooks** (`jus/hooks/`) are Claude Code-specific and have no equivalent in Gemini CLI. The skill prompts in `hard-rules` cover the same intent on a best-effort basis.
-- **`allowed-tools`** in skill frontmatter is a Claude Code allowlist hint — Gemini CLI ignores it.
+- **Hooks** ship per tool. In Qwen Code this extension registers `hooks/qwen/` itself, through `qwen-extension.json`. Gemini CLI reads an extension's hooks only from `hooks/hooks.json`, which is Claude Code's file, so there the hooks under `hooks/gemini/` install separately into `settings.json`: `jus init` offers them. Until they are installed, the skill prompts in `hard-rules` cover the same intent on a best-effort basis.
+- **`allowed-tools`** in skill frontmatter is a Claude Code allowlist hint — Gemini CLI and Qwen Code ignore it.
