@@ -22,6 +22,12 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.38] — 2026-09-22
+
+### Changed
+
+- Give Cursor's plugin manifest an author object (#4876)
+
 ## [1.4.37] — 2026-09-22
 
 ### Changed
