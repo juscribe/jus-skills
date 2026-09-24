@@ -157,6 +157,14 @@ other way.
 Codex **merges hook layers** — project + user + managed all run — so install
 in one place only, or the hooks fire twice.
 
+⚠️ **The hooks load either way, but `jus` cannot reach the board until
+Codex's sandbox allows the network.** It blocks outbound connections by
+default, so every `jus api` call fails. Set `network_access = true` under
+`[sandbox_workspace_write]` in `~/.codex/config.toml`; the bundle
+[README](../../README.md) → _Option F_ has the detail. `jus doctor` flags it.
+Codex **cloud** blocks the network too, with a setting of its own: see the
+README's _Network allowlist_.
+
 ## Every command is `jus hook`, so `jus` has to be on PATH
 
 Since #4759 no command in this manifest names a location — each is

@@ -252,6 +252,12 @@ runs on GitHub's infrastructure, so nothing about it can be verified from a
 laptop. Everything above was measured on the **CLI**; the cloud agent's behaviour
 stays unestablished.
 
+⚠️ **The cloud agent's firewall blocks `app.juscribe.ai`** unless the
+repository or organization allowlists it, so `jus` cannot reach the board from
+there by default. The bundle [README](../../README.md) → _Network allowlist_
+has the setting. The CLI has no firewall, and its sandbox is experimental
+and off by default.
+
 ## Audit trail
 
 ⚠️ **Not `.github/hooks/logs/audit.jsonl`** — this README claimed that file and a

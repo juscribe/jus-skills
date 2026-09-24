@@ -86,6 +86,12 @@ _"Fixed a bug where the `/hooks` command wrote configurations to
 ⚠️ **A hook declared in both scopes runs twice** — both are loaded and merged.
 Pick one.
 
+⚠️ **The hooks load either way, but the Antigravity 2.0 app sandboxes
+commands with no network by default**, so `jus` cannot reach the board there
+until you add a `read_url(app.juscribe.ai)` allow rule. The bundle
+[README](../../README.md) → _Network allowlist_ has where it goes. The CLI's
+sandbox is opt-in: see _The sandbox is NOT on by default in the CLI_ below.
+
 ## Every command is `jus hook`, so `jus` has to be on PATH
 
 Since #4759 no command in this manifest names a location — each is

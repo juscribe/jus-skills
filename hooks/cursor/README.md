@@ -60,6 +60,12 @@ registers twice and fires twice per event — the same trap
 `installing-the-bundle.md` documents for Claude Code, with the same symptom:
 nothing fails, a counter just doubles.
 
+⚠️ **The hooks load either way, but the editor's sandbox cannot reach the
+board** until `app.juscribe.ai` is in `~/.cursor/sandbox.json` or the
+project's `.cursor/sandbox.json`. Auto-review, the default mode, sandboxes
+shell commands. The bundle [README](../../README.md) → _Network allowlist_
+has the entry. The CLI's sandbox is off by default.
+
 ## Every command is `jus hook`, so `jus` has to be on PATH
 
 Since #4759 no command in this manifest names a location — each is

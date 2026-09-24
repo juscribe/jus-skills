@@ -76,10 +76,10 @@ jus_lint_suppression_types() {
 #   $2  the path
 #   $3  its first line, when the caller has one (optional)
 #
-# ⚠️ `printf -v` RATHER THAN A PRINTED RESULT, because the census resolves a
-# type for every tracked file in the repository and `$(...)` there is one fork
-# per file — thousands of them, on a pre-commit path that has to stay inside a
-# second or two. Measured: the printing form took about four times as long.
+# ⚠️ `printf -v` RATHER THAN A PRINTED RESULT, because a scan resolves a type
+# for every path it reads and `$(...)` there is one fork per path, on a
+# pre-commit path that has to stay inside a second or two. Measured over every
+# tracked file in a repository: the printing form took about four times as long.
 #
 # ⚠️ A SHELL SHEBANG WINS OVER THE EXTENSION, and that clause is the whole
 # reason `shellcheck disable` can be in the table at all (#4347). Most shell

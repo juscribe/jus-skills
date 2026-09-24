@@ -7,27 +7,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-block-force-push.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-block-force-push.sh",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-block-no-verify.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-block-no-verify.sh",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-pre-commit-gate.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-pre-commit-gate.sh",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-block-accepted-manifest-edit.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-block-accepted-manifest-edit.sh",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-blocker-date-nudge.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-blocker-date-nudge.sh",
             "timeout": 10
           }
         ]
@@ -37,7 +37,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-block-lint-suppression.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-block-lint-suppression.sh",
             "timeout": 10
           }
         ]
@@ -49,17 +49,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-track-edits.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-track-edits.sh",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-start-comment-nudge.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-start-comment-nudge.sh",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-docs-nudge.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-docs-nudge.sh",
             "timeout": 10
           }
         ]
@@ -69,12 +69,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-post-bash-tracker.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-post-bash-tracker.sh",
             "timeout": 10
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-docs-nudge.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-docs-nudge.sh",
             "timeout": 10
           }
         ]
@@ -85,7 +85,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-stop-uncommitted.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-stop-uncommitted.sh",
             "timeout": 15
           }
         ]
@@ -96,7 +96,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/jus-ticket-claim-nudge.sh",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/scripts/jus-ticket-claim-nudge.sh",
             "timeout": 10
           }
         ]

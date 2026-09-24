@@ -22,6 +22,18 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.41] — 2026-09-23
+
+### Changed
+
+- Retire the lint-suppression count, keep its exemption checks (#4993)
+- Match Cursor's wording, and link the runbook to the anchor (#5001)
+- List the opt-in sandboxes that would block the board (#5001)
+- Say which agents block app.juscribe.ai, and how to allow it (#5001)
+- Say in Phase 0 that jus doctor flags Codex's network-off sandbox (#4983)
+- Say that Codex's sandbox blocks the network, and how to turn it on (#4983)
+- Quote the plugin root in the bundle's Claude Code hooks (#4973)
+
 ## [1.4.40] — 2026-09-23
 
 ### Changed

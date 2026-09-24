@@ -191,6 +191,8 @@ the repo name — they happen to match here by design. The version is pinned by
 `plugin.json`; see [`CHANGELOG.md`](CHANGELOG.md) for the versioning strategy.
 `/plugin marketplace update jus-skills` pulls later releases.
 
+⚠️ **Claude Code on the web cannot reach the board until you allow it.** Its default network level stops at package registries; [Network allowlist](#network-allowlist) has the setting.
+
 > **Activation is not always immediate.** The install summary tells you where
 > you stand: `Plugin is now active.` means you're done, while
 > `Run /reload-plugins to activate.` means the skills wait for that command
@@ -236,6 +238,8 @@ The IDE reads the **same project `.agents/skills/<name>/SKILL.md`** layout as th
 
 Smoke-test (requires the Antigravity editor): open a workspace whose `.agents/skills/` exposes the bundle, open the agent panel, and confirm the 3 skills are listed and auto-activate. **If they don't appear, suspect symlink discovery** (issue #633) and switch to copied skill directories.
 
+⚠️ **The Antigravity 2.0 app sandboxes commands with no network by default**, so `jus` cannot reach the board there until you add an allow rule. [Network allowlist](#network-allowlist) has it. The IDE's sandbox is off by default.
+
 ### Option F — OpenAI Codex (CLI / IDE / app)
 
 OpenAI Codex adopted the [Agent Skills standard](https://agentskills.io) in Dec 2025 across all three surfaces — CLI, the VS Code / JetBrains IDE plugins, and the Codex app. They all read the same `SKILL.md` files this bundle ships; no per-surface variants are needed. (Codex's older "custom prompts" mechanism is deprecated upstream in favor of skills.)
@@ -252,6 +256,15 @@ Notes:
 - Codex does **not** read the bundle's `AGENTS.md` out of a skills directory — instruction files are composed from the project root down to the CWD only. Use `jus init`'s append if you want the SOP in a context file (never alongside the skills install).
 - Auto-invocation uses the `description` frontmatter — the same matching heuristic as Claude Code and Gemini. `allowed-tools` is ignored.
 
+**⚠️ Network: Codex's sandbox blocks it by default, so `jus` cannot reach the board from inside Codex until you turn it on.** Every `jus` call fails with `Could not reach the Juscribe server`, and the token is fine. Add this to `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`), then start a new Codex session:
+
+```toml
+[sandbox_workspace_write]
+network_access = true
+```
+
+For one session instead, start Codex with `codex -c sandbox_workspace_write.network_access=true`. The key applies in `workspace-write`, the mode Codex gives a trusted project. In `read-only` (an untrusted project) it does nothing. `jus doctor` flags a Codex project whose config leaves the network off, and when a `jus` call fails inside the sandbox the error names Codex and prints the fix. **Codex cloud has its own setting**, in the environment rather than `config.toml`: see [Network allowlist](#network-allowlist).
+
 **No-clone alternative — `$skill-installer` (user scope):** Codex's bundled installer skill pulls straight from GitHub; in any Codex session:
 
 ```text
@@ -262,6 +275,29 @@ $skill-installer install https://github.com/juscribe/jus-skills/tree/main/skills
 One skill per invocation, installed to `~/.codex/skills/<name>`. Caveat: there is no upgrade path — updating means deleting the installed directory and re-running. Prefer the canonical recipe for anything long-lived. (There is no official third-party skills registry to submit to — the old `openai/skills` catalog is deprecated in favor of plugins, whose public directory has no self-serve publishing yet; Codex plugin packaging for this bundle is tracked separately.)
 
 Verify after install: open a Codex session (CLI, IDE chat panel, or app) and ask something like _"what's the ticket workflow?"_ — the `ticket-workflow` skill should auto-activate. `/skills` lists loaded skills; a `$ticket-workflow` mention invokes one explicitly.
+
+### Network allowlist
+
+`jus` talks to `app.juscribe.ai`. The six places below block that host in their default setup, so every `jus` call fails with `Could not reach the Juscribe server` although the token is fine. The fix is in each tool's own settings, and **you make it yourself**: none of them lets the agent widen its own network access.
+
+| Where the agent runs   | What blocks it by default                                                                                                                                   | Allow `app.juscribe.ai`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Checked                               |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Cursor editor          | Auto-review, the default mode since 3.6, sandboxes shell commands. The sandbox reaches `sandbox.json` plus Cursor's list of package hosts, and nothing else | Add `{"networkPolicy":{"allow":["app.juscribe.ai"]}}` to `~/.cursor/sandbox.json` or the project's `.cursor/sandbox.json`. A team admin's allowlist **replaces** yours. Until then, Cursor asks to run each blocked command outside the sandbox                                                                                                                                                                                                                                                                                              | `checked:cursor 2026-09-23 docs`      |
+| Antigravity 2.0 app    | The Default preset sandboxes commands, and a sandboxed command has no network                                                                               | An allow rule `read_url(app.juscribe.ai)` under Settings → General → Permission Settings, or per project under Settings → Projects. It opens the host to shell commands such as `jus`, not only to the URL tool. macOS and Linux only; on Windows no preset sandboxes. The older Antigravity IDE does not sandbox by default. ⚠️ [antigravity-cli#984](https://github.com/google-antigravity/antigravity-cli/issues/984), open, reports the rule not reaching a sandboxed `curl`; if it fails, approve the prompt to run outside the sandbox | `checked:antigravity 2026-09-23 docs` |
+| Claude Code on the web | The default network level, **Trusted**, reaches package registries and nothing else                                                                         | Edit the environment, set **Network access** to **Custom**, add `app.juscribe.ai` to **Allowed domains**, and tick the box that keeps the default package-manager list                                                                                                                                                                                                                                                                                                                                                                       | `checked:claude 2026-09-23 docs`      |
+| Codex cloud            | The agent phase has no internet. Only setup scripts do                                                                                                      | In the environment's settings, turn **Agent internet access** on and add `app.juscribe.ai`. Allow **all** HTTP methods: the GET, HEAD and OPTIONS option refuses every `jus` write. Put the token in an **environment variable**, because Secrets are removed before the agent phase                                                                                                                                                                                                                                                         | `checked:codex 2026-09-23 docs`       |
+| Copilot cloud agent    | A firewall covers every command the agent runs through its Bash tool                                                                                        | Repository **Settings → Copilot → Internet access → Custom allowlist**, add `app.juscribe.ai`, or the organization's custom allowlist. A blocked call leaves a warning in the pull request body                                                                                                                                                                                                                                                                                                                                              | `checked:copilot 2026-09-23 docs`     |
+| Codex CLI / IDE / app  | The sandbox denies the network                                                                                                                              | `network_access = true` under `[sandbox_workspace_write]` in `~/.codex/config.toml`. See [Option F](#option-f--openai-codex-cli--ide--app)                                                                                                                                                                                                                                                                                                                                                                                                   | `checked:codex 2026-09-23 live`       |
+
+**Nothing to allow** in the default setup of Claude Code on your machine, the Cursor CLI, the Antigravity CLI (`agy`), the Copilot CLI, Gemini CLI, Qwen Code, Kimi Code, Windsurf or Cursor Cloud Agents. Most have a sandbox or an allowlist you can turn on, and then the host needs allowing:
+
+- **Claude Code** — `/sandbox`, or `sandbox.enabled`, turns it on. It then allows no domain until you approve one, so the first `jus` call asks. To allow it up front, add `app.juscribe.ai` to `sandbox.network.allowedDomains` in `.claude/settings.json`. `checked:claude 2026-09-23 docs`
+- **Cursor CLI** — off by default, though the default is a flag Cursor's server sets. `--sandbox enabled`, or `sandbox.mode` in `~/.cursor/cli-config.json`, turns it on, and it reads the same `sandbox.json` as the editor, so the entry above allows the host. `checked:cursor 2026-09-23 shipped`
+- **Antigravity CLI** — `--sandbox`, or `enableTerminalSandbox`, turns it on. Sandboxed commands then have no network until `~/.gemini/antigravity-cli/settings.json` carries `"permissions":{"allow":["read_url(app.juscribe.ai)"]}`. `checked:antigravity 2026-09-23 shipped`
+- **Copilot CLI** — its sandbox is experimental and off by default. It has no per-host list: `allowOutbound` lets every host through or none. `checked:copilot 2026-09-23 shipped`
+- **Gemini CLI and Qwen Code** — `--sandbox` turns it on. On macOS the default profile, `permissive-open`, allows the network. A `-proxied` profile allows only its proxy on `localhost:8877`, and Qwen's `-closed` profiles allow nothing. Neither has a per-host list, so switch to the same profile's `-open` form, such as `SEATBELT_PROFILE=restrictive-open qwen`. On Linux, Qwen's `QWEN_SANDBOX_NET` must stay `open`. `checked:gemini 2026-09-23 docs` `checked:qwen 2026-09-23 shipped`
+- **Cursor Cloud Agents** — internet is on by default. If you or a team admin pick an allowlist mode, add `app.juscribe.ai` to the allowlist on the Cloud Agents dashboard. `checked:cursor 2026-09-23 docs`
+- **Kimi Code and Windsurf** — no sandbox found in either. `checked:kimi 2026-09-23 shipped` `checked:windsurf 2026-09-23 docs`
 
 ### Option G — Cursor 2.4+
 
@@ -279,6 +315,8 @@ Cursor reads the canonical `.agents/skills/` path natively — **install via the
 **Cursor Marketplace:** the bundle ships a `.cursor-plugin/plugin.json` manifest, making the repo a submittable Cursor plugin (skills auto-discover from the `skills/<name>/SKILL.md` layout; the manifest is metadata only — enforcement hooks are deliberately not wired into the Cursor plugin surface yet). Submission happens at cursor.com/marketplace/publish (open-source required — satisfied; manual security review, no fee). Until the listing is live, the canonical install above is the Cursor path.
 
 Verify after install (or after `Reload Window`) by opening Cursor's agent panel and asking _"how do I deliver this ticket?"_ — the `ticket-workflow` skill should auto-activate based on its `description` frontmatter, the same way Claude Code, Gemini, and Codex do.
+
+⚠️ **The Cursor editor sandboxes shell commands by default, and the sandbox cannot reach the board** until `app.juscribe.ai` is in a `sandbox.json`. [Network allowlist](#network-allowlist) has the entry. The Cursor CLI's sandbox is off by default.
 
 Cursor recognizes the same `name` and `description` fields Claude Code uses; `allowed-tools` is silently ignored — same delta we already document for Gemini and Codex. The bundle ships skills only — Cursor's separate Subagents surface (`.cursor/agents/`) is out of scope, and per Cursor's docs, subagents currently can't load skills anyway.
 
