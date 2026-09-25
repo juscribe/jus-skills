@@ -55,12 +55,13 @@ jus api POST /workspaces/{ws}/tickets/{id}/comments '{"comment":{"body":"...veri
 
 ```sh
 jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"finished"}'
-jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"delivered"}'
 ```
 
-Sequence: commit → self-review → post finished comment → finish → deliver.
+Sequence: commit → self-review → post finished comment → finish.
 
-⚠️ **Both calls, on every board.** A workspace can be set to merge Finished into Delivered, in which case the first call already lands the ticket in `delivered` and the second answers `200` having done nothing — a transition to the state a ticket already holds is a successful no-op, precisely so this sequence keeps working. Neither response is a failure, and the sequence is the same either way. The workspace payload's `merge_finished_into_delivered` says which kind of board you are on.
+⚠️ **Finish, and stop there. Call `delivered` only when a person asks for it.** Delivering is the handover: the claim that the work is ready for someone to accept. A board that keeps Finished and Delivered apart does so because its owner wants that handover to be a separate step, taken by a person or by their deploy. A board that merges them lands your `finished` call in `delivered` by itself. So the one call is right on both, and the workspace payload's `merge_finished_into_delivered` says which kind of board you are on.
+
+When a person does ask ("deliver #N"), make both calls, `finished` then `delivered`, because a transition steps one state at a time. On a merged board the second answers `200` having changed nothing, which is not a failure.
 
 # Phase 7: Project Completion
 

@@ -67,7 +67,7 @@ Markers render as horizontal bars on the board, not cards. They are timeline-pla
 | `ticket_type` | One of `feature`, `bug`, `chore`, `research` (or marker types). See [Ticket Types](#ticket-types). |
 | `label_ids` | Array of integers, 1–3 entries. See [Label conventions](../SKILL.md#label-conventions). |
 | `project_id` | Scope a ticket under a project when one applies — improves board organization and unlocks project-level rollups. ⚠️ **Only ever a project still `unprioritized`, `prioritized` or `started`** — filing into one past `started` succeeds silently and leaves the project's state no longer tracking its contents. See [`hard-rules`](../SKILL.md#related-skills) → Ticket Placement. |
-| `panel` / `state` / `position` / `insert_at` | The placement, honoured on create since 2026-08. See `references/api.md` → Placing a ticket on create; `bulk_create` takes only the first two. |
+| `panel` / `state` / `position` / `insert_at` | The placement, honoured on create since 2026-08. See `references/api-writes.md` → _Placing a ticket on create_; `bulk_create` takes only the first two. |
 | `comments_count` | Counter-cached integer. Check before fetching comments. |
 | `blocked` / `active_dependencies_count` | If `true` / `> 0`, fetch dependencies before deciding to start. |
 
@@ -96,4 +96,4 @@ jus api POST /workspaces/{ws}/tickets '{
 jus api GET '/workspaces/{ws}/projects/{id}?fields=id,name,state'
 ```
 
-`panel` and `insert_at` are the placement, and they belong in this call rather than a follow-up — see `references/api.md` → Placing a ticket on create. Omit both and the ticket lands at the bottom of the **icebox**.
+`panel` and `insert_at` are the placement, and they belong in this call rather than a follow-up — see `references/api-writes.md` → _Placing a ticket on create_. Omit both and the ticket lands at the bottom of the **icebox**.

@@ -22,6 +22,15 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.42] — 2026-09-25
+
+### Changed
+
+- Send a newcomer without Homebrew to brew.sh (#5025)
+- Stop an agent at finished unless a person asks it to deliver (#5044)
+- Cut ticket-workflow's retellings down to the rules they justify (#4739)
+- Move ticket-workflow's cold path and api.md halves into reference files (#4739)
+
 ## [1.4.41] — 2026-09-23
 
 ### Changed

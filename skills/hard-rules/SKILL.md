@@ -9,7 +9,7 @@ license: MIT
 
 > Read this first, every session. These rules are always on. They have been flagged repeatedly because violating them wastes time, ships broken work, or destroys the stakeholder's intent. The companion `ticket-workflow` skill covers the _how_ (the full lifecycle plus estimation, labels, testing gates, and the `jus` API reference); this skill covers the **must / must-not** that overrides it.
 
-> **Prerequisite:** this SOP runs on the `jus` CLI, which the bundle does **not** install (`brew install juscribe/tap/jus` + `jus login`/`jus init`). If a `jus` command reports `command not found` or `No token available`, the CLI is missing or unauthenticated — **surface the one-line setup step and stop; do not loop `jus` commands against an unconfigured CLI.** See `ticket-workflow` → Phase 0.
+> **Prerequisite:** this SOP runs on the `jus` CLI, which the bundle does **not** install (`brew install juscribe/tap/jus` + `jus login`/`jus init`). If a `jus` command reports `command not found` or `No token available`, the CLI is missing or unauthenticated — **surface the one-line setup step and stop; do not loop `jus` commands against an unconfigured CLI.** See `ticket-workflow/references/setup.md`.
 
 ## Two-Layer Enforcement: Skill + Hooks
 
@@ -134,7 +134,7 @@ jus api PATCH /workspaces/{ws}/tickets/{id} "{\"ticket\":{\"description\":$(jq -
 
 - **NEVER deliver work that defers, skips, or deviates from what the ticket prescribes.** If the ticket says to do X and you didn't do X (or did a partial version of X), do **NOT** mark the ticket finished/delivered. Delivering incomplete or deviated work forces a rejection cycle that wastes everyone's time. When in doubt, ask — don't deliver.
 - **Re-read the ticket description before finishing.** Did you implement what was prescribed? If you deferred something, skipped a requirement, chose not to do something the ticket specifies, or deviated from the described scope — leave the ticket in `started` and post a comment.
-- **"Comprehensive" / "100%" / "thorough" mean exactly that.** No "good enough" exits. And where a project ships **more than one client**, code plus passing tests is not sufficient on its own: work verified entirely against the primary surface can deliver completely broken on the other. See [`ticket-workflow`](#related-skills) → Phase 5, "A second client surface needs its own pre-delivery check".
+- **"Comprehensive" / "100%" / "thorough" mean exactly that.** No "good enough" exits. And where a project ships **more than one client**, code plus passing tests is not sufficient on its own: work verified entirely against the primary surface can deliver completely broken on the other. The four checks are in `ticket-workflow/references/second-client.md`.
 - **TICK THE BOXES BEFORE YOU DELIVER — state is not decoration.** Any `- [ ]` left in a description, and any untoggled subtask, is a live claim about what has **not** happened yet. Delivering while the acceptance criteria still read unchecked tells the stakeholder the opposite of what the delivery comment says, and the description is what they re-read at acceptance. **Sweep every checkbox and every subtask as the last action before the `finished` transition.**
 
   Measured: seven delivered tickets carrying **47** unchecked boxes between them — every criterion actually satisfied and documented in the delivery comments, while the descriptions said none of it was done. It reads as seven abandoned tickets.

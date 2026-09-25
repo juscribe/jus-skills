@@ -7,62 +7,45 @@ license: MIT
 
 # Ticket Workflow — Juscribe Lifecycle SOP
 
-> **This skill and `.jus/SOP.md` overlap deliberately.** That file is the standalone SOP, appended to your AI context by `jus init` so a project with no plugin still has one. This skill covers the same lifecycle in more depth and is kept more current — where the two differ, this one wins.
+> **This skill and `.jus/SOP.md` overlap deliberately.** `jus init` appends that file to your AI context so a project with no plugin still has an SOP. This skill covers the same lifecycle in more depth and is kept more current: where the two differ, this one wins.
 >
-> Read this when working any ticket. This is the **single load-bearing skill** for Juscribe work: this file defines the lifecycle (session start → pickup → investigate → label → code → commit → self-review → finish → deliver) and the batch-work rules, and the operational detail an agent needs along the way — the `jus` CLI / API, estimation, ticket types, metadata, dependencies, subtasks, delivery and conversion — sits in the reference files listed below, which cost nothing until you open one. The companion [`hard-rules`](#related-skills) skill carries the non-negotiable must/must-not; on harnesses that run the jus enforcement hooks (Claude Code today, with Codex and Kimi adapters) the most painful of those are enforced deterministically, and everywhere else they are prompt-level only.
+> Read it when working any ticket. It is the **single load-bearing skill** for Juscribe work. This file is the lifecycle and the batch rules; the operational detail — the `jus` API, estimation, types, dependencies, subtasks, delivery, conversion — sits in reference files that cost nothing until you open one. The companion [`hard-rules`](#related-skills) skill carries the must/must-not. Harnesses that run the jus hooks (Claude Code, with Codex and Kimi adapters) enforce the worst of those deterministically; everywhere else they are prompt-level only.
 
 The lifecycle, in one line:
 
 ```
-(1) create or pick up → (2) start → (3) investigate → (3b) apply labels → (4) code → (5) commit → (6) self-review → (7) finish → (8) deliver
+(1) create or pick up → (2) start → (3) investigate → (3b) apply labels → (4) code → (5) commit → (6) self-review → (7) finish
 ```
 
-Every change goes through every phase, no exceptions for "small" or "ad-hoc" work. Transitions happen at the natural moment, not batched — the board must reflect reality in real time. **NEVER transition to `accepted` or `rejected`** — only the stakeholder decides.
+**Finishing is your last transition.** Deliver only when a person asks for it; Phase 6 says why.
+
+Every change goes through every phase, however small or ad-hoc. Transition at the natural moment, never in a batch, so the board shows reality. **NEVER transition to `accepted` or `rejected`** — only the stakeholder decides.
 
 ## Reference files — read the one you need, when you need it
 
-This file is the lifecycle. The operational detail sits beside it and is **not** loaded until you open it. Each line says what the file prevents, because that is what tells you whether to open it:
+None of these loads until you open it. Each row says what the file prevents, which is how to tell whether you need it:
 
 | Read | Before |
 | --- | --- |
-| [references/api.md](references/api.md) | Constructing **any** `jus api` call. Four documented request shapes return a 400, or send no body at all, if you guess, and the response envelope is not the JSON root. |
+| [references/api.md](references/api.md) | Constructing **any** `jus api` call. A wrong request shape hangs, no-ops or returns a bare 500 rather than an error, and the response envelope is not the JSON root. |
+| [references/api-writes.md](references/api-writes.md) | Creating a ticket anywhere but the bottom of the icebox, or changing many at once. Placement belongs in the create, and a bulk call reports failure per item. |
+| [references/api-queries.md](references/api-queries.md) | Listing or filtering tickets. The index refuses a filter name it does not know, and leaves markers out unless asked. |
 | [references/estimation-and-types.md](references/estimation-and-types.md) | Sizing, typing or labelling a ticket, or filling in a sparse one. Also the pre-start metadata gate and the placement rules for a new ticket. |
 | [references/dependencies.md](references/dependencies.md) | Recording that a ticket is blocked. One blocker per independently-clearing condition, and editing one means setting **both** `title` and `description`. |
 | [references/delivering.md](references/delivering.md) | Finishing or delivering anything — the pre-delivery gate, the mandatory "To verify" steps, the transitions, and project completion. |
 | [references/subtasks.md](references/subtasks.md) | Writing steps someone performs. Steps are subtasks, never description checkboxes, and `completed` is not `/toggle`. |
 | [references/converting.md](references/converting.md) | Converting a ticket to a project, or wondering whether a retype is what you actually want. Only a `research` ticket can be converted. |
+| [references/formatting.md](references/formatting.md) | Putting a fence inside a list, or reading the reactions on a comment. The fence trap looks correct in the source. |
+| [references/second-client.md](references/second-client.md) | Delivering a ticket that touches a second client — a mobile app, a CLI, a public API. Passing tests do not cover it. |
+| [references/setup.md](references/setup.md) | A `jus` command failing before it reaches the board, or skills that seem not to have loaded. Each failure has a different fix. |
 
-⚠️ **A pointer is not the content.** If you are about to write a `jus api` call, a dependency, a subtask or a delivery comment, open the file — answering from this table is how a wrong request shape ships.
+⚠️ **A pointer is not the content.** About to write a `jus api` call, a dependency, a subtask or a delivery comment? Open the file. Answering from this table is how a wrong request shape ships.
 
 ## Phase 0: Prerequisites — the `jus` CLI must be installed and authenticated
 
-This SOP drives the Juscribe board through the **`jus` CLI**. The bundle ships the **skills and hooks only — not the CLI binary**, so before any phase below will work the user needs:
+This SOP drives the board through the **`jus` CLI**, which the bundle does not install: the user needs `brew install juscribe/tap/jus`, then `jus login` or `jus init` (which also sets the `{ws}` used throughout this skill). **When a `jus` command fails before it reaches the board, open [references/setup.md](references/setup.md).** A missing CLI, a missing token, a retired token and an unreachable server each have a different fix, and only one of them is a rotation. `jus doctor` checks that these skills loaded, which `jus whoami` cannot.
 
-1. **The CLI** — `brew install juscribe/tap/jus`.
-2. **Auth + workspace** — `jus login` (API token) or `jus init` (token + workspace + `bin/jus` symlink). `jus init` also sets the `{ws}` used throughout this skill.
-
-**Preflight.** If you're about to run `jus` and aren't sure it's configured, run `jus whoami` first and read the failure:
-
-- `jus: command not found` → the CLI isn't installed. Tell the user to `brew install juscribe/tap/jus`, then stop.
-- `Error: No token available. Run 'jus login'…` → installed but unauthenticated. Tell the user to run `jus login` or `jus init`, then stop.
-- `Error: Stored token is invalid or expired.` — or any `HTTP 401` from `jus api` — → the token was real and is now **retired**. API tokens expire: agent tokens 90 days after creation or last rotation, mobile sessions 60 days after last use. The 401 body names the remedy. Relay it and stop.
-  - An **agent** token needs a **rotate** (Settings → Security → Agent Tokens), _not_ another `jus login` — re-authenticating hands back the same dead secret.
-  - Tell the user which, then stop.
-- `Error: Could not reach the Juscribe server at <base URL>` → **nothing is known about the token.** The request never got a reply, so this is a network problem: no connectivity, a sandbox denying outbound connections, or a wrong `JUSCRIBE_BASE_URL`. Curl's own line above it names which. Inside Codex's network-off sandbox the error says so and prints the setting to add (`network_access = true` under `[sandbox_workspace_write]`); relay that, and `jus doctor` flags the same. ⚠️ **Do not rotate anything** — a fresh token fails identically. Relay the base URL it tried, and stop.
-
-⚠️ **`jus whoami` says nothing about whether THESE SKILLS loaded, and that is a separate failure.** A wizard can finish clean and leave the bundle absent — at which point an agent reads an SOP telling it the skills cover the workflow in more depth, goes looking, and finds nothing. `jus doctor` is the check:
-
-```sh
-jus doctor
-```
-
-Non-interactive, exit-coded, prompts for nothing. It reports the token, the workspace, the git repository and the skills surface — the plugin and its scope for Claude Code, the clone and the `.agents/skills/` links for every other tool — and prints the exact fix for whatever failed.
-
-⚠️ **And a clone pull does NOT update an installed hook manifest.** Skills are symlinks, and every registration is now `jus hook <name>` with the bundle resolved at run time, so both move with a `git -C ~/.jus-skills pull`. Every manifest is a **copy**, so a change to which events an adapter registers reaches nobody who already installed. `jus doctor` names the missing registrations; `jus refresh-hooks` adds them, additively, so a hand edit survives — and migrates a manifest still naming `~/.jus-skills` before it merges, rather than leaving both commands live.
-
-⚠️ **A passing verdict still names the reload, and that is not noise.** "Installed, but this session started before the install" leaves no trace on disk, so a clean registry is the only moment that case can be raised. It is the third of three states and the one people hit.
-
-**Do not loop `jus` commands against an unconfigured CLI, or against a 401.** A 401 never heals by retrying; it is a credential the user must replace. Surface the single setup step the error points to and stop — one clear instruction beats a wall of repeated errors. Everything below assumes this preflight passed.
+**Do not loop `jus` commands against an unconfigured CLI, or against a 401.** Surface the one setup step the error points to, and stop.
 
 ## Phase 1: Session Start
 
@@ -72,7 +55,7 @@ Orient with the agent state endpoint — never fetch full ticket lists at sessio
 jus api GET '/workspaces/{ws}/agent_state?panels=current,backlog'
 ```
 
-Returns compact markdown (~2–4KB) with projects, velocity, users, and condensed ticket lines. Cache TTL 5 minutes. Use it to decide what to work on, then fetch individual tickets as needed.
+It returns compact markdown (~2–4KB): projects, velocity, users and one line per ticket, cached for 5 minutes. Decide what to work on from it, then fetch individual tickets.
 
 ## Phase 2: Ticket Pickup
 
@@ -82,9 +65,9 @@ Returns compact markdown (~2–4KB) with projects, velocity, users, and condense
 jus api GET '/workspaces/{ws}/tickets/{id}?include_comments=true&include_attachments=true&include_label_objects=false'
 ```
 
-**MUST include comments and attachments.** Comments contain stakeholder context, open questions, decisions. Attachments contain rejection screenshots and design mocks. Skip neither. (Check `comments_count` first — if it's `0`, skip `include_comments=true` and don't pay for an empty array.)
+**MUST include comments and attachments.** Comments carry the stakeholder's context, open questions and decisions; attachments carry rejection screenshots and design mocks. If `comments_count` is `0`, drop `include_comments=true`.
 
-If response shows `blocked: true` or `active_dependencies_count > 0`, fetch dependencies and apply the [Dependency Handling Protocol](references/dependencies.md) below.
+If the response shows `blocked: true` or `active_dependencies_count > 0`, fetch the dependencies and apply the [Dependency Handling Protocol](references/dependencies.md).
 
 ### Pre-start gate (hard checklist)
 
@@ -96,57 +79,51 @@ Before transitioning to `started`, verify:
 
 If any are missing, PATCH them first. Never start a ticket that fails this gate.
 
-**The point scale, the ticket types and the metadata defaults are in [references/estimation-and-types.md](references/estimation-and-types.md)** — open it before putting a number or a type on anything. Guessing a type is a `422`, and guessing a point value silently distorts the board's velocity.
+**The point scale, the ticket types and the metadata defaults are in [references/estimation-and-types.md](references/estimation-and-types.md)** — open it before putting a number or a type on anything. A guessed type is a `422`; a guessed point value silently distorts the board's velocity.
 
 ### Name a branch `<ticket-id>-<slug>` whenever you cut one
 
-⚠️ **It is not a style preference.** The commit linker reads a ticket id off the LAST path segment, and only when that segment starts with it and a dash — so `3705-copy-a-branch-name` links its commits and its pull request with nothing typed anywhere, and `copy-a-branch-name-3705` links nothing. Any prefix is fine: `feat/3705-copy-a-branch-name` works.
+⚠️ **The commit linker depends on it.** It reads a ticket id only from the start of the branch's LAST path segment, followed by a dash. `3705-copy-a-branch-name` links its commits and its pull request with nothing typed anywhere; `copy-a-branch-name-3705` links nothing. A prefix is fine: `feat/3705-copy-a-branch-name`.
 
-**Where the work lands is the project's call.** Follow the project's own instructions — whether to branch at all, whether anything is merged, and whether anything is pushed. Absent instructions, commit where you are and **do not push**: a `jus` session that pushes without being asked is not undone by an apology.
+**Where the work lands is the project's call** — whether to branch, merge or push. Absent instructions, commit where you are and **do not push**: an unrequested push cannot be taken back.
 
 ⚠️ **A hook refuses a force-push and a `--no-verify`** on harnesses that run the jus hooks. It is silent where it cannot establish the rule, so its silence is not permission.
 
 ### Fleshing out a sparse user-created ticket
 
-Stakeholders often file tickets as a bare title or a one-line description. The gate above is not satisfied by a token one-liner — **flesh the ticket out with substance the stakeholder can react to**:
+A bare title or a one-line description does not pass the gate above. **Flesh the ticket out with substance the stakeholder can react to:**
 
-- **What to add:** your read of the problem (root cause for bugs, approach for features), **acceptance criteria**, and any implementation/test notes. Format it per [Formatting](#formatting-descriptions-and-comments).
-- **When:** at pickup — a blank description is filled as part of the pre-start gate; deeper findings discovered during investigation are appended as you learn them.
-- **How:** always via the append protocol (see [Description conventions](#description-conventions)) — fetch first; if `description` is non-null, prepend the stakeholder's existing text + `\n\n---\n\n` before your additions. Their words survive verbatim, always.
+- **What to add:** your read of the problem (root cause for bugs, approach for features), **acceptance criteria**, and any implementation or test notes. Format it per [Formatting](#formatting-descriptions-and-comments).
+- **When:** at pickup, as part of the pre-start gate. Add what investigation finds as you learn it.
+- **How:** fetch first. If `description` is non-null, the stakeholder's text stays first and verbatim, then `\n\n---\n\n`, then yours — see [Description conventions](#description-conventions).
 
-The fleshed-out description is what makes the estimate defensible and the delivery verifiable — a title-only ticket has no acceptance criteria to deliver against.
+A title-only ticket has no acceptance criteria to deliver against and no basis for its estimate.
 
 ### CRITICAL: Transition to `started` BEFORE investigating
 
-The moment you decide to work the ticket, transition and assign yourself **before** reading any source files. This is a concurrency lock — it signals to other sessions that the ticket is taken.
+The moment you decide to work the ticket, transition it and assign yourself, **before** reading any source file. It is the concurrency lock that tells other sessions the ticket is taken.
 
 ```sh
 jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"started"}'
 jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"assignee_ids":[{your_user_id}]}}'
 ```
 
-Sequence: fetch ticket → transition to started → assign yourself → THEN investigate. **NEVER reverse this order.** A `UserPromptSubmit` hook in this bundle has already fetched the ticket and printed the transition command; it writes nothing, so the lock is still yours to take.
+Sequence: fetch → start → assign → THEN investigate. **NEVER reverse this order.** Where the jus hooks run, a `UserPromptSubmit` hook fetches the ticket and prints the transition command, but writes nothing: the lock is still yours to take.
 
 ### ⚠️ Do NOT put a 👀 on a ticket
 
-**The eyes reaction is not part of the lifecycle.** Two hooks in this bundle used to maintain it — one adding it when a prompt named `#N`, one taking it off on a transition — and both were removed. Do not do by hand what they stopped doing.
-
-It leaked in every direction. Measured in the originating project across all 3,791 tickets: **62 carried the agent's 👀 against 3 that were genuinely `started`**, 47 of the stale ones `accepted`. Six paths left it on, and the last one closes the question — a `PostToolUse` hook does not run when the Bash command exits non-zero, and `jus api PATCH …/transition … | jq …` always exits non-zero because `jus api` prints an `HTTP 200` line before the body. So the removal half was skipped on exactly the commands most likely to need it, and no hook could reach that.
-
-**`started` plus an assignee is the concurrency lock**, and always was — it is what the conflict rule below keys on.
-
-Your reaction on a **comment** is a different mechanism and is unaffected.
+**The eyes reaction is not part of the lifecycle.** The hooks that once added and removed it were retired because the reaction went stale in every direction; do not add it by hand. **`started` plus an assignee is the concurrency lock** — it is what the conflict rule below keys on. Your reaction on a **comment** is a different mechanism and is unaffected.
 
 ### Concurrency conflict
 
-If the transition to `started` fails, check current assignees. If another agent has claimed it, **stop**. Report to the user that the ticket appears taken and ask how to proceed.
+If the transition to `started` fails, check the assignees. If another agent has claimed the ticket, **stop**, tell the user it appears taken, and ask how to proceed.
 
 ### Rejection workflow
 
-When a ticket is rejected: `rejected → started → fix → finish → deliver`. **NEVER** `git commit --amend` on delivered work — create a new commit.
+A rejected ticket goes `rejected → started → fix → finish`. **NEVER** `git commit --amend` on delivered work — create a new commit.
 
-- **When the user says "rejected"** the transition has already happened in the app. Do NOT call the reject transition API. Just transition `rejected → started` and fix.
-- **Always fetch attachments on rejected tickets** — the stakeholder may have attached screenshots showing the issue. Use `jus download <url-path> .jus/tmp/<filename>` to view them.
+- **When the user says "rejected", the transition has already happened in the app.** Do not call the reject transition; transition `rejected → started` and fix.
+- **Always fetch attachments on a rejected ticket** — the stakeholder may have attached screenshots of the problem. `jus download <url-path> .jus/tmp/<filename>` saves one to view.
 
 ## Phase 3: Investigation & Labels
 
@@ -154,14 +131,14 @@ After starting, investigate the codebase. Then apply 1–3 labels before writing
 
 ### Investigation guidelines
 
-- **Match the exploration to the ticket.** A small, well-understood change wants a couple of direct file reads, not a fan-out of exploration agents. Calibrate what "small" means to your own codebase — any figure quoted here would be someone else's.
-- **Skip deep architecture analysis for familiar domains** — for routine UI or styling work, read the target files + 1–2 neighbors. Don't trace the full state-management chain unless the fix requires it.
-- **Time-box investigation to ~3 minutes** for tickets ≤ 2 points. If you're still reading code after 3 files, start implementing and adjust as you go.
-- **Document what you learn in code comments** — when you decode an animation flow, state pattern, or WebSocket dance, leave explanatory comments in the source. Focus on "why" and "how the pieces connect" rather than obvious "what".
+- **Match the exploration to the ticket.** A small, well-understood change wants a couple of direct file reads, not a fan-out of exploration agents. Calibrate "small" to your own codebase.
+- **Skip deep architecture analysis for familiar domains** — for routine UI or styling work, read the target files and one or two neighbours. Trace the full state-management chain only when the fix requires it.
+- **Time-box investigation to ~3 minutes** for tickets ≤ 2 points. Still reading code after 3 files? Start implementing and adjust as you go.
+- **Document what you learn in code comments** — when you decode an animation flow, a state pattern or a WebSocket dance, explain in the source _why_ and how the pieces connect, not the obvious _what_.
 
 ### Label conventions
 
-Labels describe **technical areas** — the layers your change touches — not project themes or business intent. Project themes live in the project grouping; labels stay technical.
+Labels describe **technical areas** — the layers your change touches — not project themes or business intent, which the project grouping already carries.
 
 ```sh
 jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"label_ids":[1,2]}}'
@@ -169,29 +146,29 @@ jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"label_ids":[1,2]}}'
 
 Guidelines:
 
-- **1–3 labels per ticket** (most are 1–2). More than 3 means either the ticket is too large or the labels duplicate what the project already communicates.
-- **Don't duplicate the project grouping.** If the project is "Mobile redesign," every ticket already implies `mobile` — don't re-label.
-- `docs` — documentation-only tickets. Don't add it just because a code ticket also touches a comment or README.
-- `refactor` — restructuring without behavior change. Don't combine with `frontend`/`backend` unless the refactor genuinely spans both.
-- `regression` — bug that fixes behavior that previously worked. Apply alongside the relevant area label (e.g., `regression` + `frontend`).
+- **1–3 labels per ticket** (most are 1–2). More than 3 means the ticket is too large, or the labels repeat what the project already says.
+- **Don't duplicate the project grouping.** In a "Mobile redesign" project every ticket already implies `mobile`.
+- `docs` — documentation-only tickets. Not for a code ticket that also touches a comment or README.
+- `refactor` — restructuring without behavior change. Combine it with `frontend`/`backend` only when the refactor genuinely spans both.
+- `regression` — a fix restoring behavior that previously worked. Apply it alongside the area label (e.g. `regression` + `frontend`).
 
 #### Finding this workspace's labels
 
-**Label IDs are per-workspace and are not listed here** — the set in your project is its own. Fetch it:
+**Label IDs are per-workspace and are not listed here.** Fetch your project's own:
 
 ```sh
 jus api GET '/workspaces/{ws}/labels'
 ```
 
-**The project should document what each label MEANS**, not just its id, and that belongs in the project's own instructions. An id with no _when to apply_ is a label applied by guesswork — and the cost lands on whichever label people later want to filter by. In this project a security sweep once missed an internet-facing container with a route to the production database, because `security` had an id and no definition, so the ticket carried only `docker`.
+**The project should document what each label MEANS**, not just its id, in its own instructions. A label with no _when to apply_ is applied by guesswork, and the cost lands on whoever later filters by it.
 
-**If you need a label that doesn't exist, ask the stakeholder before inventing one** — labels are a controlled vocabulary, and a near-duplicate is worse than a missing one because it silently splits every future filter.
+**If you need a label that doesn't exist, ask the stakeholder before inventing one.** Labels are a controlled vocabulary, and a near-duplicate is worse than a missing one because it silently splits every future filter.
 
 ## Phase 4: Coding
 
 ### Post the start comment BEFORE the first code edit
 
-The very first thing in Phase 4 — before you edit a single source file — **post a "Starting" comment on the ticket**: the root cause / your read of the problem, the plan, and how you intend to test it. This is the earliest stakeholder-facing signal that work began and the record of your plan _before_ implementation. It is prompt-only (on harnesses running the jus hooks, a soft nudge fires on the first source edit — nothing hard-blocks it anywhere), so it rests on you remembering. Do not skip it; do not fold it into the delivery comment.
+**Before you edit a single source file, post a "Starting" comment** on the ticket: your read of the problem (the root cause, for a bug), the plan, and how you will test it. It is the stakeholder's first sign that work began, and the record of your plan before implementation. Nothing hard-blocks skipping it — where the jus hooks run, a soft nudge fires on the first source edit — so it rests on you. Do not skip it, and do not fold it into the delivery comment.
 
 ```sh
 jus api POST /workspaces/{ws}/tickets/{id}/comments '{"comment":{"body":"Starting. <root cause + plan + test intent>"}}'
@@ -201,19 +178,19 @@ jus api POST /workspaces/{ws}/tickets/{id}/comments '{"comment":{"body":"Startin
 
 **Every code change MUST include corresponding tests.** Specifically:
 
-- **Bugs**: a test that reproduces the bug — one that fails before the fix and passes after. Ship it in the same commit as the fix; a fix with no failing-first test has not been shown to fix anything.
+- **Bugs**: a test that reproduces the bug — one that fails before the fix and passes after, shipped in the same commit. A fix with no failing-first test has not been shown to fix anything.
 - **Features**: tests that define the expected behaviour, including the error and edge paths.
-- **Refactors**: coverage of the behaviour being preserved, before you move it. Add it first if it is missing.
+- **Refactors**: coverage of the behaviour being preserved, in place before you move it — add it first if it is missing.
 
-Existing tests must pass — a green run of the tests covering your change is a prerequisite for every commit. Match the existing test style: study the neighbouring test files for their conventions (fixture and factory helpers, authentication helpers, the matchers they favour) rather than importing habits from elsewhere.
+The tests covering your change must pass before every commit. Match the style of the neighbouring tests — their fixtures, helpers and favoured matchers — rather than importing habits from elsewhere.
 
 #### The ordering and the coverage bar are the project's call
 
-**This skill's default is test-first** — investigate → write a failing test → implement → watch it pass → lint → COMMIT — and it is the default for a reason: a test written after the code tends to assert what the code does rather than what it should do, and a bug fix with no failing-first test cannot distinguish a fix from a coincidence.
+**This skill's default is test-first**: investigate → write a failing test → implement → watch it pass → lint → COMMIT. A test written after the code tends to assert what the code does rather than what it should do.
 
-**But it is a default, not a universal.** Plenty of teams that ship well do not write test-first, and a coverage number that is right for one codebase is theatre in another. **The project's testing policy wins**: if the installing project's own instructions state an ordering or a bar, follow those. Where they are silent, use test-first and aim to cover every new or changed line.
+**But it is a default, not a universal. The project's testing policy wins**: where the installing project's instructions set an ordering or a coverage bar, follow them. Where they are silent, work test-first and cover every new or changed line.
 
-What does **not** vary, whatever the policy says: a change ships with tests, a bug fix has a test that failed before the fix, and the tests covering your change pass before you commit. Those are the obligations this skill enforces; the rest is the project's.
+What does **not** vary: a change ships with tests, a bug fix has a test that failed before the fix, and the tests covering your change pass before you commit.
 
 #### What to test, where
 
@@ -224,111 +201,57 @@ What does **not** vary, whatever the policy says: a change ships with tests, a b
 | Client-side logic | Hooks, store actions, utility functions, component behaviour |
 | Concurrent code | Business logic, exercised under the race detector if the language has one |
 
-**Put each test where the project already puts that kind of test** — mirror the neighbours rather than inventing a location. If a layer has no existing home, ask; a test in the wrong tree often does not run at all, which looks identical to passing.
+**Put each test where the project already puts that kind of test.** If a layer has no home yet, ask: a test in the wrong tree often never runs, which looks identical to passing.
 
 ### Description conventions
 
 - **Every ticket must have a description and effort estimate.** A title alone is not sufficient.
-- **Stakeholder text verbatim; agent text kept current.** Fetch the ticket BEFORE patching. A stakeholder's description is preserved word-for-word — prepend it plus a `\n\n---\n\n` separator before your additions; their one-sentence request is the source of truth. Your own prior additions are living documentation: when facts change, edit them in place rather than appending dated update layers — the description should always read as one coherent, current spec.
-- **Steps someone performs are SUBTASKS, not description checkboxes.** A runbook, a migration sequence, a mixed-actor procedure — those are subtasks on the ticket, because the board can render, count, order, assign and broadcast them and a `- [ ]` is only prose. **A sequence, though: one thing to do needs no subtask** — it lives in the ticket's own description, under the ticket's own assignee and state. Acceptance criteria are the other exception and stay in the description: they are claims about done-ness, not things anyone performs. See [Subtasks](references/subtasks.md).
-- **Mixed-actor tickets: one timeline, both assigned.** When some steps are only the stakeholder's (vendor consoles, secrets, purchases, hardware) and others are the agent's, assign BOTH parties on the ticket and give each subtask its own `assignee_id`, in execution order. Never separate "Stakeholder does: / Agent does:" sections: they hide the interleaving, and the first untoggled subtask must show whose move it is. Tick each the turn its step completes. When the next untoggled subtask is the stakeholder's, apply the External-blocker protocol (leave `started`, comment naming the awaited step, add the dependency). Full rule + example: [`hard-rules`](#related-skills) → Steps Are Subtasks.
+- **Stakeholder text verbatim; agent text kept current.** Fetch the ticket BEFORE patching. The stakeholder's words stay first and word-for-word, then a `\n\n---\n\n` separator, then yours; their request is the source of truth. Your own additions are living documentation: when facts change, edit them in place rather than stacking dated updates, so the description reads as one current spec.
+- **Steps someone performs are SUBTASKS, not description checkboxes** — a runbook, a migration sequence, a mixed-actor procedure. The board can render, count, order, assign and broadcast a subtask; a `- [ ]` is only prose. A single thing to do needs no subtask: it is the ticket. Acceptance criteria also stay in the description, because they are claims about done-ness rather than things anyone performs. See [Subtasks](references/subtasks.md).
+- **Mixed-actor tickets: one timeline, both assigned.** When some steps only the stakeholder can do (vendor consoles, secrets, purchases, hardware), assign BOTH parties to the ticket and give each subtask its own `assignee_id`, in execution order. Never split it into "Stakeholder does: / Agent does:" sections — they hide the interleaving, and the first untoggled subtask must show whose move it is. Tick each the turn its step completes. When the next untoggled subtask is the stakeholder's, apply the External-blocker protocol: leave `started`, comment naming the awaited step, add the dependency. Full rule: [`hard-rules`](#related-skills) → Steps Are Subtasks.
 
 ### Comment conventions
 
-Post comments as you work — at minimum a start comment (see [above](#post-the-start-comment-before-the-first-code-edit), posted before the first code edit) and a delivery comment when finishing. The comment thread should tell the implementation story.
+Post comments as you work — at minimum the [start comment](#post-the-start-comment-before-the-first-code-edit) and a delivery comment. The thread should tell the implementation story.
 
-- **Capture user interjections** — if the user sends scope-affecting messages mid-ticket, mirror those notes into the ticket's comment thread.
-- **Use `#N` for tickets, `pN` for projects** — autolinks on the board. Never write "ticket 123" or "project 66" in prose.
-- **Format for the board, not a terminal** — see [Formatting](#formatting-descriptions-and-comments) below. Descriptions and comments render as markdown; unformatted walls of text are hard for the stakeholder to scan.
-- **References happen by themselves; a prerequisite needs a DEPENDENCY.** These are two different features and this skill used to conflate them, telling you to "create formal References via the API". **There is no such API and nothing to call.** Juscribe parses `#N`/`pN` out of a ticket's **title and description** on save and stores the References itself — writing the reference _is_ the mechanism, and stale rows disappear when you edit the text.
-  - ⚠️ **Comments are NOT scanned.** Only title and description feed the parser, so a `#N` written only in a comment creates no Reference. It still autolinks when rendered — that is the client drawing a link, not a stored relationship.
-  - **Read them off the payload — do not re-derive them from the text.** Every ticket and project comes back with both directions already resolved: `references` (what this item points at) and `referenced_by` (what points at it). Each entry is `{type, id, title, ticket_type, color}`, with `id` the `#N` / `pN` you would write. Regexing the description instead is the bug this replaced: it renders a bare `#123` for anything the reader has not already loaded, and it cannot see `referenced_by` at all. A target that has since been deleted comes back with a `null` id rather than vanishing, so check before you follow one.
+- **Capture user interjections** — when the user sends scope-affecting messages mid-ticket, mirror them into the ticket's comment thread.
+- **Use `#N` for tickets, `pN` for projects** — both autolink on the board. Never write "ticket 123" or "project 66" in prose.
+- **Format for the board, not a terminal** — see [Formatting](#formatting-descriptions-and-comments).
+- **References happen by themselves; a prerequisite needs a DEPENDENCY.** There is no References API and nothing to call. Juscribe parses `#N`/`pN` out of a ticket's **title and description** on save and stores the references itself; editing the text removes stale ones.
+  - ⚠️ **Comments are NOT scanned.** A `#N` written only in a comment creates no reference, though it still renders as a link.
+  - **Read them off the payload, not the text.** Every ticket and project carries both directions resolved: `references` (what it points at) and `referenced_by` (what points at it). Each entry is `{type, id, title, ticket_type, color}`, with `id` the `#N` / `pN` you would write. Regexing the description cannot see `referenced_by` at all. A deleted target comes back with a `null` id, so check before you follow one.
   - **When a ticket genuinely gates another** ("requires #752 complete"), the mechanism that makes it real on the board — `blocked: true`, a row in `active_dependencies_summary` — is a dependency:
     ```sh
     jus api POST /workspaces/{ws}/tickets/{blocked}/dependencies '{"dependency":{"blocker_type":"Ticket","blocker_id":{blocker},"blocked_type":"Ticket","blocked_id":{blocked}}}'
     ```
-  - ⚠️ **Set one only when it is genuinely blocking.** A dependency asserts the work _cannot proceed_, and the [Dependency Handling Protocol](references/dependencies.md) tells other agents to skip what it marks. Recording a soft ordering preference that way makes a workable ticket look unstartable — put that in the description instead, and say why it is not a blocker.
-- **Pay attention to comment reactions** — `include_comments=true` returns a `reactions` array per comment. Interpret as stakeholder signals:
-  - 👍 agreement / "good direction"
-  - 👎 disagreement / "wrong approach" — multiple 👎 from the stakeholder = effective rejection of that approach
-  - ❤️ strong approval
-  - 🤔 uncertainty / "think about this more"
-  - 🎉 celebration / "this is great"
-  - 👀 "I'm watching this" / "needs attention"
-  - 👍 on a suggestion = "yes, do this"
-- **Toggle a reaction on a comment** with the nested endpoint (same call adds and removes):
-  ```sh
-  jus api POST /workspaces/{ws}/tickets/{ticket_id}/comments/{id}/reactions/toggle '{"emoji":"👍"}'
-  ```
+  - ⚠️ **Set one only when it is genuinely blocking.** A dependency asserts the work _cannot proceed_, and the [Dependency Handling Protocol](references/dependencies.md) tells other agents to skip what it marks. Put a soft ordering preference in the description instead, and say why it is not a blocker.
+- **Read comment reactions as stakeholder signals** — `include_comments=true` returns them per comment, and several 👎 from the stakeholder is an effective rejection of that approach. The full legend, and the endpoint for toggling your own, are in [references/formatting.md](references/formatting.md).
 
 ### Formatting descriptions and comments
 
-Ticket descriptions and comments render as **markdown on the board**. Write them for a human scanning a card, not for a terminal log. Structure beats prose:
+Descriptions and comments render as **markdown on the board**, for a human scanning a card rather than a terminal log. Structure beats prose:
 
-- **Bold section labels** open each part of the story: `**Root cause:**`, `**Plan:**`, `**What shipped:**`, `**To verify:**`, `**Acceptance criteria:**`. The stakeholder should locate any section at a glance.
-- **Bullets and numbered lists** over paragraph runs — one idea per bullet; numbered steps for anything the stakeholder will follow in order (verification steps especially).
-- **Fenced code blocks** for every command, path list, or output the stakeholder might copy (`sh`-fenced for commands); **inline backticks** for file paths, method names, flags, and states in prose.
-- **`#N` / `pN` references** wherever you mention tickets or projects — they autolink (see above). ⚠️ **`#N` is RESERVED for ticket ids. Never write a bare `#` in front of any other number** — a workspace id, a comment id, a row id, a port, a count. A ticket's `title` and `description` are **parsed**, and a `#N` there creates a real reference row pointing at whatever ticket carries that id, so the ticket ends up formally linked to unrelated work and they show it back. Write `workspace 12`, `comment 6079`, `port 5432`. Comments are not parsed, but they still autolink in the UI and read as ticket refs.
-- **Bold the verdict, not everything** — emphasize the load-bearing words (`**no mount**`, `does **not** retry`), not entire sentences. Over-bolding reads as noise.
+- **Bold section labels** open each part of the story: `**Root cause:**`, `**Plan:**`, `**What shipped:**`, `**To verify:**`, `**Acceptance criteria:**`.
+- **Bullets and numbered lists** over paragraph runs — one idea per bullet, and numbered steps for anything the stakeholder will follow in order.
+- **Fenced code blocks** for every command, path list or output the stakeholder might copy (`sh`-fenced for commands); **inline backticks** for file paths, method names, flags and states in prose.
+- **`#N` / `pN` references** wherever you mention tickets or projects. ⚠️ **`#N` is RESERVED for ticket ids. Never write a bare `#` in front of any other number** — a workspace id, a comment id, a row id, a port, a count. In a title or description it creates a real reference to whichever ticket carries that number; in a comment it still renders as a ticket link. Write `workspace 12`, `comment 6079`, `port 5432`.
+- **Bold the verdict, not everything** — the load-bearing words (`**no mount**`, `does **not** retry`), not whole sentences.
 
-A start comment shaped this way:
+⚠️ **A fence inside ANY list item must sit at the list's CONTENT column** — two spaces under a `- ` marker, not lined up under the text. Indented further, it renders as one line of inline code with the language tag glued to the command, while the source still looks correct. Check the rendered output; the worked example, and an example start comment, are in [references/formatting.md](references/formatting.md).
 
-```markdown
-Starting.
-
-**Root cause:** `RejectionAutoDispatchJob#dispatchable?` checks policy and
-marker type but never station reachability, so every rejection creates a
-dispatch that immediately fails when no station is running.
-
-**Plan:** guard with `workspace.online_agents_for(user).any?` — the same
-reachability check the dispatch button uses.
-
-**Tests:** failing job specs first (no station → no dispatch; station
-registered elsewhere → no dispatch; reachable → dispatch as before).
-```
-
-⚠️ **A fence inside ANY list item must sit at the list's CONTENT column** — two spaces under a `- ` marker, not lined up under the text. Indent it further and CommonMark reads it as a lazy paragraph continuation, because an indented code block cannot interrupt a paragraph; inline parsing then treats the fence as a triple-backtick **code span**, collapses the newline, and the language tag becomes content. A step meant to read as a copyable command renders as `sh my-command` instead, with the `sh` glued to the front.
-
-````text
-WRONG — 6 spaces. Renders as one code span: `sh my-command --flag`
-- [ ] 2. Run the thing:
-      ```sh
-      my-command --flag
-      ```
-
-RIGHT — 2 spaces. Renders as a code block.
-- [ ] 2. Run the thing:
-  ```sh
-  my-command --flag
-  ```
-````
-
-**The source looks correct either way**, which is why this needs stating rather than trusting a re-read. Check the rendered output, not the markdown.
-
-And a delivery comment: `**Commit:**` line, a short `**What shipped:**` block, then a numbered `**To verify:**` list — see [Post finished comment](references/delivering.md#post-finished-comment-before-transitioning). The same conventions apply to description flesh-outs (root cause, acceptance criteria) and dependency/blocker comments.
+A delivery comment: `**Commit:**` line, a short `**What shipped:**` block, then a numbered `**To verify:**` list — see [Post finished comment](references/delivering.md#post-finished-comment-before-transitioning). Description flesh-outs and blocker comments follow the same conventions.
 
 ### Commit conventions — THE MOST IMPORTANT STEP
 
-> **CRITICAL: Commit is NOT optional, NOT deferrable, NOT something you "get to later."**
-> The moment code changes are done and linters pass, you commit. IMMEDIATELY. Before responding to the user. Before self-review commentary. Before anything. An uncommitted change is invisible, unrecoverable, and a direct violation of this SOP.
+**Commit the moment code and lint are done** — before self-review, before a comment or a transition, before replying to anyone. Sequence: code → lint → **COMMIT** → everything else. Never move on with a dirty working tree. One commit per ticket, tests included; a self-review fix is a second commit naming the same ticket.
 
-- **Commit is the FIRST thing after code + lint** — not the last thing. Sequence: code → lint → **COMMIT** → then everything else (self-review, comments, transitions, user communication). If you find yourself typing a response and you haven't committed, STOP and commit first.
-- **Never move on with a dirty working tree** — not to answer a question, not to explain what you did, not to run additional checks. Commit first, talk second.
-- **One commit per ticket**, self-contained: backend + frontend + tests together. Follow-up fixes from self-review get a second commit with the same ticket prefix.
-- **The subject line format is yours to choose.** Nothing in Juscribe reads one, so use whatever your team already uses — Conventional Commits, a plain summary, anything. What matters is that the message carries a reference.
-- **End the message with a `Jus-Ticket:` git trailer**, in the same block as any `Co-Authored-By:`:
+The subject format is yours. End the message with the ticket trailer, as its **last paragraph** alongside any `Co-Authored-By:` — git reads only the final block, so a trailer anywhere else links nothing:
 
-  ```text
-  Jus-Ticket: <n>
-  ```
+```text
+Jus-Ticket: <n>
+```
 
-  Same mechanism as `Co-Authored-By:`, and it is the one reference form nothing writes by accident — not a code host, not a bot, not a markdown link. Conventional Commits defines its own footers in git-trailer format, so this is that spec's mechanism rather than merely compatible with it.
-
-  ⚠️ **It is the LAST paragraph of the message or it is not a trailer.** Git reads only the final blank-line-separated block, every line of which has to be `Key: value`; one line of prose anywhere in that block disqualifies the whole of it, and a `Jus-Ticket:` line in the body links nothing.
-  ⚠️ **A breaking change is `BREAKING-CHANGE:`, never `BREAKING CHANGE:`.** Conventional Commits spells it with a space; git requires a trailer key to be a single token, and such a line is none of the shapes git tolerates inside the block — so it disqualifies the **whole** final paragraph and takes `Jus-Ticket:` down with it. Nothing reports this: the commit succeeds and the ticket simply never links. The hyphenated form is that spec's own sanctioned synonym.
-- **A bracket reference — `[#41]`, anywhere in the message — links as well**, and it is the **only** form that can move a ticket on the board: the commit automation reads `[finishes #41]` and its family, never a trailer. Use it alongside the trailer if your workspace has that turned on.
-- ⚠️ **On a code host, keep the reference out of the subject line.** A squash merge on GitHub appends the pull request's own number — `Fix the thing (#41)` — under every message-format setting, and it cannot be turned off. Pull-request numbers and ticket ids are both dense integers from 1, which is why a bare or parenthesised `#41` is deliberately ignored. The trailer block and the message body are the two places the host does not write.
-- **Do NOT push to remote** — the stakeholder pushes manually. Never run `git push`.
+⚠️ **A breaking change is `BREAKING-CHANGE:`, never `BREAKING CHANGE:`.** The spaced key disqualifies the whole final paragraph, so the commit succeeds and the ticket silently never links. Bracket references that move a ticket, and why the reference stays out of the subject on a code host, are in [`hard-rules`](#related-skills) → Commit Rules. **Never `git push`** — the stakeholder pushes.
 
 ## Phase 5: Self-Review
 
@@ -343,65 +266,56 @@ After committing, review your diff (`git show`). Go beyond the diff:
 
 ### Where the commands come from
 
-**This skill does not name them, deliberately.** It ships to projects with different stacks, and a runner named here is wrong everywhere it does not apply. The obligations below are universal; the exact invocations live in the project's own instructions — its `CLAUDE.md`, contributor guide, or task runner.
+**This skill does not name them**: it ships to projects with different stacks, and a runner named here would be wrong everywhere else. The obligations below are universal; the invocations live in the project's own instructions — its `CLAUDE.md`, contributor guide or task runner.
 
-If you cannot find them, **ask rather than guess**. A test command invented from the directory layout can pass while running nothing, which is worse than admitting you don't know it.
+If you cannot find them, **ask rather than guess**. A test command invented from the directory layout can pass while running nothing.
 
 ### Mandatory post-commit checks
 
-> These checks are the entire point of self-review. Skipping them has shipped broken tests and lint warnings across multiple tickets. **Do not skip.**
+> These checks are the point of self-review. **Do not skip them.**
 
 Run, **scoped to the files in this commit**:
 
-1. **The tests covering what you changed.** Prefer the tooling's own dependency-aware selection where it exists — a runner that follows the import graph finds the tests that actually exercise your change, not just the ones with matching filenames.
-2. **Every linter and formatter that applies to those files**, including the static-analysis or smell tools the project treats as mandatory. Fix every warning in a file you touched, whether or not your change caused it.
-3. **Any type checker**, which is usually project-wide rather than per-file — check whether yours can be scoped at all before assuming it can.
+1. **The tests covering what you changed.** Prefer the tooling's own dependency-aware selection where it exists: a runner that follows the import graph finds the tests that exercise your change, not just the ones with matching filenames.
+2. **Every linter and formatter that applies to those files**, including any static-analysis or smell tool the project treats as mandatory. Fix every warning in a file you touched, whether or not your change caused it.
+3. **Any type checker.** It is usually project-wide — check whether yours can be scoped before assuming it can.
 
-⚠️ **Know what this scope does not prove.** A changed-file gate cannot catch a change that breaks a test it has no textual or import-level link to — a shared callback, a fixture, a factory, a config default. Where the project's runner has no dependency-aware selection, "tests for the changed files" collapses to a filename convention and that blind spot is wide.
+⚠️ **Know what this scope does not prove.** A changed-file gate misses a test with no textual or import link to the change — one reached through a shared callback, fixture, factory or config default. Without dependency-aware selection, "tests for the changed files" is a filename convention and that blind spot is wide.
 
-So: **widen the scope yourself when the change is cross-cutting.** Editing a base class, a shared fixture, a migration, a config default or anything imported broadly means running more than the file's own tests, regardless of what the default gate says. If the project runs a full suite anywhere — CI, a pre-push hook, a nightly job — know which, because that is what is actually covering the gap.
+So **widen the scope yourself when the change is cross-cutting**: a base class, a shared fixture, a migration, a config default, anything imported broadly. If the project runs a full suite somewhere — CI, a pre-push hook, a nightly job — know which, because that is what covers the gap.
 
 Fix issues in a follow-up commit with the same ticket prefix. Only finish once the code would pass a senior review.
 
 ### Diff coverage gate
 
-After lints pass, check coverage **of the diff** for every component you touched. This verifies that all new/changed lines are exercised — not just that tests pass.
+After lints pass, check coverage **of the diff** for every component you touched: that every new or changed line is exercised, not just that the tests pass.
 
-Most projects wrap this in a single command; find it rather than assembling one. Two things that bite:
+Most projects wrap this in one command; find it rather than assembling one. Two things bite:
 
-- **Coverage instrumentation is usually opt-in.** A plain test run often does not refresh the coverage data, so the diff check silently reads a stale report with the wrong line numbers and reports success. Confirm the report was written by the run you just did.
-- **Scoping the test run also scopes the coverage.** If you ran only the tests for the changed files, the report covers only what those exercised — which is the right denominator here, but not a statement about the project as a whole.
+- **Coverage instrumentation is usually opt-in.** A plain test run often leaves the old report in place, and the diff check reads it — wrong line numbers and all — and reports success. Confirm the report came from the run you just did.
+- **Scoping the test run also scopes the coverage.** The report covers only what the tests you ran exercised. That is the right denominator here, and says nothing about the project as a whole.
 
-**Default threshold: 100%** — every new or changed line covered — unless the project's testing policy sets a different one. Where the default applies, a failure means write the missing tests, not "good enough": do not deliver with uncovered lines.
+**Default threshold: 100%** — every new or changed line — unless the project's testing policy sets another. Where the default applies, a failure means writing the missing tests: do not deliver with uncovered lines.
 
-**Coverage strategy for stubborn lines** — analyze case by case: a **reachable** line means write the test that exercises it (don't skip "edge cases" or "error branches" — those are the most likely to break in production); **unreachable / dead code** means refactor the source to eliminate it rather than gaming coverage with `:nocov:` / `/* istanbul ignore */` markers. Do all uncovered lines in one pass; don't accumulate coverage debt across commits.
+**Stubborn lines, case by case:** a **reachable** line needs the test that exercises it, edge cases and error branches included, since those break first in production. **Unreachable or dead code** is refactored away, not hidden behind `:nocov:` or `/* istanbul ignore */`. Cover them all in one pass rather than carrying debt across commits.
 
 ### A second client surface needs its own pre-delivery check
 
-**Where a project ships more than one client — a mobile app, a CLI, a public API, an embedded widget — code plus passing tests is NOT sufficient.** Work verified entirely against the primary client can be delivered completely broken on the second one, because the two do not share a surface. Treat this as a hard gate whenever a ticket touches the second client.
-
-The four checks, in the order they bite:
-
-1. **The client's own API namespace exposes every action the feature calls.** A second client usually has its own namespace, and a route existing on the primary surface does **not** mean it exists on the other. This is the one that produces a 404 at runtime with a green test suite.
-2. **The serializer or sparse-fieldset constants include every field the UI reads.** Second clients are often more aggressively field-limited; a missing field returns **undefined at runtime rather than erroring**, so it looks like a rendering bug and gets debugged in the wrong layer.
-3. **The platform's own interaction constraints are exercised, not inherited by assumption.** Anything the primary client gets for free from its runtime — input focus, keyboard occlusion, back-navigation, offline state — has to be handled explicitly on the other.
-4. **Request specs against the client's own namespace**, not only the primary one's.
-
-**Find the project's own version of this list** — where a second client exists, the specifics (namespace paths, the field constants, the platform affordance that bites) belong in that project's own docs. This is the obligation; the project supplies the checks.
+**Where a project ships more than one client — a mobile app, a CLI, a public API, an embedded widget — code plus passing tests is NOT sufficient.** Work verified against the primary client can ship completely broken on the other. Before delivering a ticket that touches the second client, run the four checks in [references/second-client.md](references/second-client.md), and the project's own version of them where it has one.
 
 ## Phase 6 onwards: Finish, Deliver, and Project Completion
 
-**[references/delivering.md](references/delivering.md) — open it before the `finished` transition, not after.** It carries the pre-delivery gate (did you actually do what the ticket asks?), the mandatory "To verify" steps, the two transition calls in order, and what closing a project involves.
+**[references/delivering.md](references/delivering.md) — open it before the `finished` transition, not after.** It carries the pre-delivery gate (did you actually do what the ticket asks?), the mandatory "To verify" steps, the one transition call and when a delivery is yours to make, and what closing a project involves.
 
-⚠️ **Delivering is the phase most often done from memory, and the memory is wrong in a specific way:** the gate is not "is the code good", it is "does this differ from what the ticket says". Those are different questions and only the file asks the second one.
+⚠️ **Delivering is the phase most often done from memory, and memory asks the wrong question.** The gate is not "is the code good" but "does this differ from what the ticket says", and only the file asks the second.
 
 ## Batch Work & Special Workflows
 
-- **Respect ticket ordering** — work tickets in their assigned `position` order. Do not reorder or cherry-pick.
-- **A stakeholder may have a shorthand for "work the whole backlog"** — if yours does, it means every ticket in the backlog, in position order, without asking for confirmation between them. Record the phrase in the project's own instructions; it is a convention between you and them, not a Juscribe feature.
-- **Every ticket gets the FULL lifecycle, even in batch mode.** Each gets: start → investigate → code → commit → self-review → **delivery comment with verification steps** → finish → deliver. Do not skip the delivery comment to save time. Do not combine delivery comments across tickets — the stakeholder reviews tickets individually.
-- **Do not force-deliver tickets that aren't fully done.** If a batch ticket has questions, blockers, or incomplete work, leave it in `started` with a comment and move to the next. Recording the block is [references/dependencies.md](references/dependencies.md). Delivering partial work to "clear the batch" is strictly prohibited.
-- **Research ticket workflow** — start the ticket, do the research (web searches, codebase analysis, reading docs), capture findings in the ticket description, then finish and deliver. No code commits needed — the deliverable is the description content itself.
+- **Respect ticket ordering** — work tickets in their `position` order. Do not reorder or cherry-pick.
+- **A stakeholder may have a shorthand for "work the whole backlog"**: every ticket in it, in position order, with no confirmation between them. Record the phrase in the project's own instructions; it is a convention between you and them, not a Juscribe feature.
+- **Every ticket gets the FULL lifecycle, even in batch mode**: start → investigate → code → commit → self-review → **delivery comment with verification steps** → finish. Never skip or combine delivery comments — the stakeholder reviews tickets individually.
+- **Do not force-deliver tickets that aren't fully done.** A batch ticket with questions, blockers or incomplete work stays in `started` with a comment while you move to the next; [references/dependencies.md](references/dependencies.md) records the block. Delivering partial work to "clear the batch" is strictly prohibited.
+- **Research tickets** — start it, do the research (web searches, codebase analysis, docs), put the findings in the ticket description, then finish it. No commit needed: the description is the deliverable.
 
 ## State Machine Reference
 
@@ -417,15 +331,10 @@ Valid `cancelled` resolutions (enum — exact values): `duplicate`, `wont_do`, `
 
 Panel mapping: `unprioritized→icebox`, `prioritized→backlog`, `started/finished/delivered/rejected→current`, `accepted/cancelled/converted/archived→done`.
 
-⚠️ **A board may MERGE Finished into Delivered** — a per-workspace option its owner sets. The map above is unchanged on such a board; what changes is that the `finished` call lands the ticket in `delivered` in one transaction, and the `delivered` call after it answers `200` with the ticket unchanged. Neither is a failure, and the delivery sequence is the same either way. The workspace payload's `merge_finished_into_delivered` says which kind of board you are on.
+`converted` and `archived` are terminal in practice: `converted` has no onward transition, and `archived` can only go to `accepted`.
 
-> **`converted` and `archived` are real states.** An earlier version of this
-> reference listed neither, which made the lifecycle look like it ended at
-> accepted or cancelled. Both are terminal for practical purposes — `converted`
-> has no onward transitions at all, and `archived` can only go to `accepted`.
+⚠️ **A board may MERGE Finished into Delivered** — a per-workspace option its owner sets. The map is unchanged; the `finished` call lands the ticket in `delivered` in one transaction. That is why your `finished` call is your last one on every board: merged, it delivers; unmerged, delivering is a person's step. A `delivered` call on a ticket already there answers `200` unchanged, which is not a failure. The workspace payload's `merge_finished_into_delivered` says which kind of board you are on.
 
 ## Related Skills
 
-- `hard-rules` — the non-negotiable must/must-not that overrides everything here (commit immediately, no lint suppression, stakeholder-verbatim descriptions, never deliver incomplete work, no `git push`, document discoveries) and the map of which rules the enforcement hooks back deterministically on harnesses that run them. (Claude Code plugin installs show skill names prefixed with `jus:` — invoke the prefixed form there.)
-
-> **Note:** `ticket-workflow` is the single load-bearing SOP skill — it inlines the estimation, labeling, testing-gate, and `jus` API material that earlier lived in the separate `testing-gates`, `juscribe-api`, and `estimation-labels` skills (retired because they never auto-invoked; their content was already resident here). For monumental, the deeper extracted reference also lives in `.jus/sop/` (`api-reference.md`, `workflows.md`, `commands.md`) and `.jus/docs/`.
+- `hard-rules` — the non-negotiable must/must-not that overrides everything here (commit immediately, no lint suppression, stakeholder-verbatim descriptions, never deliver incomplete work, no `git push`, document discoveries), and which of them the enforcement hooks back deterministically. Claude Code plugin installs prefix skill names with `jus:` — invoke the prefixed form there.

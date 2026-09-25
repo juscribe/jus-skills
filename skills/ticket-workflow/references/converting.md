@@ -31,7 +31,7 @@ It returns `{ticket, project}`, so the new project's id comes back in the same c
 
 ⚠️ The source-type check runs **ahead of** the target checks below, deliberately: a feature asking to become a feature is wrong for a more fundamental reason than whatever it named as a target, and hearing about `ticket_type` first sends you to fix the wrong parameter.
 
-**After converting**, populate the project: create the child tickets with `project_id` set and their placement in the same call — `panel` plus `position` or `insert_at`, see `references/api.md` → Placing a ticket on create. For a whole set, `bulk_create` then `bulk_reorder`.
+**After converting**, populate the project: create the child tickets with `project_id` set and their placement in the same call — `panel` plus `position` or `insert_at`, see `references/api-writes.md` → _Placing a ticket on create_. For a whole set, `bulk_create` then `bulk_reorder`.
 
 ## Converting into a ticket instead
 
@@ -50,7 +50,7 @@ The new ticket carries **title, description, requester, stakeholder, project and
 ```sh
 jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"started"}'
 jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"finished"}'
-jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"delivered"}'
+jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"delivered"}'   # only when a person asks — see delivering.md
 jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"cancelled","resolution":"duplicate"}'
 ```
 
