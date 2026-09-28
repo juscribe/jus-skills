@@ -30,7 +30,7 @@ Codex, Cursor, Kimi Code, Gemini CLI, Windsurf, Zed and Antigravity all read `.a
 ## Links
 
 - [juscribe.ai](https://juscribe.ai) — the board
-- [jus](https://github.com/juscribe/jus) — the `jus` CLI and the agent binary, built for every platform
+- [jus](https://github.com/juscribe/jus) — the jus CLI's public repository, under MIT
 - [jus-dispatch](https://github.com/juscribe/jus-dispatch) — the Dispatch feature (preview)
 - [herdr-plugin](https://github.com/juscribe/herdr-plugin) — the Herdr plugin
 - [homebrew-tap](https://github.com/juscribe/homebrew-tap) — the Homebrew formula
