@@ -317,8 +317,9 @@ these stop it working badly inside one.
 
 Antigravity reads project `.agents/skills/` plus `GEMINI.md` and `AGENTS.md` as
 context, so the canonical install works unchanged. ⚠️ **Its IDE ignores symlinks
-for global skills** (issue #633) — use copies there: `cp -r ~/.jus-skills/skills/*
-.agents/skills/`.
+for global skills**
+([vercel-labs/skills#633](https://github.com/vercel-labs/skills/issues/633)) —
+use copies there: `cp -r ~/.jus-skills/skills/* .agents/skills/`.
 
 ⚠️ **`.agents/` still matters for skills even though hooks moved to the global
 path.** They are different discovery mechanisms; only the hooks one failed.

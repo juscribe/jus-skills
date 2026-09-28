@@ -22,6 +22,23 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.43] — 2026-09-28
+
+### Changed
+
+- Say hooks ship per tool in the bundle's AGENTS.md (#5193)
+- Stop Qwen loading skills twice, it reads .agents/skills (#5189)
+- Ship the reference cut of ticket-workflow (#5149)
+- Point the Gemini test block at its live run (#5188)
+- Keep the Qwen row's pointer to its hook README (#5184)
+- Cite the right symlink bug and mark Qwen and Gemini live-verified (#5184)
+- Name the ticket-workflow skill in the claim hook, so Haiku loads it (#5144)
+- Make agent tokens organization-wide, converting every existing one (#5179)
+- Add the juscribe/jus README and link it from every public README (#5140)
+- Tell customers when their jus CLI is older than the plugin needs (#5080)
+- Offer a prompt's #N as a candidate ticket, with hints (#5118)
+- Put the tick-the-boxes step where adopting agents finish (#5052)
+
 ## [1.4.42] — 2026-09-25
 
 ### Changed

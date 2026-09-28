@@ -1,6 +1,6 @@
 # Formatting — worked examples and the reaction legend
 
-The rules are in [Formatting descriptions and comments](../SKILL.md#formatting-descriptions-and-comments). These are the examples behind them, and how to read the reactions on a comment.
+The rules are in `references/delivering.md` → _Formatting descriptions and comments_. These are the examples behind them, and how to read the reactions on a comment.
 
 ## A start comment
 

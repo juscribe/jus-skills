@@ -65,7 +65,7 @@ Markers render as horizontal bars on the board, not cards. They are timeline-pla
 | `description` | **Append-only.** Fetch first; if non-null, prepend existing content + `\n\n---\n\n` before your additions. See [`hard-rules`](../SKILL.md#related-skills). |
 | `points` | Required for features to leave icebox. Valid values: `0, 1, 2, 3, 5, 8`. See [Estimation](#estimation). |
 | `ticket_type` | One of `feature`, `bug`, `chore`, `research` (or marker types). See [Ticket Types](#ticket-types). |
-| `label_ids` | Array of integers, 1–3 entries. See [Label conventions](../SKILL.md#label-conventions). |
+| `label_ids` | Array of integers, 1–3 entries. See `references/investigating.md` → _Label conventions_. |
 | `project_id` | Scope a ticket under a project when one applies — improves board organization and unlocks project-level rollups. ⚠️ **Only ever a project still `unprioritized`, `prioritized` or `started`** — filing into one past `started` succeeds silently and leaves the project's state no longer tracking its contents. See [`hard-rules`](../SKILL.md#related-skills) → Ticket Placement. |
 | `panel` / `state` / `position` / `insert_at` | The placement, honoured on create since 2026-08. See `references/api-writes.md` → _Placing a ticket on create_; `bulk_create` takes only the first two. |
 | `comments_count` | Counter-cached integer. Check before fetching comments. |

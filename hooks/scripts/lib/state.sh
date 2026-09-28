@@ -85,12 +85,18 @@ juscribe_sop_require_valid_json() {
   # `"hello"`, so the old form let the script continue to `.cwd`, which errors
   # with exit 5 — and under `set -e` that left the hook on a non-zero exit some
   # hosts read as a BLOCK. Now it is a recorded no-op.
-  fields=$(jq -r '[.hook_event_name // "", .tool_name // "", .session_id // ""] | @tsv' <<<"${1:-}" 2>/dev/null) || {
+  #
+  # ⚠️ THE SEPARATOR IS \x1f, NOT A TAB (#5080). Tab is IFS WHITESPACE, so
+  # `read` collapses a run of them: an empty tool_name — every UserPromptSubmit
+  # and Stop — shifted the session id into the tool slot, and those records went
+  # to `_anonymous`. A non-whitespace separator keeps an empty field empty.
+  fields=$(jq -r '[.hook_event_name // "", .tool_name // "", .session_id // ""] | map(tostring) | join("\u001f")' \
+    <<<"${1:-}" 2>/dev/null) || {
     JUSCRIBE_SOP_OUTCOME=bad-json
     juscribe_sop_record
     exit 0
   }
-  IFS=$'\t' read -r JUSCRIBE_SOP_EVENT JUSCRIBE_SOP_TOOL JUSCRIBE_SOP_SESSION <<<"$fields" || true
+  IFS=$'\x1f' read -r JUSCRIBE_SOP_EVENT JUSCRIBE_SOP_TOOL JUSCRIBE_SOP_SESSION <<<"$fields" || true
   # ⚠️ THE TRAP IS WHAT MAKES AN EARLY `exit 0` VISIBLE. Every silencer below
   # this line leaves through one, and without the trap each of them is silence.
   trap juscribe_sop_record EXIT

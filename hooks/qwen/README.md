@@ -217,11 +217,9 @@ appears once, because those tools have no matcher to split on.
 
 ## Skills — through Qwen's own extension system
 
-⚠️ **Qwen does not read `.agents/skills/`.** It scans `.qwen/skills/` and
-`~/.qwen/skills/` and nothing else;
-[QwenLM/qwen-code#2042](https://github.com/QwenLM/qwen-code/issues/2042) asks for
-`.agents` support and is closed with no linked PR. So the skills come as a Qwen
-extension instead, which `jus init` installs (#4833):
+Qwen reads skills from `.qwen/skills/` **and** `.agents/skills/`, and has since
+0.13.0 — this section said it read only the first until #5189 drove it on 0.24.3.
+`jus init` installs them as a Qwen extension (#4833), which auto-updates:
 
 ```sh
 qwen extensions install https://github.com/juscribe/jus-skills:jus --consent --scope project --auto-update
@@ -236,8 +234,10 @@ the bypass refused, the plain commit allowed, each hook fired once.
 
 ⚠️ **Extension or merge, never both.** Both load, and every hook fires twice;
 `jus init` merges only when the installed extension does not register the file.
-⚠️ **Nor links in `.qwen/skills/` beside it**: Qwen then loads every skill twice,
-once as `jus:<name>` and once plain.
+⚠️ **Nor skill links beside it, in either root**: Qwen then loads every skill
+twice, once as `jus:<name>` and once plain (#4833, #5189). `jus init` removes its
+own `.qwen/skills/` links and names the `rm` for `.agents/skills/` ones, which
+another tool in the repository may read.
 
 ## Tests
 

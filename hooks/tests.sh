@@ -3028,9 +3028,9 @@ section "gemini adapter"
 # package's own `bundle/docs/hooks/reference.md` and `bundle/docs/tools/`. So
 # only the TOOL NAME is translated.
 #
-# ⚠️ NOT LIVE-VERIFIED. Gemini CLI is not installed on the authoring machine, and
-# the README says so in its first box. These tests are what machine-checkable
-# evidence there is.
+# ⚠️ THESE ARE UNIT TESTS; THE LIVE RUN IS IN hooks/gemini/README.md. The adapter
+# harness drove 0.60.0 on a stub, with controls, on 2026-09-21 (#4762). The
+# `AfterAgent` retry is still read out of the package, not driven.
 GEM_DIR="$PLUGIN_ROOT/hooks/gemini"
 GEM_ADAPT="$GEM_DIR/scripts/jus-gemini-adapt.sh"
 
@@ -4027,6 +4027,39 @@ assert_match "ticket-workflow: description claims generic ticket language for Ju
 assert_match "hard-rules: description disambiguates from other issue trackers" \
   "$PLUGIN_ROOT/skills/hard-rules/SKILL.md" "not another issue tracker"
 
+# #5118 softened "always" to "by default": a bare #N is often a GitHub pull
+# request or issue, and the pickup hook now hands the model hints saying so. An
+# "always" in the router's matching surface would tell it to override them.
+# The #2183 phrases above stay, so board language still routes here unless the
+# wording names another system.
+assert_match "ticket-workflow: description routes to Juscribe by default" \
+  "$PLUGIN_ROOT/skills/ticket-workflow/SKILL.md" "means Juscribe tickets by default"
+assert_match "hard-rules: description routes to Juscribe by default" \
+  "$PLUGIN_ROOT/skills/hard-rules/SKILL.md" "means Juscribe by default"
+for skill in ticket-workflow hard-rules; do
+  assert_match "$skill: description yields when the wording names another system" \
+    "$PLUGIN_ROOT/skills/$skill/SKILL.md" \
+    "unless the wording names another system (a PR, a GitHub issue, another tracker's key)"
+done
+assert_no_match "ticket-workflow: description no longer says always" \
+  "$PLUGIN_ROOT/skills/ticket-workflow/SKILL.md" "always means Juscribe"
+
+# The Agent Skills spec caps `description` at 1024 characters, and #5118 took
+# ticket-workflow's to 992. Counted in BYTES, which is never fewer than the
+# characters, so the check holds whatever locale the harness runs under.
+for skill_file in "${skill_files[@]}"; do
+  skill_name="$(basename "$(dirname "$skill_file")")"
+  desc_bytes=$(sed -n 's/^description: //p' "$skill_file" | head -n 1 | tr -d '\n' | wc -c | tr -d ' ')
+  TESTS_RUN=$((TESTS_RUN + 1))
+  TEST_NAME="$skill_name: description fits the 1024-character spec limit ($desc_bytes bytes)"
+  if (( desc_bytes > 0 && desc_bytes <= 1024 )); then
+    printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+  fi
+done
+
 # #2682. The enforcement table's Skill column is ✅ on every row by
 # construction — the table enumerates the rules THIS skill contains, so a row
 # claiming otherwise is stating something the file itself contradicts.
@@ -4123,6 +4156,7 @@ mkdir -p "$CLAIM_TMP/bin"
 cat > "$CLAIM_TMP/bin/jus" <<CLAIMJUS
 #!/usr/bin/env bash
 printf '%s\n' "\$*" >> "$CLAIM_TMP/calls.log"
+[ "\$1" = "version" ] && { echo 9.9.9; exit 0; }
 [ "\$1" = "api" ] && [ "\$2" = "GET" ] && exec cat <<'JSON'
 {"ticket":{"id":"3668","title":"T","state":"prioritized","points":3,
  "description":"d","assignees":[],"blocked":false,"ticket_reactions":[]}}
@@ -4165,10 +4199,12 @@ mkdir -p "$CLAIM_TMP/orphan"
 claim_run "$CLAIM_TMP/orphan" "please work #3668" >/dev/null
 assert_no_match "$TEST_NAME" "$CLAIM_TMP/calls.log" "workspaces"
 
+# `jus version` is the once-a-session CLI floor check (#5080), not the board,
+# so "calls nothing" means no `jus api` call.
 TEST_NAME="says nothing, and calls nothing, on a prompt naming no ticket"
 out=$(claim_run "$CLAIM_TMP/proj" "what does this use for auth")
 TESTS_RUN=$((TESTS_RUN + 1))
-if [[ -z "$out" && ! -s "$CLAIM_TMP/calls.log" ]]; then
+if [[ -z "$out" ]] && ! grep -q '^api' "$CLAIM_TMP/calls.log"; then
   printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
 else
   TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
@@ -4179,6 +4215,52 @@ fi
 # user and never reaches the model — only additionalContext does (#3498).
 TEST_NAME="feeds the ticket back on additionalContext"
 assert_reaches_agent "$TEST_NAME" "$(claim_run "$CLAIM_TMP/proj" "please work #3668")" "UserPromptSubmit"
+
+# #5118. A bare #N is a candidate: ticket ids and GitHub PR/issue numbers both
+# count up from 1, so only the wording can tell them apart. The hook fetches
+# anyway and hands the MODEL hints; the rspec spec covers each hint in depth,
+# and these pin the shipped shape on the harness every adapter runs.
+claim_ctx() { # <cwd> <prompt> — the additionalContext alone, or "" when silent
+  claim_run "$1" "$2" | jq -r '.hookSpecificOutput.additionalContext // ""' 2>/dev/null || true
+}
+
+claim_expect() { # <name> <context> <must|mustnt> <fixed string>
+  TESTS_RUN=$((TESTS_RUN + 1))
+  local found=no
+  grep -qF -- "$4" <<<"$2" && found=yes
+  if [[ ( "$3" == must && "$found" == yes ) || ( "$3" == mustnt && "$found" == no ) ]]; then
+    printf '  \033[32m✓\033[0m %s\n' "$1"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$1")
+    printf '  \033[31m✗\033[0m %s\n' "$1"
+  fi
+}
+
+# A project whose only remote is on GitHub: `git remote add` writes config and
+# touches no network, which is the whole of what the remote hint reads.
+mkdir -p "$CLAIM_TMP/ghproj/.jus/config"
+echo "42" > "$CLAIM_TMP/ghproj/.jus/config/workspace_id"
+git init -q "$CLAIM_TMP/ghproj"
+git -C "$CLAIM_TMP/ghproj" remote add origin git@github.com:org/repo.git
+
+ctx=$(claim_ctx "$CLAIM_TMP/proj" "please work #3668")
+claim_expect "introduces the ticket as a candidate" "$ctx" must "If it means a Juscribe ticket, here it is"
+claim_expect "tells the model to ignore it when the wording points elsewhere" "$ctx" must "ignore this block"
+claim_expect "no longer claims the prompt named a ticket" "$ctx" mustnt "Your prompt named a ticket"
+claim_expect "attaches no hint when nothing suggests another system" "$ctx" mustnt "Hints:"
+
+claim_expect "names the system word right before the number" \
+  "$(claim_ctx "$CLAIM_TMP/proj" "look at PR #3668")" must 'Hints: the word before it is "PR"'
+claim_expect "notes a GitHub remote, read from local config" \
+  "$(claim_ctx "$CLAIM_TMP/ghproj" "please work #3668")" must "Hints: this repo has a GitHub remote."
+
+ctx=$(claim_ctx "$CLAIM_TMP/ghproj" "please work jus-3668")
+claim_expect "fetches jus-N and marks it explicit" "$ctx" must "Hints: written as jus-3668, an explicit Juscribe reference."
+claim_expect "an explicit jus-N carries no remote hint" "$ctx" mustnt "GitHub remote"
+
+TEST_NAME="still leaves gh#N unfetched"
+claim_run "$CLAIM_TMP/proj" "see gh#3668 upstream" >/dev/null
+assert_no_match "$TEST_NAME" "$CLAIM_TMP/calls.log" "tickets/3668"
 
 rm -rf "$CLAIM_TMP"
 
@@ -4490,6 +4572,16 @@ done
 assert_stdout "$TEST_NAME" "outcome=no-jq" \
   "$(live_run _anonymous "$LIVE_GUARD" '{}' PATH="$LIVE_NOJQ")"
 rm -rf "$LIVE_NOJQ"
+
+# ⚠️ AN EVENT WITH NO TOOL IS MOST OF THEM, AND IT LOST ITS SESSION (#5080).
+# The fields were split on a tab, and tab is IFS WHITESPACE: a run of them
+# collapses, so an empty tool_name shifted the session id into the tool slot.
+# Every UserPromptSubmit and Stop record went to `_anonymous`, and the CLI floor
+# check keyed on the session found none to remember itself by.
+t "an event with no tool records under its own session"
+live_no_tool=$(printf '{"session_id":"s9","hook_event_name":"Stop","cwd":"%s"}' "$LIVE_WIRED")
+assert_stdout "$TEST_NAME" "event=Stop tool= cwd=payload" \
+  "$(live_run s9 "$SCRIPTS/jus-stop-uncommitted.sh" "$live_no_tool")"
 
 # ⚠️ THE RECORDING ITSELF MUST STAY SILENT. A hook that prints on the happy path
 # is noise in every session forever, and the check is what people run.
