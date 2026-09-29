@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# The oldest `jus` CLI this bundle works with, checked once a session (#5080).
+# The oldest `jus` CLI this bundle works with, checked once a session.
 # Sourced — not executed directly. The floor itself is jus/JUS_MIN_VERSION.
 #
-# WHY. The bundle and the CLI ship separately (`bin/publish-skills --release`
-# and `bin/publish-cli`), and customers run `brew upgrade jus` on their own
-# schedule. A bundle calling a subcommand their CLI predates fails with
-# `Usage: jus <command>`, exit 1, which every adapter reads as permission — and
-# nothing said why.
+# WHY. The bundle and the CLI ship separately, each by its own release, and
+# customers run `brew upgrade jus` on their own schedule. A bundle calling a
+# subcommand their CLI predates fails with `Usage: jus <command>`, exit 1,
+# which every adapter reads as permission — and nothing said why.
 #
 # ⚠️ IT CAN ONLY SPEAK WHERE BUNDLE CODE RUNS. Claude Code runs these scripts
 # directly, so it always can. Every other adapter runs them as `jus hook
 # <name>`, which a CLI older than 0.8.14 (the first with `hook`) or no CLI at
 # all refuses before this file is read. For that case the CLI's own
-# unknown-command reply names the upgrade, from the cut after #5080 on.
+# unknown-command reply names the upgrade, in every CLI cut since this check
+# shipped.
 #
 # ⚠️ IT NEVER STOPS ANYTHING. Its caller is a UserPromptSubmit hook, a
 # blockable event, so every outcome — one it cannot read included — is a
 # message, never an exit code.
 #
-# ⚠️ NOTHING HERE MAY `set` A SHELL OPTION. bin/publish-skills sources this
-# file for juscribe_sop_version_older and juscribe_sop_cli_floor, and it owns
-# its own.
+# ⚠️ NOTHING HERE MAY `set` A SHELL OPTION. The bundle's release script
+# sources this file for juscribe_sop_version_older and juscribe_sop_cli_floor,
+# and it owns its own.
 
 # Echo the floor, or fail. JUS_MIN_VERSION_FILE overrides the path for specs.
 # A bundle packaged without its floor fails here, and the caller stays silent:

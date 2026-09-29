@@ -1,14 +1,20 @@
 # Estimation
 
-Effort is captured in `points`. **Valid values: `0`, `1`, `2`, `3`, `5`, `8`** — no other values, no half-points.
+## Contents
 
-| Points | Calibration |
+- [Estimation](#estimation)
+- [Ticket Types](#ticket-types)
+- [Ticket Metadata](#ticket-metadata)
+
+**A point measures effort** — how much work the ticket takes, relative to the other tickets. It is not a time estimate, and not a rating of how complex or difficult the work is. `points` carries it: **valid values `0`, `1`, `2`, `3`, `5`, `8`** — no other values, no half-points.
+
+| Points | Typical effort |
 | --- | --- |
 | `0` | Trivial config change, typo fix — no real engineering effort |
-| `1` | Single-file change, simple bug fix |
+| `1` | Single-file change, small bug fix |
 | `2` | Small feature or multi-file change with clear scope |
 | `3` | Medium feature — new endpoint + frontend, multiple specs |
-| `5` | Large feature spanning backend + frontend + tests, or a complex refactor |
+| `5` | Large feature spanning backend + frontend + tests, or a far-reaching refactor |
 | `8` | Epic-scale work — usually a sign the ticket should be broken into smaller tickets |
 
 - **Every ticket gets points, including chores and bugs.** Chores are NOT automatically `0`; a chore that requires real work gets real points (chores affect velocity too). `0` is reserved for genuinely trivial / no-effort items.
@@ -19,6 +25,8 @@ Effort is captured in `points`. **Valid values: `0`, `1`, `2`, `3`, `5`, `8`** �
 ```sh
 jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"points":2}}'
 ```
+
+**MCP:** `update_ticket` with `points`.
 
 # Ticket Types
 
@@ -62,7 +70,7 @@ Markers render as horizontal bars on the board, not cards. They are timeline-pla
 | `requester_id` | **Auto-set** to `current_user` by the API — not settable. The agent that creates the ticket is the requester. |
 | `stakeholder_id` | **Set to the workspace owner's user ID** for all tickets. Look it up once per workspace rather than hardcoding it. |
 | `assignee_ids` | Set to your agent user ID when you are doing the coding. **Mixed-actor tickets (some steps only the stakeholder can perform): assign BOTH** — and give each subtask its own `assignee_id` (see `references/subtasks.md`). **Omit or leave empty** when creating tickets you won't immediately work on — let the stakeholder assign. |
-| `description` | **Append-only.** Fetch first; if non-null, prepend existing content + `\n\n---\n\n` before your additions. See [`hard-rules`](../SKILL.md#related-skills). |
+| `description` | **The stakeholder's text stays verbatim**, first, above a `---` line; yours follows it and is edited in place when facts change. Add with `description_append`, which needs no read. See [`hard-rules`](../SKILL.md#related-skills) → Ticket Description Rules. |
 | `points` | Required for features to leave icebox. Valid values: `0, 1, 2, 3, 5, 8`. See [Estimation](#estimation). |
 | `ticket_type` | One of `feature`, `bug`, `chore`, `research` (or marker types). See [Ticket Types](#ticket-types). |
 | `label_ids` | Array of integers, 1–3 entries. See `references/investigating.md` → _Label conventions_. |
@@ -90,10 +98,14 @@ jus api POST /workspaces/{ws}/tickets '{
 }'
 ```
 
+**MCP:** `create_ticket` takes the same fields, with labels by name, as `list_labels` shows them, rather than by id.
+
 ⚠️ **`project_id` is the one field here with a precondition.** Read the project's state first — a project past `started` takes the ticket without complaint and never advances again:
 
 ```sh
 jus api GET '/workspaces/{ws}/projects/{id}?fields=id,name,state'
 ```
+
+**MCP:** `get_project`.
 
 `panel` and `insert_at` are the placement, and they belong in this call rather than a follow-up — see `references/api-writes.md` → _Placing a ticket on create_. Omit both and the ticket lands at the bottom of the **icebox**.

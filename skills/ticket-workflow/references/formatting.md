@@ -4,20 +4,16 @@ The rules are in `references/delivering.md` → _Formatting descriptions and com
 
 ## A start comment
 
-A start comment shaped this way:
+A start comment shaped this way. Each paragraph is one line, because the board turns a single newline into a line break:
 
 ```markdown
 Starting.
 
-**Root cause:** `RejectionAutoDispatchJob#dispatchable?` checks policy and
-marker type but never station reachability, so every rejection creates a
-dispatch that immediately fails when no station is running.
+**Root cause:** `ExportJob#perform` retries on every error, a 404 from the storage API included, so an export whose file was deleted is retried forever and backs up the queue.
 
-**Plan:** guard with `workspace.online_agents_for(user).any?` — the same
-reachability check the dispatch button uses.
+**Plan:** stop retrying on a 404, the same rule the upload job already follows.
 
-**Tests:** failing job specs first (no station → no dispatch; station
-registered elsewhere → no dispatch; reachable → dispatch as before).
+**Tests:** failing job specs first (404 → no retry; 500 → retried as before; success → unchanged).
 ```
 
 ## A fence inside a list item
@@ -26,13 +22,13 @@ registered elsewhere → no dispatch; reachable → dispatch as before).
 
 ````text
 WRONG — 6 spaces. Renders as one code span: `sh my-command --flag`
-- [ ] 2. Run the thing:
+- Run the thing:
       ```sh
       my-command --flag
       ```
 
 RIGHT — 2 spaces. Renders as a code block.
-- [ ] 2. Run the thing:
+- Run the thing:
   ```sh
   my-command --flag
   ```
@@ -57,3 +53,5 @@ Toggle your own reaction on a comment with the nested endpoint — the same call
 ```sh
 jus api POST /workspaces/{ws}/tickets/{ticket_id}/comments/{id}/reactions/toggle '{"emoji":"👍"}'
 ```
+
+**MCP:** no MCP tool adds a reaction. Add it in the app.

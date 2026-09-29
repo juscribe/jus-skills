@@ -31,6 +31,8 @@ Run, **scoped to the files in this commit**:
 
 So **widen the scope yourself when the change is cross-cutting**: a base class, a shared fixture, a migration, a config default, anything imported broadly. If the project runs a full suite somewhere — CI, a pre-push hook, a nightly job — know which, because that is what covers the gap.
 
+- **A reviewer that changes code to test it, such as deleting a guard to see whether the tests notice, must mutate a temporary copy**, never the checkout you are about to commit from. A surviving mutation is exactly what that review produces, so your own gates will not catch one left behind.
+
 Fix issues in a follow-up commit with the same ticket prefix. Only finish once the code would pass a senior review.
 
 ## Diff coverage gate

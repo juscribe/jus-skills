@@ -15,7 +15,8 @@
 #      changes is fine — pre-commit hooks downstream will still run).
 #   5. If only non-code files were edited (docs, json, yml), allow.
 #   6. If linters ran AFTER the most recent code edit, allow.
-#   7. Otherwise, block with a message listing which lints to run.
+#   7. Otherwise, block with a message stating the obligation (no commands —
+#      they are the installing project's).
 
 set -euo pipefail
 
@@ -80,12 +81,12 @@ state_dir=$(juscribe_sop_state_dir "$session_id")
 
 # (5) Only doc/config files edited → no lint requirement
 if [[ -f "${state_dir}/edits.log" ]]; then
-  # Scope the scan to the repo being committed to. #2388 keeps out-of-repo
-  # entries — scratchpad scripts, auto-memory — in the log for the session's
-  # whole life by design, and they are not part of THIS commit, so demanding
-  # lints for them would raise a gate no lint in this repo can lower. Only when
-  # a toplevel resolves: with no cwd (the shape the harness sometimes sends) the
-  # scan stays unscoped, exactly as before.
+  # Scope the scan to the repo being committed to. The tracker keeps
+  # out-of-repo entries — scratchpad scripts, auto-memory — in the log for the
+  # session's whole life by design, and they are not part of THIS commit, so
+  # demanding lints for them would raise a gate no lint in this repo can lower.
+  # Only when a toplevel resolves: with no cwd (the shape the harness sometimes
+  # sends) the scan stays unscoped, exactly as before.
   base_dir=${repo:-$cwd}
   code_edited=0
   while IFS= read -r path; do
@@ -112,35 +113,19 @@ if (( linted_at >= modified_at )); then
   exit 0
 fi
 
-# (7) Block
+# (7) Block. The message states the obligation and names no command: the
+# bundle ships to projects in every stack, and the commands are theirs.
 cat >&2 <<'EOF'
 [jus:hard-rules] BLOCKED: linters have not been run since the last code edit.
 
 The Juscribe SOP requires running linters BEFORE every commit. Run the
-applicable linters scoped to the files you changed, then retry the commit.
+linters, type checkers and tests your project's instructions name, scoped to
+the files you changed, then retry the commit. If the instructions name none,
+use the lint and test targets the project's own configuration defines.
 
-  Ruby files (.rb):
-    bin/rubocop <files>
-    bin/reek <files>
-    bin/rspec                 # full backend suite
-
-  Frontend files (.ts/.tsx/.css):
-    pnpm exec eslint <files>
-    pnpm exec prettier --check <files>
-    pnpm exec tsc --noEmit    # always project-wide
-    pnpm test                 # full vitest suite
-
-  Mobile files (mobile/):
-    cd mobile && pnpm test
-
-  Go files (station/):
-    bin/ci --station
-
-  Shell scripts (.sh, or extensionless with a shell shebang):
-    shellcheck <files>        # or the project's wrapper, e.g. bin/lint-shell
-
-If you've already linted but the gate is firing, the hook didn't see the lint
-exit code. Re-run the lint command in its own Bash call (not chained), then
-retry the commit.
+If you have already run them and the gate still fires, the hook did not see
+the run. Re-run the command in its own Bash call (not chained), then retry
+the commit. A check the hook does not recognise can be run through a project
+script named for its job — a path ending in /lint, /test or /check.
 EOF
 exit 2

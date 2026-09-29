@@ -4,11 +4,11 @@
 # The Juscribe SOP forbids skipping hooks — if a hook fails, fix the underlying
 # issue rather than bypassing the check.
 #
-# ⚠️ A BYPASS IS A CLASS, NOT A STRING (#4446). This matched `--no-verify` and
+# ⚠️ A BYPASS IS A CLASS, NOT A STRING. This matched `--no-verify` and
 # nothing else, and every hook runner in common use also ships an environment
-# variable that skips the same checks. Measured on dispatch 680 (#4283): an
-# agent with no ruby in its sandbox reached for
-# `LEFTHOOK_EXCLUDE=rubocop,reek git commit` and this hook said nothing. The
+# variable that skips the same checks. Measured on one unattended run: an
+# agent whose sandbox lacked a linter's runtime reached for
+# `LEFTHOOK_EXCLUDE=<those linters> git commit` and this hook said nothing. The
 # commit was refused by `jus-pre-commit-gate.sh` instead — on "linters have not
 # been run since the last code edit", which is a different property that
 # happened to be unhappy. A session that had run the linters, edited nothing and
@@ -30,14 +30,15 @@ command=$(jq -r '.tool_input.command // ""' <<<"$input")
 
 # Block a bypass only as an argument word of a segment that invokes git.
 # Substring matching over the raw command string blocked quoted comment bodies,
-# docs echoes, and greps of this script (#1985). Splitting and quote-stripping
+# docs echoes, and greps of this script. Splitting and quote-stripping
 # live in lib/state.sh — a quoted string is removed entirely, which is what
 # makes matching a bare `-n` safe: `git commit -m "fix the -n bug"` reduces to
 # `git commit -m ` before this sees it.
 #
-# ⚠️ HEREDOC-STRIPPED, unlike the version before #4446 (#3921 is the precedent).
-# The splitter turns every newline into a separator, so a heredoc body line
-# beginning `LEFTHOOK_EXCLUDE=… git commit` is a segment anchored at column 0.
+# ⚠️ HEREDOC-STRIPPED, unlike the earlier version (juscribe_sop_is_git_commit
+# is the precedent). The splitter turns every newline into a separator, so a
+# heredoc body line beginning `LEFTHOOK_EXCLUDE=… git commit` is a segment
+# anchored at column 0.
 # The SOP mandates writing prose through `<<'EOF'`, so a board comment or a
 # commit body DESCRIBING a bypass is the normal shape here — and this ticket's
 # own description contains one. A heredoc body is data, never the command word.
@@ -65,6 +66,12 @@ shortn_re='(^|[[:space:]])(-[A-Za-z]*n[A-Za-z]*)([[:space:]]|$)'
 # exist only to skip, so the name alone is the bypass whatever it holds.
 runner_re='(^|[[:space:]])((HUSKY|LEFTHOOK)=(0|false)?|(LEFTHOOK_EXCLUDE|SKIP|PRE_COMMIT_ALLOW_NO_CONFIG)=[^[:space:]]*)([[:space:]]|$)'
 
+# git's own switch: `core.hooksPath` pointed anywhere for ONE invocation skips
+# every hook the repository has, through `-c` or `--config-env`. Config keys
+# are case-insensitive in git, so the match is too. Setting it persistently
+# with `git config` is left alone — that is how husky installs itself.
+hookspath_re='(^|[[:space:]])((-c[[:space:]]*|--config-env[=[:space:]])[Cc][Oo][Rr][Ee]\.[Hh][Oo][Oo][Kk][Ss][Pp][Aa][Tt][Hh]=[^[:space:]]*)([[:space:]]|$)'
+
 bypass=""
 while IFS= read -r segment; do
   juscribe_sop_segment_invokes_git "$segment" || continue
@@ -77,6 +84,10 @@ while IFS= read -r segment; do
     bypass="${BASH_REMATCH[2]}"
     break
   fi
+  if [[ "$segment" =~ $hookspath_re ]]; then
+    bypass="${BASH_REMATCH[2]}"
+    break
+  fi
   if juscribe_sop_segment_invokes_git "$segment" "commit" \
       && [[ "$segment" =~ $shortn_re ]]; then
     bypass="${BASH_REMATCH[2]}"
@@ -85,16 +96,16 @@ while IFS= read -r segment; do
 done < <(juscribe_sop_command_segments "$(juscribe_sop_strip_heredocs "$command")")
 
 if [[ -n "$bypass" ]]; then
-  # ⚠️ THE REFUSAL NAMES WHAT IT SAW. It said `--no-verify` whatever it matched
-  # until #4446, so a reader who had typed `-n` or a runner variable was sent
+  # ⚠️ THE REFUSAL NAMES WHAT IT SAW. It once said `--no-verify` whatever it
+  # matched, so a reader who had typed `-n` or a runner variable was sent
   # looking for a flag that was not in their command.
   cat >&2 <<EOF
 [jus:hard-rules] BLOCKED: \`${bypass}\` skips the git hooks.
 
 Every hook runner has a switch that turns the checks off, and they are all the
-same thing as \`--no-verify\`: git's own \`-n\`, husky's \`HUSKY=0\`, lefthook's
-\`LEFTHOOK=0\` and \`LEFTHOOK_EXCLUDE\`, pre-commit's \`SKIP\` and
-\`PRE_COMMIT_ALLOW_NO_CONFIG\`.
+same thing as \`--no-verify\`: git's own \`-n\` and \`-c core.hooksPath=…\`,
+husky's \`HUSKY=0\`, lefthook's \`LEFTHOOK=0\` and \`LEFTHOOK_EXCLUDE\`,
+pre-commit's \`SKIP\` and \`PRE_COMMIT_ALLOW_NO_CONFIG\`.
 
 The hooks exist to catch broken work before it is committed or pushed.
 Bypassing them accumulates breakage that someone has to discover later.

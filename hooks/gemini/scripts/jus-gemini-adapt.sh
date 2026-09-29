@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Gemini CLI → shared-script payload normalizer (#4419).
+# Gemini CLI → shared-script payload normalizer.
 #
 # ⚠️ THE THINNEST SHIM IN THE BUNDLE, AND IT IS NOT CLOSE. Gemini CLI's hook
 # contract already uses Claude Code's field names, top to bottom — read out of
@@ -36,7 +36,7 @@
 # ⚠️ NO RESPONSE TRANSLATION, DELIBERATELY. Gemini documents exit 2 with stderr
 # as the reason as a block on BeforeTool, and a shared script that writes a
 # `hookSpecificOutput.additionalContext` object on exit 0 is writing the shape
-# Gemini already reads. Wrapping either would be the Antigravity work (#4262)
+# Gemini already reads. Wrapping either would be the Antigravity work
 # done where it is not needed — and `exec` means the child's stdout, stderr and
 # exit code reach Gemini untouched.
 #

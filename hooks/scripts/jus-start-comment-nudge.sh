@@ -4,21 +4,21 @@
 # emit a NON-BLOCKING reminder to post the start comment first. It never blocks
 # (exit 0 always).
 #
-# ⚠️ IT EMITS BOTH CHANNELS, AND THAT IS THE LOAD-BEARING PART (#3498). The
+# ⚠️ IT EMITS BOTH CHANNELS, AND THAT IS THE LOAD-BEARING PART. The
 # `systemMessage` field is rendered for the user and the model never sees it;
 # `hookSpecificOutput.additionalContext` is what reaches the model. A nudge with
 # only the first looks correct from every angle except the one that matters —
 # `jus-dirty-tree-nudge.sh` was that shape for its whole life and was deleted
-# rather than fixed (#3952). Keep both fields on every emit site below.
+# rather than fixed. Keep both fields on every emit site below.
 #
 # The start comment is the earliest stakeholder-facing signal that work began
 # and where root-cause + plan + test intent are declared. It deliberately does
-# NOT name a methodology (#2586): this bundle ships to projects that do not
+# NOT name a methodology: this bundle ships to projects that do not
 # practise test-first development, and a nudge telling them they owe "TDD
 # intent" asserts someone else's policy in text they cannot edit.
 # It is prompt-only in
 # both CLAUDE.md modes (no hook hard-blocks it); this nudge is the soft
-# backstop so a run cannot silently skip it. See #1852.
+# backstop so a run cannot silently skip it.
 #
 # State is written by jus-post-bash-tracker.sh (PostToolUse Bash), which reads
 # `jus api` calls:
@@ -45,7 +45,7 @@ esac
 session_id=$(jq -r '.session_id // ""' <<<"$input")
 file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input")
 # Resolves a repo-relative recorded path so an extensionless shell script can be
-# classified by its shebang (#2387). Without a base, such a path is not probed.
+# classified by its shebang. Without a base, such a path is not probed.
 cwd=$(jq -r '.cwd // ""' <<<"$input")
 juscribe_sop_require_jus_project "$cwd"
 base_dir=$(juscribe_sop_repo_toplevel "$cwd")

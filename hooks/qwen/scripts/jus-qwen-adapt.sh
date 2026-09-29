@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Qwen Code → shared-script payload normalizer (#4263).
+# Qwen Code → shared-script payload normalizer.
 #
 # The thinnest shim in the bundle, because Qwen's hook contract is modelled
 # directly on Claude Code's. `tool_name`, `tool_input`, `session_id`,
@@ -23,10 +23,10 @@
 # never matches in qwen-code when that name differs from qwen's own display
 # name." A `"matcher": "Bash"` never fires; `"Write|Edit"` fires for `edit` and
 # not for `write_file`. Qwen's permission rules map the Claude names and its hook
-# matchers do not. PR #11826 is referenced as the fix, so a current build may
-# behave differently — which is exactly why the manifest matches on QWEN's names
-# and this shim renames afterwards. That is correct on every version, before the
-# fix and after it.
+# matchers do not. PR QwenLM/qwen-code#11826 is referenced as the fix, so a
+# current build may behave differently — which is exactly why the manifest
+# matches on QWEN's names and this shim renames afterwards. That is correct on
+# every version, before the fix and after it.
 #
 # Usage (from hooks/qwen/settings.json):
 #   jus-qwen-adapt.sh <shared-script> [args...]
@@ -70,7 +70,7 @@ normalized=$(jq '
 # ⚠️ NO RESPONSE TRANSLATION, DELIBERATELY. Exit 2 with stderr is already what
 # Qwen reads as a block, and a shared script that writes a
 # `hookSpecificOutput.additionalContext` object on exit 0 is writing the shape
-# Qwen already expects. Wrapping either would be the Antigravity work (#4262)
+# Qwen already expects. Wrapping either would be the Antigravity work
 # done where it is not needed — and `exec` here means the child's stdout, stderr
 # and exit code reach Qwen untouched.
 exec "$target" "$@" <<<"$normalized"

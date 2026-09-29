@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Codex → shared-script payload normalizer (#1976).
+# Codex → shared-script payload normalizer.
 #
 # Codex hook payloads already match the shared scripts' contract for Bash and
 # Stop (tool_name "Bash" with a string tool_input.command; Stop carries

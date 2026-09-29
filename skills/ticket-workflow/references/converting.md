@@ -10,7 +10,9 @@ There is a dedicated endpoint. **Do not cancel the ticket and hand-create a proj
 jus api POST /workspaces/{ws}/tickets/{id}/convert '{}'
 ```
 
-⚠️ **The body is required.** A body-less `POST`/`PATCH` hangs waiting on stdin rather than defaulting to `{}`.
+**MCP:** no MCP tool converts a ticket. Ask the person to use **Convert to project…** on the ticket in the app.
+
+⚠️ **The body is required.** A body-less `POST`/`PATCH` does not default to `{}`: `jus api` waits a bounded moment for a body on stdin, then sends none, which the endpoint is no likelier to accept. Pass `'{}'`.
 
 What it does, in one transaction:
 
@@ -41,6 +43,8 @@ The same endpoint takes an optional `target`. Absent or `"project"` is the behav
 jus api POST /workspaces/{ws}/tickets/{id}/convert '{"target":"ticket","ticket_type":"feature"}'
 ```
 
+**MCP:** no MCP tool converts a ticket. Ask the person to convert it in the app.
+
 Reach for it when a research ticket's finding is **one piece of work** rather than a decomposable design — a one-ticket project is the wrong shape for that.
 
 The new ticket carries **title, description, requester, stakeholder, project and labels**, and lands at the **top of the icebox**, `unprioritized`. It does **not** carry points: a research estimate says nothing about the size of the work it recommends, so estimate it yourself before prioritising. Returns `{ticket, converted_ticket}` — the source serializes `converted_ticket_id`, the new one `source_ticket_id`. Unlike the project path, the source **keeps** its `project_id`.
@@ -53,5 +57,7 @@ jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"finished"}'
 jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"delivered"}'   # only when a person asks — see delivering.md
 jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"cancelled","resolution":"duplicate"}'
 ```
+
+**MCP:** `transition_ticket`, for all four.
 
 > **NEVER transition to `accepted` or `rejected`** — only the stakeholder decides.

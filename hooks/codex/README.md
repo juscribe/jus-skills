@@ -1,10 +1,10 @@
 # jus enforcement hooks — OpenAI Codex adapter
 
 Runs all twelve shared hook scripts (`../scripts/`) under Codex's native
-hooks system (#1976, completed in #4207).
+hooks system.
 
 > ⚠️ **`jus-ticket-claim-nudge.sh` WAS omitted, on a premise that is now
-> falsified (#3674, resolved in #4207).** It was left out because nothing then
+> falsified.** It was left out because nothing then
 > available established that Codex fires `UserPromptSubmit` — the adapter's
 > contract was described only for `PreToolUse`, `PostToolUse` and `Stop`. Codex
 > exposes **twelve** hook events (`codex-rs/.../HookEventName.ts`), and a
@@ -34,7 +34,7 @@ tracker, and the Stop gate run **unchanged**.
 > - a config that is **valid and untrusted** produces no warning, no error and no
 >   log line. The run simply proceeds as though the file were not there.
 >
-> Measured on codex-cli 0.154.0 (#4410), a `UserPromptSubmit` hook exiting 2 —
+> Measured on codex-cli 0.154.0, a `UserPromptSubmit` hook exiting 2 —
 > unauthenticated, so reaching the network is itself the tell that nothing blocked:
 >
 > | Arm                               | Output                           | Reached the network |
@@ -45,7 +45,7 @@ tracker, and the Stop gate run **unchanged**.
 > **Interactively, run codex once and accept the prompt.** For automation there is
 > no prompt to accept, so pass `--dangerously-bypass-hook-trust`; its own help text
 > describes this case — _"intended only for automation that already vets hook
-> sources"_. A jus dispatch passes it since #4450.
+> sources"_. A jus dispatch passes it.
 >
 > ⚠️ **It is not `--dangerously-bypass-approvals-and-sandbox`.** The names are
 > close and the effects are opposite: that one gives up codex's kernel sandbox,
@@ -60,26 +60,26 @@ tracker, and the Stop gate run **unchanged**.
    (added lines → `new_string`, removed → `old_string`, first
    `*** Update|Add File:` path → `file_path`).
 
-2. ⚠️ **`tool_response` is a STRING here, and it silently killed the lint gate
-   (#4207).** Claude Code sends an object; Codex sends a plain string. The Bash
+2. ⚠️ **`tool_response` is a STRING here, and it silently killed the lint gate.**
+   Claude Code sends an object; Codex sends a plain string. The Bash
    tracker read `.tool_response.interrupted`, jq cannot index a string, and it
    exited **5** — carried straight out by `set -euo pipefail`. Codex logged
    `PostToolUse Failed` and continued, so the only symptom was a line in its own
    hook log, while `last_linted_at` was never written and
-   `jus-pre-commit-gate`'s state-tracked rule was **dead on Codex** — #1873
+   `jus-pre-commit-gate`'s state-tracked rule was **dead on Codex** — the tracker's old `tool_response.exit_code` bug
    returning through a payload shape instead of a missing field. Fixed in the
    **shared** script (a type guard, degrading to "not interrupted") rather than
    in the shim, because a hook that throws on an unexpected field type breaks
    the same fail-open doctrine the malformed-JSON sweep enforces.
 
-> ⚠️ **These hooks do nothing outside a Juscribe project** (#4404). Each runs
+> ⚠️ **These hooks do nothing outside a Juscribe project**. Each runs
 > only when the payload's `cwd` is inside a git repository whose toplevel holds
 > a `.jus/` directory; everywhere else they exit 0 in silence. That is the
 > shared scripts' behaviour, so it applies here however this adapter is
 > installed — including a user-scope install that every project on the machine
 > sees. `JUS_HOOKS_EVERYWHERE=1` restores the old machine-wide behaviour.
 
-## A Codex PLUGIN install carries these hooks too, once they are trusted (#4834)
+## A Codex PLUGIN install carries these hooks too, once they are trusted
 
 Codex has a plugin system, and this bundle installs through it:
 
@@ -88,10 +88,10 @@ codex plugin marketplace add https://github.com/juscribe/jus-skills.git
 codex plugin add jus@jus-skills
 ```
 
-`jus init` runs both for you since #4836. The plugin is machine-wide: Codex has
+`jus init` runs both for you. The plugin is machine-wide: Codex has
 no project scope, so the skills load in every project, and the hooks do nothing
 outside a jus project. The skills arrive namespaced by plugin: `jus:hard-rules`, `jus:retrospective`,
-`jus:ticket-workflow`. Since #4834 the bundle ships `.codex-plugin/plugin.json`,
+`jus:ticket-workflow`. The bundle ships `.codex-plugin/plugin.json`,
 which Codex reads ahead of `.claude-plugin/`, with `"hooks": "./hooks/codex/hooks.json"`,
 so the plugin registers **these** hooks. ⚠️ Their scripts still run from the
 `~/.jus-skills` clone, through `jus hook`, which `jus init` makes: installed by hand
@@ -99,15 +99,15 @@ with no clone, every hook fails open. Without the manifest Codex falls back to
 `hooks/hooks.json`, Claude Code's file, whose `Edit|Write` matchers never match
 `apply_patch`.
 
-**Measured on codex-cli 0.145.0** with `script/dev/drive-adapter codex --layer
-plugin-hooks`, which installs the plugin and merges nothing by hand: `git commit
+**Measured on codex-cli 0.145.0** with the adapter harness driving a plugin
+install, which merges nothing by hand: `git commit
 --no-verify` refused with the guard's own text, and the same commit without the
 flag went through.
 
 ⚠️ **Codex runs a plugin hook only once it is trusted, and an untrusted one is
 SILENT.** Review and trust them with `/hooks` inside Codex (the harness passes
-`--dangerously-bypass-hook-trust`). This is the likely reason #4234 measured
-plugin hooks as inert on 0.154.0: trust was found to gate hooks later, on #4410.
+`--dangerously-bypass-hook-trust`). This is the likely reason an earlier run measured
+plugin hooks as inert on 0.154.0: trust was found to gate hooks only later.
 0.154.0 has not been re-measured.
 
 ⚠️ **Plugin or `hooks.json` route, never both**: each registers the same
@@ -129,7 +129,7 @@ tell is a line on **stderr**:
 Reading additional input from stdin...
 ```
 
-Measured on #4234: the same command took **7.3s** with `< /dev/null` and was
+Measured on codex-cli 0.154.0, 2026-09-15: the same command took **7.3s** with `< /dev/null` and was
 still hanging at **420s** without it. Backgrounding it works too, for the same
 reason and by accident — which is how this was found, after auth, project trust,
 `CODEX_HOME` isolation, prompt shape and plugin presence had each been wrongly
@@ -139,11 +139,11 @@ suspected and eliminated in turn.
 
 Prerequisite: the canonical bundle install (`git clone
 https://github.com/juscribe/jus-skills.git ~/.jus-skills`) and `jus` on `PATH`.
-Since #4759 every command in `hooks.json` is `jus hook <name>` and names no
+Every command in `hooks.json` is `jus hook <name>` and names no
 path, so a clone somewhere else needs no rewriting — set `JUS_SKILLS_DIR` and
 `jus` resolves it. `jus hook --where` prints which bundle answered.
 
-⚠️ **`jus init` DOES THIS FOR YOU since #4239.** Pick `ChatGPT / Codex` at the
+⚠️ **`jus init` DOES THIS FOR YOU.** Pick `ChatGPT / Codex` at the
 tool prompt and it merges the rules below into `<repo>/.codex/hooks.json` —
 merging rather than overwriting, and idempotent, so re-running adds nothing. It
 needs `jq`; without it the install is skipped with a message rather than
@@ -167,7 +167,7 @@ README's _Network allowlist_.
 
 ## Every command is `jus hook`, so `jus` has to be on PATH
 
-Since #4759 no command in this manifest names a location — each is
+Since the manifests moved to `jus hook`, no command in this manifest names a location — each is
 `jus hook [--adapt codex] <name>`, and `jus` resolves the bundle at run time.
 `../tests.sh` holds every manifest to that shape, and refuses one carrying a
 path, a `~` or a `$`.
@@ -177,7 +177,7 @@ when the directory it names does not exist.** `JUS_SKILLS_DIR`, then the
 Homebrew prefix, then `~/.jus-skills`: the first one found answers. So a typo in
 that variable silently disables every guard while a healthy clone sits in
 `~/.jus-skills`. It is **not** layered overrides with the most specific last,
-which is how an eye trained on git config or eslint will read it.
+which is how an eye trained on git config or a linter's cascading config will read it.
 
 ✅ **Codex resolves a command through something that expands `~`, which is what
 makes a `PATH` lookup work.** Measured 2026-09-17 on codex-cli 0.154.0, three
@@ -192,19 +192,19 @@ needed, because hooks fire before the run 401s:
 
 The manifest no longer contains a tilde for that rule to govern, but the arms
 still answer the question the launcher asks: a bare word is expanded, so it is
-being resolved the way a shell resolves one. `script/dev/drive-adapter codex`
-then confirms it end to end — on #4759 and #4412 it PASSed with the launcher on
+being resolved the way a shell resolves one. The adapter harness
+then confirms it end to end — on 2026-09-21 it PASSed with the launcher on
 `PATH`, deny arm refused and control arm committed.
 
 ⚠️ **WHICH shell does the expanding is still not established**, only that the
 behaviour holds. The binary carries no `/bin/sh` literal and bundles `shlex`, a
 splitter that expands nothing, so the engine may well do it itself.
 
-⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until #4759
+⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until the manifests moved to `jus hook`,
 every command named `~/.jus-skills/…`; a shell expands `~` only at the START of
 a word, so a tilde one character later was a literal, the command was not found,
 the exit was 127, and a non-2 exit is fail-**open** — every hook silently dead
-with the session looking healthy (#4417). A missing `jus` on `PATH` produces
+with the session looking healthy. A missing `jus` on `PATH` produces
 exactly that, so it is the first thing to check when the guards go quiet:
 `jus hook --where` prints which bundle answered, and `jus doctor` says so too.
 
@@ -234,7 +234,7 @@ Host prerequisites are the same as the shared scripts: `bash` 4+, `jq`,
 
 ## Live-verified
 
-**On codex-cli 0.154.0** (2026-09-15, #4207), against these exact files in a
+**On codex-cli 0.154.0** (2026-09-15), against these exact files in a
 fixture repo with a local bare remote — `codex exec --sandbox workspace-write
 --dangerously-bypass-hook-trust -m gpt-6-astra`:
 
@@ -242,7 +242,7 @@ fixture repo with a local bare remote — `codex exec --sandbox workspace-write
   unchanged.
 - Every hook fired, traced by wrapping each command and recording its exit:
   `UserPromptSubmit` → `jus-ticket-claim-nudge`; `PreToolUse`/Bash → all five
-  blockers including the two added in #4207; `PreToolUse`/`apply_patch` and
+  blockers including the two added when this adapter was completed; `PreToolUse`/`apply_patch` and
   `PostToolUse`/`apply_patch` → the shim; `Stop` → the dirty-tree gate, which
   **exited 2 and then 0 on the re-entry** (loop guard working).
 - `tool_name` for a file edit is still `apply_patch`, so the shim is still the
@@ -259,7 +259,7 @@ path without Guardian intercepting.
 **Prior verification** was on codex-cli 0.145.0 with auth via `CODEX_API_KEY`
 alone (no `codex login` needed for headless runs).
 
-## Can a hook actually DENY? Yes — and two of the four ways do nothing (#4288)
+## Can a hook actually DENY? Yes — and two of the four ways do nothing
 
 **Measured 2026-09-17, codex-cli 0.154.0, five arms, each hook appending its own
 payload to a file so "fired and denied" is distinguishable from "never fired".**
@@ -296,7 +296,7 @@ against untrusted hooks is indistinguishable from a run with no hooks installed.
 ⚠️ **`--json` CARRIES NO HOOK EVENT, AND A BLOCKED TURN REPORTS `turn.completed`.**
 The human stream prints `hook: UserPromptSubmit Blocked`; the JSON stream emits
 `thread.started`, `turn.started`, `turn.completed` with all-zero usage, and
-nothing else. **`dispatch/internal/provider/codex.go` runs `codex exec --json`**,
+nothing else. **`jus dispatch` runs `codex exec --json`**,
 so a dispatch whose hook blocked it sees a successful, empty turn.
 
 ⚠️ **The reason never reaches the operator on `codex exec`.** The README above
@@ -305,8 +305,8 @@ not printed on either stream — but it **does** reach the model, which is where
 it matters and which is now measured rather than inferred from binary strings.
 
 ✅ **A `PreToolUse` denial is measured end to end, on a tool call the model
-issued** (#4412, 2026-09-21, codex-cli 0.154.0). `script/dev/drive-adapter codex
---layer hooks` in the orb, against a local OpenAI-compatible stub — **no
+issued** (2026-09-21, codex-cli 0.154.0). Driven by the adapter harness
+in a Linux VM, against a local OpenAI-compatible stub — **no
 account, no key**. The captured `/v1/responses` bodies are the evidence:
 
 | Turn          | What the body carries                                                                                                                            |
@@ -320,8 +320,8 @@ account, no key**. The captured `/v1/responses` bodies are the evidence:
 call it made. The `Stop` guard's text arrives the same way, as a
 `<hook_prompt …>` user message.
 
-⚠️ **THE CONTROL ARM IS WHAT MAKES THIS MEAN ANYTHING.** #4288's first pass
-reported two refusals that turned out to be the model never attempting the
+⚠️ **THE CONTROL ARM IS WHAT MAKES THIS MEAN ANYTHING.** The first pass at measuring a
+deny reported two refusals that turned out to be the model never attempting the
 command. Here the attempt is in the request body and the allow arm committed,
 so "refused" and "never tried" are distinguishable.
 
@@ -330,8 +330,8 @@ in the harness is measured on: what is under test is the tool's hook machinery,
 not the model's judgement.
 
 ✅ **No empty-string exposure.** Every `//` in this shim ends at a literal, so the
-class cannot apply — it needs a chain naming a second source. Not captured on
-#4428: driving a tool call needs `--dangerously-bypass-hook-trust`, which the
+class cannot apply — it needs a chain naming a second source. Not captured in
+the audit: driving a tool call needs `--dangerously-bypass-hook-trust`, which the
 session doing the audit could not run. The class and the audit:
 [`../README.md`](../README.md).
 
@@ -339,7 +339,7 @@ session doing the audit could not run. The class and the audit:
 
 `../tests.sh` carries a **"codex adapter"** section: manifest shape + referenced
 scripts, the apply_patch shim (block on added suppression, pass on removal),
-Bash passthrough, Stop-payload field compatibility, and — since #4207 — the
+Bash passthrough, Stop-payload field compatibility, and the
 string `tool_response` regression, asserted twice: that the tracker does not
 exit 5, and that `last_linted_at` is still recorded. The second is the one that
 matters, because the first passes for a hook that does nothing at all.

@@ -1,5 +1,12 @@
 # Dependency Handling Protocol
 
+## Contents
+
+- [Dependencies API](#dependencies-api)
+- [Blocker dates](#blocker-dates)
+- [Creating dependencies](#creating-dependencies)
+- [Resolving and post-delivery](#resolving-and-post-delivery)
+
 When a ticket has `blocked: true` or `active_dependencies_count > 0`, fetch `GET .../dependencies` and evaluate each blocker:
 
 | Blocker state | Action |
@@ -32,15 +39,25 @@ jus api POST /workspaces/{ws}/tickets/100/dependencies \
   '{"dependency":{"blocker_type":"External","blocked_type":"Ticket","blocked_id":100,"title":"Subtask 3 — run the dispatch"}}'
 
 # Resolve (preserves history) / Delete (only for deps created in error) — both workspace-level
-jus api PATCH /workspaces/{ws}/dependencies/{dep_id}/resolve
+jus api PATCH /workspaces/{ws}/dependencies/{dep_id}/resolve '{}'
 jus api DELETE /workspaces/{ws}/dependencies/{dep_id}
 ```
 
-⚠️ **Update, resolve and delete are WORKSPACE-level; only list and create are nested under the ticket.** `PATCH /workspaces/{ws}/tickets/{id}/dependencies/{dep_id}/resolve` is a **404** — and the 404 names nothing, so it reads like a wrong dependency id rather than a wrong route, and the detour is spent re-checking an id that was already right. Take `{dep_id}` from the list or create response and drop the `tickets/{id}` segment: the path that just worked for the create is the one in hand, which is exactly why this is worth stating.
+**MCP:** `list_blockers` (its `direction` reads what a ticket blocks), `add_blocker` for all three creates, and `resolve_blocker`. No MCP tool deletes a blocker, and none lists or adds a project's.
+
+⚠️ **Update, resolve and delete are WORKSPACE-level; only list and create are nested under the ticket.** `PATCH /workspaces/{ws}/tickets/{id}/dependencies/{dep_id}/resolve` is a **404** reading `No route: PATCH /api/v1/workspaces/{ws}/tickets/{id}/dependencies/{dep_id}/resolve`, where a dependency id that does not exist reads `Not found`. Read the body before the id: a 404 on its own reads as a wrong dependency id rather than a wrong route, and the detour is spent re-checking an id that was already right. Take `{dep_id}` from the list or create response and drop the `tickets/{id}` segment: the path that just worked for the create is the one in hand, which is exactly why this is worth stating.
 
 Constraints: valid `blocker_type` = `Ticket` / `Project` / `External`; valid `blocked_type` = `Ticket` / `Project`; External blockers have no `blocker_id` to point at; all entities must belong to the same workspace.
 
 ⚠️ **An External blocker requires a `title`, not a `description`** — and the two are not interchangeable. `title` (≤200 chars) is the only half the board draws (`BlockedBadge`); `description` is the body and appears on no card. Send a description alone and a title is derived from it — first line, first sentence, cut at 80 characters with an ellipsis (`Dependency::DerivedTitle`) — which is how a blocker ends up rendered as a truncated paragraph. Send the title. ⚠️ **A handoff blocker is the title ALONE**: when it exists only because the next untoggled subtask belongs to someone else, that subtask already carries the step, its command and its owner, so the blocker names it (`"Subtask 3 — run the dispatch"`) and sends no description.
+
+⚠️ **A derived title follows its description; a title you set does not.** A blocker created without a title gets one derived from its description, and a PATCH that changes only the description derives it again. A title you set stays put when the description changes, so when you mean to change it, send both:
+
+```sh
+jus api PATCH /workspaces/{ws}/dependencies/{dep_id} '{"dependency":{"title":"Waiting on the countersignature","description":"<the full condition>"}}'
+```
+
+**MCP:** no MCP tool edits a blocker. Resolve it with `resolve_blocker` and add a corrected one.
 
 **Both sides can be a project**, and the same endpoints hang off `projects/{id}` — so `Project` → `Ticket`, `Ticket` → `Project` and `Project` → `Project` are all expressible. A whole project waiting on one ticket is a `Project` blocked by a `Ticket`, not an External blocker describing it in prose.
 
@@ -50,6 +67,8 @@ Constraints: valid `blocker_type` = `Ticket` / `Project` / `External`; valid `bl
 jus api POST /workspaces/{ws}/tickets/809/dependencies \
   '{"dependency":{"direction":"blocks","blocked_type":"Ticket","blocked_id":874}}'
 ```
+
+**MCP:** `add_blocker` on the waiting ticket instead: it records a blocker from that side only.
 
 ## Blocker dates
 
@@ -75,22 +94,26 @@ jus api PATCH /workspaces/{ws}/dependencies/{dep_id} '{"dependency":{"due_on":"2
 jus api PATCH /workspaces/{ws}/dependencies/{dep_id} '{"dependency":{"due_on":null,"due_kind":null}}'   # clear both
 ```
 
+**MCP:** `add_blocker` with `due_on` and `due_kind`. No MCP tool edits a blocker afterwards, so resolve it with `resolve_blocker` and add a corrected one.
+
 ⚠️ **Neither half works alone.** A date with no kind cannot be worded and a kind with no date says nothing, so each without the other is a `422`. Both absent is fine and is the common case. Clearing them means sending both as `null`.
 
-⚠️ **`blocker_id`, `blocker_type`, `blocked_id` and `blocked_type` are NOT editable — but `title`, `description`, `due_on` and `due_kind` ARE** (`DependencyParams::EDITABLE`, `app/services/dependency_params.rb:21`). A `blocker_id` in the update body is dropped rather than repointing the row, and the call still answers `200` — so a repoint that looks like it worked did not. **Repointing a blocker is a DELETE plus a create**, because a different blocker is a different dependency. ⚠️ **Rewording one is NOT.** This passage said only the two date fields were editable until #3293, and following that destroys a dependency's history to change a sentence — #3199 added the two text fields precisely so a badly derived title could be fixed in place.
+⚠️ **`blocker_id`, `blocker_type`, `blocked_id` and `blocked_type` are NOT editable — but `title`, `description`, `due_on` and `due_kind` ARE**. A `blocker_id` in the update body is dropped rather than repointing the row, and the call still answers `200` — so a repoint that looks like it worked did not. **Repointing a blocker is a DELETE plus a create**, because a different blocker is a different dependency. ⚠️ **Rewording one is NOT.** This passage once said only the two date fields were editable, and following that destroys a dependency's history to change a sentence — the two text fields are editable precisely so a badly derived title can be fixed in place.
 
 **Reading a date back.** Every ticket and project payload carries the soonest one as a scalar pair, `earliest_blocker_due_on` / `earliest_blocker_due_kind`, alongside the per-blocker `due_on` / `due_kind` inside `active_dependencies_summary`. Read the pair to decide; read the summary to say which blocker it was.
 
 ## Creating dependencies
 
 - **During investigation** — if you discover untracked prerequisites, create via `POST .../dependencies` + comment. Hard block → leave started + move on. Soft dependency → proceed but create the link for documentation.
+- **Adding a blocker is the one thing a bot does that notifies anyone** — and only on a ticket that is `started` or later. Every other bot action, an @mention or a delivery included, rings no bell, so a blocker on a working ticket is how an agent reaches a person.
+- **One blocker per condition that clears on its own.** Work waiting on a deploy *and* on a week of data after it has two blockers: a `Ticket` blocker on the release marker, which resolves itself when the marker closes, and an `External` one carrying only the time, with its `due_on` and `due_kind`. One External describing both cannot show which half is still owed: the marker can close while it still reads blocked, or the date can pass with the deploy not run. **Each blocker states only its own condition**; the date blocker names the wait and what to do if it arrives too early, not the deploy.
 - **During ticket creation** — convert prose prerequisites ("requires #N") into formal `Ticket→Ticket` dependencies.
-- **For user input** — create an `External` dependency with description `"User input: <what you need>"` whenever you cannot proceed without stakeholder input. This makes the block visible on the board. Posting a comment alone is not enough.
+- **For user input** — create an `External` dependency **titled** `"User input: <what you need>"`, with the full ask in its `description`, whenever you cannot proceed without stakeholder input. This makes the block visible on the board. Posting a comment alone is not enough.
 
 ## Resolving and post-delivery
 
 - **Auto-resolve** fires when a blocker reaches `accepted`/`cancelled`. No manual action needed.
-- **Manual resolve** (`PATCH /workspaces/{ws}/dependencies/{dep_id}/resolve`) — for external blockers or when auto-resolve missed. Workspace-level, **not** nested under the ticket; see the warning above.
+- **Manual resolve** (`PATCH /workspaces/{ws}/dependencies/{dep_id}/resolve '{}'`) — for external blockers or when auto-resolve missed. Workspace-level, **not** nested under the ticket; see the warning above.
 - **Delete** (`DELETE /workspaces/{ws}/dependencies/{dep_id}`) — only for dependencies created in error. Workspace-level too.
 - **After delivering** — check `GET /workspaces/{ws}/tickets/{id}/dependencies/blocks` — this one *is* nested — and mention any unblocked tickets in the delivery comment. Don't auto-start them unless they're next in your batch queue.
 - **Stale hygiene** — during session orientation, resolve any dependencies whose blockers are already in a terminal state.

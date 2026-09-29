@@ -2,15 +2,15 @@
 # Docs nudge — surface the project doc for a subsystem at the moment the
 # information can still change the plan. Two trigger moments, one dedup:
 #
-# 1. TICKET PICKUP (PostToolUse Bash, #2487): when a `jus api` command
+# 1. TICKET PICKUP (PostToolUse Bash): when a `jus api` command
 #    transitions a ticket to `started`, fetch its title + labels (one sparse
 #    GET) and match them against `label:`/`kw:` rows in the map. By the first
-#    edit the approach is usually already chosen — measured on #2090, where
+#    edit the approach is usually already chosen — measured on one ticket, where
 #    the container threat model doc was mapped by path but never surfaced,
 #    because nothing keyed on picking the ticket up.
-# 2. FIRST EDIT under a mapped path (PostToolUse Edit|Write|MultiEdit,
-#    #2285/#2277): the original trigger, for work whose relevance shows in
-#    the files touched rather than the ticket's shape.
+# 2. FIRST EDIT under a mapped path (PostToolUse Edit|Write|MultiEdit): the
+#    original trigger, for work whose relevance shows in the files touched
+#    rather than the ticket's shape.
 #
 # Fires at most once per doc per active ticket (session fallback) ACROSS both
 # moments — a pickup nudge suppresses the edit nudge for the same doc. Every
@@ -28,7 +28,7 @@
 # that keep no docs directory. A path-only map costs the pickup path nothing:
 # with no trigger rows there is no fetch.
 #
-# THE HINT IS OPTIONAL (#3393). Omit the third column and the hint is read
+# THE HINT IS OPTIONAL. Omit the third column and the hint is read
 # from the docs index beside the doc — see docs_index_hint below. A row is two
 # kinds of work and only one is expensive: the trigger is a judgement nothing
 # can derive, while the hint needs someone to have read the doc, and a project
@@ -36,7 +36,7 @@
 # 50 of this project's 81 deep-dives with no row at all.
 #
 # UserPromptSubmit was considered as a third trigger for work that never gets
-# a ticket, and DECLINED (#2487): the SOP requires a ticket for every piece
+# a ticket, and DECLINED: the SOP requires a ticket for every piece
 # of work, and keyword-matching conversational prose false-positives far more
 # than ticket titles — noise erodes exactly the trust an advisory nudge runs
 # on. Revisit with measurement if ticketless work keeps missing docs.
@@ -89,7 +89,7 @@ docs_nudge_flag() {
 # median of 116 characters with 2 over 250.
 #
 # A cut that lands INSIDE a parenthetical drops the rest of it rather than
-# leaving the bracket open: 4 of those 81 end mid-aside, and `(#2870` hanging
+# leaving the bracket open: 4 of those 81 end mid-aside, and `(#N` hanging
 # off the end of a one-line reminder reads as the truncation being a bug.
 #
 # EVERY failure is an empty result, and the callers read that as "no nudge":

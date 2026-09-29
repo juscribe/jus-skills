@@ -574,6 +574,31 @@ assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
   '{"tool_name":"Bash","tool_input":{"command":"git push --no-verify"}}' \
   "no-verify"
 
+# #5379. Pointing core.hooksPath anywhere for one invocation skips every git
+# hook exactly as --no-verify does, and this matched none of its forms.
+t "blocks git -c core.hooksPath=/dev/null commit (#5379)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git -c core.hooksPath=/dev/null commit -m x"}}' \
+  "core.hooksPath"
+
+t "blocks the lower-case key, which git reads the same (#5379)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git -c core.hookspath=x push"}}' \
+  "hooksPath"
+
+t "blocks --config-env core.hooksPath (#5379)"
+assert_exit 2 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git --config-env=core.hooksPath=EMPTY commit -m x"}}' \
+  "hooksPath"
+
+t "allows another -c setting on a commit (#5379)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git -c core.editor=true commit -m x"}}'
+
+t "allows setting core.hooksPath persistently, which is how husky installs (#5379)"
+assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
+  '{"tool_name":"Bash","tool_input":{"command":"git config core.hooksPath .husky/_"}}'
+
 t "allows commit without --no-verify"
 assert_exit 0 "$SCRIPTS/jus-block-no-verify.sh" \
   '{"tool_name":"Bash","tool_input":{"command":"git commit -m foo"}}'
@@ -1245,6 +1270,88 @@ assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
 
 rm -rf "$SH_FIX" "$SH_SCRATCH"
 
+# ---- jus-pre-commit-gate.sh: any stack's linters ------------------------------
+#
+# #5374. The gate ships to projects in every language, and it recognised only
+# the tools of the repository the bundle is developed in. Measured in a
+# throwaway Python repo: `ruff check`, `npx eslint`, `npm run lint`,
+# `cargo clippy` and `pytest` never cleared it, so a project that ran its own
+# linters was blocked with no way out — and the block message then told it to
+# run commands it did not have.
+section "jus-pre-commit-gate.sh: any stack's linters (#5374)"
+
+ANY_LINTS=(
+  "ruff check ." "uv run pytest -q" "python -m pytest" "uv run python -m pytest" "poetry run mypy src" "pytest"
+  "cargo clippy --all-targets" "cargo test" "go vet ./..." "golangci-lint run"
+  "npx eslint ." "npm run lint" "npm test" "yarn test" "bun test" "pnpm exec eslint a.ts"
+  "./gradlew check" "mvn -q verify" "make lint" "just test" "mix test" "dotnet test"
+  "swiftlint" "bundle exec rubocop" "bin/rspec spec/a_spec.rb" "script/test" "bin/ci"
+)
+for any_cmd in "${ANY_LINTS[@]}"; do
+  t "records last_linted_at for: $any_cmd (#5374)"
+  sh_lint_records "anystack-lint-$RANDOM" "$any_cmd" present
+done
+
+# GUARDS. Each is something an agent runs in the session it is editing code in,
+# and counting any of them disarms the gate. `npm ci` is the one a name list
+# gets wrong: it installs, it does not check.
+ANY_NOT_LINTS=(
+  "echo bin/ci" "echo ruff check" "npm ci" "npm install" "pip install ruff" "brew install ruff"
+  "cargo build" "go build ./..." "make" "make build" "cat script/test" "test -f x"
+  "git add bin/test"
+)
+for any_cmd in "${ANY_NOT_LINTS[@]}"; do
+  t "does not record last_linted_at for: $any_cmd (#5374)"
+  sh_lint_records "anystack-not-$RANDOM" "$any_cmd" absent
+done
+
+ANY_FIX=$(cd "$(mktemp -d)" && pwd -P)
+( cd "$ANY_FIX" && git init -q && git config user.email t@t && git config user.name t \
+  && touch seed && git add seed && git commit -q -m init )
+mkdir -p "$ANY_FIX/src"
+printf 'print(1)\n' > "$ANY_FIX/app.py"
+printf 'fn main() {}\n' > "$ANY_FIX/src/main.rs"
+
+# End to end, two stacks: an edit arms the gate, the stack's own linter run
+# through the tracker lowers it.
+any_e2e() { # <sid> <edited path> <lint command>
+  sh_gate_session "$1" "$2"
+  jq -nc --arg c "$3" --arg s "$1" \
+    '{tool_name:"Bash",tool_input:{command:$c},tool_response:{interrupted:false},session_id:$s}' \
+    | "$SCRIPTS/jus-post-bash-tracker.sh" >/dev/null
+  assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+    "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"$1\",\"cwd\":\"$ANY_FIX\"}"
+}
+t "a Python project clears the gate by running ruff (#5374)"
+any_e2e "anystack-py" "$ANY_FIX/app.py" "ruff check app.py"
+t "a Rust project clears the gate by running cargo clippy (#5374)"
+any_e2e "anystack-rs" "$ANY_FIX/src/main.rs" "cargo clippy"
+
+# The same linter chained ahead of the commit clears it in one call.
+sh_gate_session "anystack-chain" "$ANY_FIX/app.py"
+t "ruff chained ahead of the commit clears the gate (#5374)"
+assert_exit 0 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"ruff check . && git commit -m x\"},\"session_id\":\"anystack-chain\",\"cwd\":\"$ANY_FIX\"}"
+
+# Segment anchoring. The loose match cleared the gate for a linter's name
+# anywhere in the command, `echo` included.
+t "echo <linter> && git commit still blocks (#5374)"
+assert_exit 2 "$SCRIPTS/jus-pre-commit-gate.sh" \
+  "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"echo bin/ci && git commit -m x\"},\"session_id\":\"anystack-chain\",\"cwd\":\"$ANY_FIX\"}" \
+  "linters have not been run"
+
+# The message states the obligation. It named one repository's commands, a
+# retired flag among them, to every project that installed the bundle.
+ANY_MSG=$(printf '%s' "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\"},\"session_id\":\"anystack-chain\",\"cwd\":\"$ANY_FIX\"}" \
+  | "$SCRIPTS/jus-pre-commit-gate.sh" 2>&1)
+assert_stdout "the block message points at the project's own instructions (#5374)" \
+  "your project's instructions" "$ANY_MSG"
+for any_word in "bin/" "pnpm" "rubocop" "rspec" "eslint" "tsc" "--station" "station/"; do
+  assert_stdout_lacks "the block message does not name $any_word (#5374)" "$any_word" "$ANY_MSG"
+done
+
+rm -rf "$ANY_FIX"
+
 # ---- jus-pre-commit-gate.sh: the suppression scan -----------------------------
 #
 # The Edit/Write guard never sees a change made with `sed`, a heredoc or a
@@ -1294,6 +1401,19 @@ t "refuses one reached by commit --all"
 supp_gate 2 "git commit --all -m x" "app.rb:1"
 t "refuses one reached by commit -i"
 supp_gate 2 "git commit -i app.rb -m x" "app.rb:1"
+# #5379. A commit that names paths takes their WORKING-TREE content, exactly
+# as -o does, so a suppression written by the shell and never staged was
+# committed past a staged-only scan: `-- app.rb` exited 0 where `-o` exited 2.
+t "refuses one reached by a pathspec after -- (#5379)"
+supp_gate 2 "git commit -m x -- app.rb" "app.rb:1"
+t "refuses one reached by a bare pathspec after a quoted message (#5379)"
+supp_gate 2 "git commit -m 'the message' app.rb" "app.rb:1"
+t "refuses one reached by a pathspec after a global option (#5379)"
+supp_gate 2 "git -C . commit -m x app.rb" "app.rb:1"
+t "an option's value is not a pathspec (#5379)"
+supp_gate 0 "git commit -F msg.txt"
+t "nor is a long option's, spaced or with = (#5379)"
+supp_gate 0 "git commit --author 'A <a@b.c>' --date=now -m x"
 t "a heredoc body naming git add does not widen the scan"
 supp_gate 0 "$(printf 'git commit -F - <<%sEOF%s\ngit add everything\nEOF' "'" "'")"
 t "says the scan included unstaged work when it did"
@@ -1634,10 +1754,20 @@ assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
 
 # The file list is what the command replaces. A tree with 40 dirty files used to
 # print 20 lines and an overflow count on every firing.
+# The listing was `git status --porcelain`, so an untracked `b` read `?? b`. A
+# bare " b" matched ordinary prose in the message once it said more (#5379).
 t "and does not list the dirty files"
-assert_stdout_lacks "no file list in the stop message" " b" \
+assert_stdout_lacks "no file list in the stop message" "?? b" \
   "$(printf '%s' "{\"cwd\":\"$DIRTY_REPO\"}" \
      | "$SCRIPTS/jus-stop-uncommitted.sh" 2>&1 || true)"
+
+# #5379. The tree is checked whole, so in a checkout two sessions share the
+# dirty files include the other session's work, and "Commit them" told a
+# read-only session to commit somebody else's changes, several times over.
+t "says what to do with a file the agent did not change (#5379)"
+assert_exit 2 "$SCRIPTS/jus-stop-uncommitted.sh" \
+  "{\"cwd\":\"$DIRTY_REPO\"}" \
+  "A file you did not change is not yours to commit"
 
 t "allows stop when stop_hook_active=true (avoid loop)"
 assert_exit 0 "$SCRIPTS/jus-stop-uncommitted.sh" \
@@ -4077,7 +4207,8 @@ done
 # the ❌ row. Two integer counts from grep have no such failure mode.
 TESTS_RUN=$((TESTS_RUN + 1))
 TEST_NAME="hard-rules: every enforcement-table row claims the rule IS in the skill (#2682)"
-HR_SKILL="$PLUGIN_ROOT/skills/hard-rules/SKILL.md"
+# The table moved out of SKILL.md into references/enforcement.md (#5378).
+HR_SKILL="$PLUGIN_ROOT/skills/hard-rules/references/enforcement.md"
 table_rows="$(grep -cE '^\| .* \| *(✅|❌) *\|' "$HR_SKILL")"
 skill_yes="$(grep -cE '^\| .* \| *✅ *\|' "$HR_SKILL")"
 if [[ "$table_rows" -eq "$skill_yes" ]]; then
@@ -4632,6 +4763,35 @@ assert_stdout "$TEST_NAME" "every record says cwd=no-cwd" "$(live_check s6)"
 
 t "jus-liveness exits 1 when every record lost its cwd"
 assert_stdout "$TEST_NAME" "[1]" "$(live_check_ec s6)"
+
+# #5379. A person runs this from their own shell, where CLAUDE_PLUGIN_DATA is
+# unset, so it looked in $TMPDIR/jus and reported NO hook had run on every
+# plugin install. Claude Code writes under ~/.claude/plugins/data/<plugin>/ and
+# Copilot under ~/.copilot/plugin-data/<marketplace>/<plugin>/.
+LIVE_USER=$(mktemp -d)
+live_plugin_record() { # <dir under the user's home> <session>
+  mkdir -p "$LIVE_USER/$1/sessions/$2"
+  cp "$LIVE_HOME/sessions/s1/liveness.log" "$LIVE_USER/$1/sessions/$2/liveness.log"
+}
+live_user_check() { # [session]
+  ( env -u CLAUDE_PLUGIN_DATA HOME="$LIVE_USER" TMPDIR="$LIVE_USER/tmp" "$LIVENESS" "$@" 2>&1 ) || true
+}
+
+live_plugin_record ".claude/plugins/data/jus-jus-skills" cc-session
+t "jus-liveness finds a Claude Code plugin install's records (#5379)"
+assert_stdout "$TEST_NAME" "session: cc-session" "$(live_user_check)"
+
+rm -rf "$LIVE_USER/.claude"
+live_plugin_record ".copilot/plugin-data/jus-skills/jus" copilot-session
+t "jus-liveness finds a Copilot plugin install's records (#5379)"
+assert_stdout "$TEST_NAME" "session: copilot-session" "$(live_user_check)"
+
+t "and finds a named session there too (#5379)"
+assert_stdout "$TEST_NAME" "alive" "$(live_user_check copilot-session)"
+
+t "a miss names every place it looked (#5379)"
+assert_stdout "$TEST_NAME" ".claude/plugins/data" "$(live_user_check nowhere)"
+rm -rf "$LIVE_USER"
 
 rm -rf "$LIVE_HOME" "$LIVE_WIRED" "$LIVE_BARE" "$LIVE_OUTSIDE"
 

@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# UserPromptSubmit hook: Kimi Code's mid-session commit reminder (#1977). Kimi
+# UserPromptSubmit hook: Kimi Code's mid-session commit reminder. Kimi
 # ignores PostToolUse output entirely (observe-only), but stdout from an exit-0
 # UserPromptSubmit hook IS injected into the model's context — so the reminder
 # rides the next user prompt rather than the Nth edit.
 #
-# ⚠️ THIS HAS NO CLAUDE CODE COUNTERPART, AND THAT IS NOT AN OVERSIGHT (#3952).
+# ⚠️ THIS HAS NO CLAUDE CODE COUNTERPART, AND THAT IS NOT AN OVERSIGHT.
 # It began as the Kimi channel for `jus-dirty-tree-nudge.sh`, which was deleted
 # because it emitted `systemMessage` only — a field the model never receives, so
 # it had been reminding nobody for months. This one is context-injected and does

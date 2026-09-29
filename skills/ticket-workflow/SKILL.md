@@ -1,6 +1,6 @@
 ---
 name: ticket-workflow
-description: The single load-bearing Juscribe SOP skill — the full ticket lifecycle from pickup to delivery, plus estimation, ticket types, labels, metadata, testing gates, and the complete `jus` CLI / API reference in bundled files this skill points at. Use when working any ticket — picking one up, transitioning state, investigating, sizing, labeling, writing tests, running pre-commit gates, calling `jus api`, committing, self-reviewing, finishing, delivering, handling rejections, processing batches, or resolving dependency blockers. Auto-invoke whenever a ticket ID (`#N`) or "work on this ticket" / "pick up backlog" / "deliver" / "rejected" appears. In a project wired to Juscribe (a `.jus/` directory or the `jus` CLI), bare ticket language — `#123`, the board, the backlog, deliver — means Juscribe tickets by default, unless the wording names another system (a PR, a GitHub issue, another tracker's key), so this skill is the one to invoke for them, never a skill for any other issue tracker.
+description: The single load-bearing Juscribe SOP skill — the full ticket lifecycle from pickup to delivery, plus estimation, ticket types, labels, metadata, testing gates, and the complete `jus` CLI / API reference in bundled files this skill points at. Use when working any ticket — picking one up, transitioning state, investigating, sizing, labeling, writing tests, running pre-commit gates, calling `jus api`, committing, self-reviewing, finishing, delivering, handling rejections, processing batches, or resolving dependency blockers. Auto-invoke whenever a ticket ID (`#N`) or "work on this ticket" / "pick up backlog" / "deliver" / "rejected" appears. In a project wired to Juscribe (a `.jus/` directory or the `jus` CLI), bare ticket language — `#42`, the board, the backlog, deliver — means Juscribe tickets by default, unless the wording names another system (a PR, a GitHub issue, another tracker's key), so this skill is the one to invoke for them, never a skill for any other issue tracker.
 allowed-tools: Bash(jus *), Bash(git *), Bash(make *), Bash(cd *), Read, Grep, Glob, Edit, Write
 license: MIT
 ---
@@ -19,13 +19,15 @@ The lifecycle, in one line:
 
 **Finishing is your last transition.** Deliver only when a person asks for it; Phase 6 says why.
 
-Every change goes through every phase, however small or ad-hoc. Transition at the natural moment, never in a batch, so the board shows reality. **NEVER transition to `accepted` or `rejected`** — only the stakeholder decides.
+Every change goes through every phase, however small or ad-hoc. Transition at the natural moment, never in a batch, so the board shows reality. **NEVER transition to `accepted` or `rejected`** — only the stakeholder decides. The one exception is a chat app on Juscribe's hosted connector: when the person explicitly asks you to accept or reject a ticket, record their decision with `accept_ticket` or `reject_ticket`, and never on your own judgement.
 
 ## Phase 0: Prerequisites — the `jus` CLI must be installed and authenticated
 
 This SOP drives the board through the **`jus` CLI**, which the bundle does not install: the user needs `brew install juscribe/tap/jus`, then `jus login` or `jus init` (which also sets the `{ws}` used throughout this skill). **When a `jus` command fails before it reaches the board, open [references/setup.md](references/setup.md).** A missing CLI, a missing token, a retired token and an unreachable server each have a different fix, and only one of them is a rotation. `jus doctor` checks that these skills loaded, which `jus whoami` cannot.
 
 **Do not loop `jus` commands against an unconfigured CLI, or against a 401.** Surface the one setup step the error points to, and stop.
+
+**No shell, but Juscribe's MCP tools are connected?** That is a chat app such as Claude, ChatGPT or Gemini, or any AI tool with the Juscribe connector and no terminal. Use the tools: each recipe in these files is followed by an **MCP:** line naming the tool that does the same job, or saying none does and what to do instead. Every board rule here still applies. The commit, lint, test, branch and git steps do not, since there is no repository. **Never tell a chat user to install Homebrew or the CLI.**
 
 ## Each step, and the file to open before it
 

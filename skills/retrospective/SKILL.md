@@ -28,11 +28,15 @@ license: MIT
 jus api GET '/workspaces/{ws}/iterations/{iteration}/comments'
 ```
 
+**MCP:** no MCP tool reads an iteration's comments. Read the thread in the app, or ask the person to paste it.
+
 That is the iteration's own thread. On most boards it is **empty, or holds only the records of previous retrospectives** — measured on one board, one comment across 196 iterations, and it was a retrospective record. Read it, then keep going. The testimony is real; it is written one level down.
 
 ```
 jus api GET '/workspaces/{ws}/tickets?iteration_id={iteration}&per_page=200&include_markers=true&include_comments=true&include_label_objects=false'
 ```
+
+**MCP:** `list_tickets` with `iteration_id` and `include_markers`, then `get_ticket` on each ticket for its comments: the list pages 50 at a time and carries none.
 
 ⚠️ **`include_comments=true` IS WHAT TURNS THE TICKET LIST INTO THE LOG.** Without it the same request returns comment *counts*, which is a measure of back-and-forth and not a word of what anyone said. Where a workflow asks for a comment when work starts and another when it is delivered, every ticket carries a first-hand account of itself — the plan, what it assumed, what turned out to be wrong. Measured on a 112-ticket iteration: **252 comments on 102 of the 112 tickets**, median 2,940 characters, **78 tickets carrying language about a retry, a wrong assumption or a reversal.**
 
@@ -63,6 +67,8 @@ jus api GET '/workspaces/{ws}/iterations/{iteration}'
 jus api GET '/workspaces/{ws}/tickets?iteration_id={iteration}&per_page=200&include_markers=true'
 ```
 
+**MCP:** `get_workspace_summary` for the zone, `list_iterations` for the iteration, and `list_tickets` with `iteration_id` and `include_markers`.
+
 **Fetch the zone first and hold it**, because every date you bucket and every time you render depends on it — see **EVERY TIMESTAMP** in [references/reporting-traps.md](references/reporting-traps.md) for why the summary endpoint is the one to ask and the workspace row is not.
 
 The iteration row carries the committed and accepted point totals. The ticket list carries everything else — state, type, points, labels, project, requester, stakeholder, assignees, `rejections_count`, and the timestamps the board exposes.
@@ -76,6 +82,8 @@ The iteration row carries the committed and accepted point totals. The ticket li
 ```
 jus api GET '/workspaces/{ws}/tickets?iteration_id={iteration}&per_page=200' | jq '.meta.excluded_markers'
 ```
+
+**MCP:** `list_tickets` with `iteration_id`. Its reply says in `notes` when markers were left out.
 
 **An older server has no `meta` key at all**, and `jq` answers `null` — which reads exactly like "nothing was withheld" and is not. So do not treat its absence as reassurance; that is what check 5 in step 5 is for, and that check works against every version.
 
@@ -91,9 +99,11 @@ jus api GET '/workspaces/{ws}/tickets?iteration_id={iteration}&per_page=200' | j
 jus api GET '/workspaces/{ws}/tickets/{ticket}/activities?per_page=100'
 ```
 
+**MCP:** no MCP tool reads a ticket's activity. Use the timestamps `get_ticket` returns, and say the history is incomplete.
+
 | Entry | Carries | Gives you |
 | --- | --- | --- |
-| `state_change` | `{from, to}` + `occurred_at` | every transition in order — cycle time, lead time, dwell in each state, when a rejection happened |
+| `state_change` | `{from, to}` + `occurred_at` | transitions in order — cycle time, lead time, dwell in each state, when a rejection happened. A backward move before 2026-08-28 is an `update` instead: see **A BACKWARD STATE MOVE** in [references/reporting-traps.md](references/reporting-traps.md) |
 | `create` | the opening `title`, `ticket_type`, `points` | the **first estimate**, which is what estimate drift is measured against |
 | `update` | the changed field as `{from, to}` | re-estimates (`points`), retypes, project moves, ownership changes |
 | `comment`, `dependency_*`, `attachment_*` | ids and names | how much back-and-forth a ticket took |
@@ -122,7 +132,7 @@ Points closed, tickets closed, the rank against the whole series, and at most tw
 
 ⚠️ **The test for a number is not "is it true", it is "would the reader act differently".** Type distribution, comment counts, per-actor event tallies and events-per-hour are all true and none of them changes a decision. Cut them unless one of them moved.
 
-1. **What happened** — grouped by **theme**, never by ticket. This is the section a reader most wants and the one most often replaced by a list. A ticket id belongs in it as **evidence for a claim** — "the third attempt at this (#812) is where the parser was finally replaced" — never as the subject of its own row. ⚠️ **If a table's rows are tickets, it is the wrong table**: rewrite it so the rows are the findings and the ticket ids sit in a cell.
+1. **What happened** — grouped by **theme**, never by ticket. This is the section a reader most wants and the one most often replaced by a list. A ticket id belongs in it as **evidence for a claim** — "the third attempt at this (#81) is where the parser was finally replaced" — never as the subject of its own row. ⚠️ **If a table's rows are tickets, it is the wrong table**: rewrite it so the rows are the findings and the ticket ids sit in a cell.
 
 2. **What people said** — the testimony gathered in step 1, quoted, and weighted above anything you inferred. Where testimony and timestamps disagree, say so and give both; that is the most valuable sentence a retrospective can contain and no metric produces it.
 
@@ -219,7 +229,7 @@ Points closed, tickets closed, the rank against the whole series, and at most tw
 
    ⚠️ **Split that figure by state before you report it.** A release's list of pending work mixes accepted tickets with ones merely delivered or since cancelled, so a single point total silently overstates what the iteration actually accepted and has not shipped. Give the accepted number as the headline and the rest beside it. Measured on a real run: 37 points on the marker, of which **25** were accepted — the draft led with 37 and called them accepted.
 
-**Five traps in the prose of those sections — a rank claim computed over the wrong set, the section that gets faked, the board's timezone, naming people, and an unreachable source: [references/reporting-traps.md](references/reporting-traps.md).**
+**Seven traps in the prose of those sections — a rank claim computed over the wrong set, a velocity that is a setting or a two-week window, a backward move the old feed logged as an edit, the section that gets faked, the board's timezone, naming people, and an unreachable source: [references/reporting-traps.md](references/reporting-traps.md).**
 
 ## ⚠️ What NOT to report
 
@@ -282,6 +292,8 @@ This is not a stylistic preference. The report has to work as a hosted page **an
 jq -Rs '{retrospective:{html:.}}' <report.html> | jus api PATCH '/workspaces/{ws}/iterations/{iteration}/retrospective'
 ```
 
+**MCP:** no MCP tool sends the report to the board, and `attach_file` takes only .md, .txt and .csv. The report stays in the chat.
+
 ⚠️ **Do not try to inline the document into the command.** It is an HTML file full of quotes, backticks and apostrophes — the two characters that break shell quoting — and tens of kilobytes long. `jq -Rs` reads the file as one JSON string and `jus api` takes the object on stdin, so there is nothing to escape by hand.
 
 **The body is bounded and the endpoint says so.** Over the limit is a `422` naming the size; nothing is truncated and nothing is stored. If a report is genuinely that big, the charts are carrying embedded images they should not be.
@@ -293,6 +305,8 @@ jq -Rs '{retrospective:{html:.}}' <report.html> | jus api PATCH '/workspaces/{ws
 ```
 jq -Rs --arg url '<address>' '{retrospective:{html:.,url:$url}}' <report.html> | jus api PATCH '/workspaces/{ws}/iterations/{iteration}/retrospective'
 ```
+
+**MCP:** no MCP tool, as above.
 
 **Where it cannot** — Codex, Cursor, Zed, Windsurf and Antigravity today — send the body alone. Nothing is missing: the board holds the report either way.
 
@@ -318,6 +332,8 @@ A report that ignores this is not rejected — it renders with the offending par
 jus api POST '/workspaces/{ws}/iterations/{iteration}/comments' '{"comment":{"body":"…","context":"retrospective"}}'
 ```
 
+**MCP:** no MCP tool writes an iteration comment. Give the person the text to post on the iteration in the app.
+
 `context` is what marks this comment as the retrospective rather than a note, and the board uses it to render the entry differently. **Set it. Nothing else will.**
 
 **The body is short, and it is exactly four things:**
@@ -334,6 +350,8 @@ jus api POST '/workspaces/{ws}/iterations/{iteration}/comments' '{"comment":{"bo
 ```
 jus api PATCH '/workspaces/{ws}/iterations/{iteration}/comments/{comment}' '{"comment":{"body":"…"}}'
 ```
+
+**MCP:** no MCP tool, as above.
 
 The body is versioned, so the previous text survives. **Re-sending the report replaces it too** — the board keeps one per iteration — so the record stays correct without being touched.
 

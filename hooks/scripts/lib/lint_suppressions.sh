@@ -22,7 +22,7 @@
 # Each row: regex | human-readable label | the file types whose linter actually
 # reads the directive.
 #
-# ⚠️ THE TYPE COLUMN IS NOT DECORATION (#1985). Outside the types whose linter
+# ⚠️ THE TYPE COLUMN IS NOT DECORATION. Outside the types whose linter
 # reads it, the token is inert text — documentation quoting a rule, a shell
 # test fixture, a pattern in a string — and blocking there makes the guard
 # unusable rather than strict.
@@ -82,12 +82,12 @@ jus_lint_suppression_types() {
 # tracked file in a repository: the printing form took about four times as long.
 #
 # ⚠️ A SHELL SHEBANG WINS OVER THE EXTENSION, and that clause is the whole
-# reason `shellcheck disable` can be in the table at all (#4347). Most shell
-# scripts in a repository like this one are extensionless — `bin/ci`,
-# `script/dev/gate`, `.jus/bin/jus` — so they type as `ci`, `gate` and `jus`,
-# and a `sh bash` column would reach almost none of the corpus. The shellcheck
-# lefthook lane settled the same question the same way years earlier: it
-# matches by shebang rather than by extension.
+# reason `shellcheck disable` can be in the table at all. Most shell scripts
+# in the repository the bundle is developed in are extensionless —
+# `bin/lint`, `script/test`, `.jus/bin/jus` — so they type as `lint`, `test`
+# and `jus`, and a `sh bash` column would reach almost none of the corpus.
+# The shellcheck lefthook lane settled the same question the same way years
+# earlier: it matches by shebang rather than by extension.
 #
 # Without a shebang the extension decides, falling back to the BASENAME for an
 # extensionless file — which is how `Gemfile` and `Rakefile` are matched.

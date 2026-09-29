@@ -9,8 +9,8 @@
 #
 # ⚠️ edits.log is NOT an ownership record. It used to double as one — the stop
 # hook intersected it with `git status` to decide which dirty files a session
-# could claim when several shared a checkout. That machinery was removed in
-# #2392 (worktrees are the isolation strategy); the log survives purely as the
+# could claim when several shared a checkout. That machinery was removed
+# (worktrees are the isolation strategy); the log survives purely as the
 # lint gate's input, and a commit clears it so the gate does not re-fire.
 
 set -euo pipefail

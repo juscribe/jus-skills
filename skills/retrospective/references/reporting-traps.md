@@ -1,8 +1,20 @@
-# Reporting traps — the five ways a retrospective's prose goes wrong
+# Reporting traps — the seven ways a retrospective's prose goes wrong
 
 Read while writing the ten sections in step 3. Each of these has produced a wrong or
 hollow report, and none is caught by step 5's arithmetic check — they are claims that
 are *shaped* right and wrong anyway.
+
+## Contents
+
+The sections are named here the way `SKILL.md` points at them:
+
+- **A RANK CLAIM** — computed over every iteration, not the ones you fetched
+- **THE VELOCITY** — a setting, or a two-week window
+- **A BACKWARD STATE MOVE** — before 2026-08-28, logged as an edit
+- **Section 3** — the one that gets faked
+- **EVERY TIMESTAMP** — in the board's zone, and carrying it
+- **NAME PEOPLE** — never "the stakeholder"
+- **A SOURCE YOU CANNOT REACH** — a clause, not a silence
 
 ### ⚠️ A RANK CLAIM IS COMPUTED OVER EVERY ITERATION, NOT THE ONES YOU FETCHED
 
@@ -12,9 +24,31 @@ are *shaped* right and wrong anyway.
 jus api GET '/workspaces/{ws}/iterations'
 ```
 
+**MCP:** `list_iterations`.
+
 **Rank over all of it, and name the ones above.** Measured on a real run: an iteration called "the second-highest on the board" was **4th of 196**, and the three above it were nowhere near the fetched window. Nothing about the wrong claim looked wrong, and a superlative is the sentence a reader is most likely to repeat.
 
 ⚠️ **Say which metric the rank is over.** Accepted points, tickets done and committed points give different orders, and a rank with no named metric cannot be checked by anyone.
+
+### ⚠️ THE VELOCITY THE API ANSWERS MAY BE A SETTING, OR A TWO-WEEK WINDOW
+
+**Check which before you quote it.** `average_velocity` from `velocity_history`, and `computed_velocity` on the workspace row, are the workspace's **override** whenever one is set: a number someone typed, not one anything measured.
+
+```sh
+jus api GET '/workspaces/{ws}' | jq '.workspace | {velocity, computed_velocity, iteration_length}'
+jus api GET '/workspaces/{ws}/iterations/velocity_history' | jq '{average_velocity, lookback_window}'
+```
+
+**MCP:** no MCP tool reads the override or the window. `list_iterations` gives each iteration's own velocity: average the ones you mean, and say which.
+
+- **A non-null `velocity` is the override**, and both figures above are that number. Say so, and compute the measured figure from the history yourself if the report needs one.
+- **With no override, the figure averages `lookback_window` strictly past iterations**: max(⌈14 ÷ iteration length⌉, 3), unless the workspace configures its own. On a one-day board that is **14 iterations**, weekends included, while a chart of twelve bars sits beside it. Quote the window with the number.
+
+### ⚠️ A BACKWARD STATE MOVE BEFORE 2026-08-28 IS NOT A `state_change`
+
+**The activity feed logged the two directions differently until 2026-08-28.** A forward move was a `state_change` with `{from, to}`. A move back, such as `started` to `prioritized`, or a ticket dragged to the icebox, was an `update` with the same pair under a `state` key, `detail.state`. The old rows were not rewritten.
+
+**So a cycle-time or dwell sum over `state_change` alone misses every backward move before that date**, and a ticket that went back looks as if it never left. Read both shapes for any iteration that reaches back past it: `state_change`, and `update` carrying `detail.state`.
 
 ### ⚠️ Section 3 is the one that gets faked
 
@@ -34,7 +68,9 @@ This is the cut that answers *did we spend the month on what we meant to*, which
 jus api GET '/workspaces/{ws}/summary' | jq -r '.workspace.timezone'
 ```
 
-⚠️ **The workspace's own row can carry a null there and the summary never does.** One serialises the stored column, the other the **effective** zone — the stored one falls back to a default that only the server knows. Measured on a real board: `GET /workspaces/1` answered `"timezone": null` while `/summary` answered `America/Los_Angeles` at the same moment. A report built from the first one falls back to UTC and looks entirely correct.
+**MCP:** `get_workspace_summary`.
+
+⚠️ **The workspace's own row can carry a null there and the summary never does.** One serialises the stored column, the other the **effective** zone — the stored one falls back to a default that only the server knows. Measured on a real board: `GET /workspaces/{ws}` answered `"timezone": null` while `/summary` answered `America/Los_Angeles` at the same moment. A report built from the first one falls back to UTC and looks entirely correct.
 
 **Two places UTC is still right, and both are machine input rather than prose:**
 

@@ -97,8 +97,14 @@ elif [[ -z "${body//[[:space:]\"\']/}" || ( "$body" == *'$(cat '* && -z "$readab
 fi
 [[ -n "$reason" ]] || exit 0
 
-jq -n --arg reason "$reason" '{
-  systemMessage: ("[jus:hard-rules] " + $reason + " A blocker whose own condition is a time MUST carry both `due_on` (YYYY-MM-DD) and `due_kind`, or nothing on the board ever brings anyone back to it and the ticket reads as blocked forever. Pick the kind: `wait_until` (a hard do-not-start-before), `review_on` (revisit and decide, and push the date if the condition still is not met), `expected_by` (a forecast, informational). Neither half works alone — each without the other is a 422. If the condition genuinely has no time in it, carry on.")
-}'
+# ⚠️ BOTH FIELDS. `systemMessage` is rendered in the person's terminal and
+# never reaches the model; `hookSpecificOutput.additionalContext` is what the
+# model reads, and PreToolUse is an event whose output Claude Code feeds back.
+# Emitting only the first made this a nudge to the person watching, not to the
+# agent writing the blocker. Which adapters carry either field: hooks/README.md
+# → "Which nudges reach the model".
+jq -n --arg reason "$reason" '
+  ("[jus:hard-rules] " + $reason + " A blocker whose own condition is a time MUST carry both `due_on` (YYYY-MM-DD) and `due_kind`, or nothing on the board ever brings anyone back to it and the ticket reads as blocked forever. Pick the kind: `wait_until` (a hard do-not-start-before), `review_on` (revisit and decide, and push the date if the condition still is not met), `expected_by` (a forecast, informational). Neither half works alone — each without the other is a 422. If the condition genuinely has no time in it, carry on.") as $msg
+  | { systemMessage: $msg, hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: $msg } }'
 
 exit 0

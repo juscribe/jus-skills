@@ -28,6 +28,8 @@ Labels describe **technical areas** — the layers your change touches — not p
 jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"label_ids":[1,2]}}'
 ```
 
+**MCP:** `update_ticket` with `labels`, by name, which replaces the set.
+
 Guidelines:
 
 - **1–3 labels per ticket** (most are 1–2). More than 3 means the ticket is too large, or the labels repeat what the project already says.
@@ -44,6 +46,8 @@ Guidelines:
 jus api GET '/workspaces/{ws}/labels'
 ```
 
+**MCP:** `list_labels`.
+
 **The project should document what each label MEANS**, not just its id, in its own instructions. A label with no _when to apply_ is applied by guesswork, and the cost lands on whoever later filters by it.
 
 **If you need a label that doesn't exist, ask the stakeholder before inventing one.** Labels are a controlled vocabulary, and a near-duplicate is worse than a missing one because it silently splits every future filter.
@@ -55,6 +59,8 @@ jus api GET '/workspaces/{ws}/labels'
 ```sh
 jus api POST /workspaces/{ws}/tickets/{id}/comments '{"comment":{"body":"Starting. <root cause + plan + test intent>"}}'
 ```
+
+**MCP:** `add_comment`.
 
 ## Testing
 
@@ -102,9 +108,12 @@ Post comments as you work — at minimum the start comment (_Post the start comm
 - **References happen by themselves; a prerequisite needs a DEPENDENCY.** There is no References API and nothing to call. Juscribe parses `#N`/`pN` out of a ticket's **title and description** on save and stores the references itself; editing the text removes stale ones.
   - ⚠️ **Comments are NOT scanned.** A `#N` written only in a comment creates no reference, though it still renders as a link.
   - **Read them off the payload, not the text.** Every ticket and project carries both directions resolved: `references` (what it points at) and `referenced_by` (what points at it). Each entry is `{type, id, title, ticket_type, color}`, with `id` the `#N` / `pN` you would write. Regexing the description cannot see `referenced_by` at all. A deleted target comes back with a `null` id, so check before you follow one.
-  - **When a ticket genuinely gates another** ("requires #752 complete"), the mechanism that makes it real on the board — `blocked: true`, a row in `active_dependencies_summary` — is a dependency:
+  - **When a ticket genuinely gates another** ("requires #75 complete"), the mechanism that makes it real on the board — `blocked: true`, a row in `active_dependencies_summary` — is a dependency:
     ```sh
     jus api POST /workspaces/{ws}/tickets/{blocked}/dependencies '{"dependency":{"blocker_type":"Ticket","blocker_id":{blocker},"blocked_type":"Ticket","blocked_id":{blocked}}}'
     ```
+
+    **MCP:** `add_blocker` with `blocker_type` Ticket.
+
   - ⚠️ **Set one only when it is genuinely blocking.** A dependency asserts the work _cannot proceed_, and the Dependency Handling Protocol (`references/dependencies.md`) tells other agents to skip what it marks. Put a soft ordering preference in the description instead, and say why it is not a blocker.
 - **Read comment reactions as stakeholder signals** — `include_comments=true` returns them per comment, and several 👎 from the stakeholder is an effective rejection of that approach. The full legend, and the endpoint for toggling your own, are in `references/formatting.md`.

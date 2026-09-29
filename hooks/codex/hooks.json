@@ -1,5 +1,5 @@
 {
-  "description": "Juscribe SOP enforcement hooks for OpenAI Codex — deterministic backstops to the prompt-level rules in the hard-rules skill. Every command is `jus hook <name>` (#4759): jus resolves the bundle at run time, so no path is baked in here. See hooks/codex/README.md for setup and the trust flow.",
+  "description": "Juscribe SOP enforcement hooks for OpenAI Codex — deterministic backstops to the prompt-level rules in the hard-rules skill. Every command is `jus hook <name>`: jus resolves the bundle at run time, so no path is baked in here. See hooks/codex/README.md for setup and the trust flow.",
   "hooks": {
     "PreToolUse": [
       {

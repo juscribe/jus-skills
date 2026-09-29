@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Windsurf Cascade → shared-script payload normalizer (#4264).
+# Windsurf Cascade → shared-script payload normalizer.
 #
 # Cascade names its events after the ACTION rather than the tool, and puts every
 # per-event field inside `tool_info`. There is no `tool_name` anywhere in the
@@ -47,9 +47,10 @@ jq . >/dev/null 2>&1 <<<"$input" || exit 0
 normalized=$(jq --arg pwd "$PWD" '
   # ⚠️ `//` IS NOT A FALLBACK OPERATOR FOR STRINGS. It falls back on `null` and
   # `false` only, so an empty string WINS a chain and a better later source is
-  # never reached (#4261, audited across all seven shims on #4428). The cwd
-  # chain below is three deep and an empty `tool_info.cwd` would take out both
-  # of the others, `$PWD` included — which is the one Cascade documents.
+  # never reached (Cursor sent an empty cwd; audited across all seven
+  # shims). The cwd chain below is three deep and an empty `tool_info.cwd`
+  # would take out both of the others, `$PWD` included — which is the one
+  # Cascade documents.
   # ⚠️ UNVERIFIED HERE: Windsurf is not installed on the machine this was
   # written on, so whether Cascade ever sends an empty string is unmeasured.
   # The shim is hardened either way, because the symptom is silence.

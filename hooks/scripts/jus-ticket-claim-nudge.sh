@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# UserPromptSubmit hook (#3668): the moment a prompt names a ticket, hand the
+# UserPromptSubmit hook: the moment a prompt names a ticket, hand the
 # agent the ticket it would otherwise go and fetch, plus the exact command that
-# takes the concurrency lock. Since #5118 it hands it over as a CANDIDATE, with
+# takes the concurrency lock. It hands it over as a CANDIDATE, with
 # hints, because a bare `#N` is as often a pull request — see `refs=` below.
 #
 # WHY THIS IS A HOOK AND NOT A RULE. Measured across 365 session transcripts in
@@ -16,18 +16,18 @@
 # ⚠️ IT DOES NOT TRANSITION THE TICKET, AND THAT IS THE DESIGN, NOT A TODO.
 # Also measured: of 551 prompts naming a single ticket, only 79% were followed
 # by that ticket being started. The remaining 21% are questions and asides —
-# "how come i dont see changes that #3266 made?", "does this at all affect
-# #2411?", "put the time in #2891 in pacific". Auto-starting would wrongly move
-# about one ticket in five into `current`, and #2487 already declined
-# keyword-matching conversational prose for a merely ADVISORY nudge; the bar
-# for a mutation is higher, not lower.
+# "how come i dont see changes that #N made?", "does this at all affect
+# #N?", "put the time in #N in pacific". Auto-starting would wrongly move
+# about one ticket in five into `current`, and jus-docs-nudge.sh already
+# declined keyword-matching conversational prose for a merely ADVISORY nudge;
+# the bar for a mutation is higher, not lower.
 #
 # So the hook takes the half that is always true — the agent is about to look —
 # and leaves the state change to the agent's judgement. What it buys there is
 # that the judgement now happens on the agent's FIRST call rather than its
 # third, because the ticket and the exact claim command are already in context.
 #
-# ⚠️ IT WRITES NOTHING AT ALL (#3796). Until then it also posted a 👀 on the
+# ⚠️ IT WRITES NOTHING AT ALL. It once also posted a 👀 on the
 # ticket, and jus-ticket-release-reaction.sh took it off again on a transition.
 # Measured across all 3,791 tickets on 2026-09-07: 62 carried the agent's 👀
 # against 3 genuinely `started`, 47 of the stale ones `accepted`. Six paths left
@@ -40,7 +40,7 @@
 #
 # `started` plus an assignee is the concurrency lock, and always was.
 #
-# ⚠️ IT ALSO CARRIES THE jus CLI FLOOR CHECK (#5080), once a session, on any
+# ⚠️ IT ALSO CARRIES THE jus CLI FLOOR CHECK, once a session, on any
 # prompt — a ticket named or not. This is the one UserPromptSubmit hook every
 # manifest registers, so riding it reached all nine without a new registration.
 # lib/cli_floor.sh holds the check and the why.
@@ -102,10 +102,10 @@ prompt=$(jq -r '.prompt // ""' <<<"$input")
 # Ticket references in the prompt, one line per id in order of first mention:
 # `<id> TAB <explicit 0|1> TAB <word hint>`.
 #
-# ⚠️ A BARE `#N` IS A CANDIDATE, NOT A CERTAIN TICKET (#5118). Juscribe ids and
+# ⚠️ A BARE `#N` IS A CANDIDATE, NOT A CERTAIN TICKET. Juscribe ids and
 # GitHub pull-request/issue numbers both count up from 1, so a lookup cannot
 # tell them apart and only the prompt's wording can. The server already cedes
-# bare `#N` to GitHub on the commit side (Scm::ReferenceParser, #3778). The
+# bare `#N` to GitHub on the commit side (Scm::ReferenceParser). The
 # stakeholder's call: never block, never skip a fetch on a keyword — fetch, and
 # tell the MODEL what the wording suggests.
 #
@@ -115,7 +115,7 @@ prompt=$(jq -r '.prompt // ""' <<<"$input")
 # `jus-N` is the form GitHub cannot produce, so it is marked explicit.
 #
 # Everything else is split again on anything neither alphanumeric nor `#`, the
-# rule this hook has always had: `(#3668)` and `#3668,` yield `#3668`, while
+# rule this hook has always had: `(#42)` and `#42,` yield `#42`, while
 # `ab#1234` and `gh#1234` stay one token that does not start with `#`. Two
 # digits minimum keeps "the #1 thing" from costing an API call.
 #
@@ -166,11 +166,11 @@ refs=$(tr -c '[:alnum:]#_./-' ' ' <<<"$prompt" | tr -s ' ' '\n' | awk '
 juscribe_sop_require_jus_project "$cwd"
 
 # ⚠️ SILENCE RATHER THAN A DEFAULT. This hook shipped with `1` hardcoded while
-# it was monumental-only (#3668); in the bundle that would fetch a REAL ticket
-# belonging to somebody else's workspace 1 and feed it to the model as if it
-# were theirs. An unresolvable workspace means this is not a jus project, which
-# is not an error worth saying anything about. See juscribe_sop_workspace_id,
-# which carries the why-not-the-git-toplevel note.
+# it served only the repository it was developed in; in the bundle that would
+# fetch a REAL ticket belonging to somebody else's workspace 1 and feed it to
+# the model as if it were theirs. An unresolvable workspace means this is not
+# a jus project, which is not an error worth saying anything about. See
+# juscribe_sop_workspace_id, which carries the why-not-the-git-toplevel note.
 WORKSPACE="${TICKET_CLAIM_WORKSPACE:-}"
 if [[ -z "$WORKSPACE" ]]; then
   WORKSPACE=$(juscribe_sop_workspace_id "$cwd") || finish
@@ -278,7 +278,7 @@ done <<<"$refs"
 
 [[ -n "$blocks" ]] || finish
 
-# A candidate, not a certainty (#5118): the model has the whole prompt and the
+# A candidate, not a certainty: the model has the whole prompt and the
 # hook has a regex, so the hook says what it noticed and the model decides. The
 # ask-the-user clause is narrow on purpose — a question suspends the turn, so it
 # is for a genuinely unclear number whose answer changes what gets done.

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GitHub Copilot → shared-script payload normalizer (#4260).
+# GitHub Copilot → shared-script payload normalizer.
 #
 # Copilot's hook payload is camelCase and differs from the shared scripts'
 # Claude-Code shape. This shim rewrites the payload, execs the real hook, and
@@ -17,8 +17,9 @@
 # ⚠️ `toolArgs` IS A STRING CONTAINING JSON, NOT AN OBJECT. GitHub's own worked
 # example re-parses it — `jq -r '.toolArgs'` then `jq -r '.command'` on the
 # result. Treating it as an object gives every field as null, which reads as "no
-# command" and passes every blocker silently. This is the Kimi `tool_response`
-# failure (#4207) wearing a different name: a type mismatch that fails OPEN.
+# command" and passes every blocker silently. This is the Codex `tool_response`
+# failure (a string where an object was expected) wearing a different name: a
+# type mismatch that fails OPEN.
 #
 # ⚠️ THE TOOL ARGUMENT NAMES ARE NOT CLAUDE'S, AND THIS SHIPPED WRONG. Measured
 # against copilot 1.0.85 on 2026-09-17 by reading the `tools` array the CLI sends
@@ -27,7 +28,7 @@
 # and carries `path`. The first cut of this shim inferred `Edit` from
 # `old_string`/`new_string` and `Write` from `content` — Claude's names, which
 # Copilot never sends — so every edit-based blocker fell through to its
-# `tool_name` guard and exited 0. A live `# rubocop:disable` edit went straight
+# `tool_name` guard and exited 0. A live lint-suppression edit went straight
 # into the file. The tests passed because they were built from the same guess.
 # Hence both a NAME map and a FIELD map below, with shape inference kept only as
 # the fallback for a tool neither covers.
@@ -160,10 +161,10 @@ args=$(jq '
 normalized=$(jq --argjson args "$args" --arg name "$claude_name" '
   # ⚠️ `//` IS NOT A FALLBACK OPERATOR FOR STRINGS. It falls back on `null` and
   # `false` only, so an empty string WINS a chain and a better later source is
-  # never reached (#4261, audited across all seven shims on #4428). The two
-  # camelCase/snake_case pairs below read as that class, so they go through
-  # `pick` — but neither is REACHABLE today, and saying so is the point of the
-  # note. The passthrough branch above returns early on
+  # never reached (Cursor sent an empty cwd; audited across all seven
+  # shims). The two camelCase/snake_case pairs below read as that class, so
+  # they go through `pick` — but neither is REACHABLE today, and saying so is
+  # the point of the note. The passthrough branch above returns early on
   # `has("tool_name") or has("session_id")`, so by the time this program runs
   # the payload provably has no `session_id` and the second candidate is always
   # absent. `pick` is what keeps them correct if that branch is ever narrowed;

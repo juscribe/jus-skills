@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Kimi Code → shared-script payload normalizer (#1977).
+# Kimi Code → shared-script payload normalizer.
 #
 # Kimi Code hook payloads use Claude's tool names (Bash/Edit/Write) and — for
 # the suppression blocker — Claude's own arg keys (new_string / old_string /
@@ -27,10 +27,10 @@ input=$(cat)
 jq . >/dev/null 2>&1 <<<"$input" || exit 0
 
 # ⚠️ AN EMPTY `path` MUST NOT BE COPIED, AND MUST NEVER OVERWRITE A GOOD
-# `file_path`. This is the empty-string-versus-null class (#4261, audited across
-# all seven shims on #4428) in its inverted shape: the test was `!= null`, so a
-# `"path": ""` both propagated as an empty `file_path` and clobbered whatever
-# was already there.
+# `file_path`. This is the empty-string-versus-null class (Cursor sent an
+# empty cwd; audited across all seven shims) in its inverted shape: the test
+# was `!= null`, so a `"path": ""` both propagated as an empty `file_path` and
+# clobbered whatever was already there.
 #
 # ⚠️ HYPOTHETICAL RATHER THAN MEASURED, AND SAYING SO IS THE POINT. Kimi was
 # driven against a local stub on 2026-09-19 (kimi-code, `Edit` / `Write`): every

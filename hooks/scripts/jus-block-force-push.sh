@@ -23,7 +23,7 @@ command=$(jq -r '.tool_input.command // ""' <<<"$input")
 # segment that itself invokes `git push`. Substring matching over the raw
 # command string blocked greps of this script, docs text quoting the rule, and
 # jus comment bodies, and let a `-f` belonging to another chained command block
-# a plain push (#1985). Splitting/quote-stripping lives in lib/state.sh. Out of
+# a plain push. Splitting/quote-stripping lives in lib/state.sh. Out of
 # scope (guardrail, not sandbox): invocations smuggled through quoting
 # (`bash -c "…"`) and the `+refspec` force form.
 force_re='(^|[[:space:]])(--force-with-lease(=[^[:space:]]*)?|--force|-f)([[:space:]]|$)'

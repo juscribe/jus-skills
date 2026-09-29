@@ -12,6 +12,8 @@ jus api PATCH /workspaces/{ws}/tickets/{id}/subtasks/{subtask_id}/reorder '{"pos
 jus api DELETE /workspaces/{ws}/tickets/{id}/subtasks/{subtask_id}
 ```
 
+**MCP:** `list_subtasks`, `add_subtask`, `update_subtask`, `move_subtask` (a place counted from 1, not a position) and `delete_subtask`.
+
 Writable: `title` (required), `description`, `completed`, `position`, `assignee_id`. `position` defaults to the end of the list, and `created_by` is the caller. The response expands `assignee` and `created_by` as user objects rather than bare ids, the way a ticket expands its own.
 
 ⚠️ **`assignee_id` must be a member of the workspace's organization** — anyone else is a `422` reading `must belong to this workspace`. Send `null` or `""` to clear it.

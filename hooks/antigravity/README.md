@@ -1,9 +1,9 @@
 # jus enforcement hooks — Google Antigravity adapter
 
 Runs all twelve shared hook scripts (`../scripts/`) under Antigravity's hooks
-system (#4262).
+system.
 
-> ## ⚠️ THIS FILE SAID GEMINI CLI WAS SUNSET. IT IS NOT (#4419)
+> ## ⚠️ THIS FILE SAID GEMINI CLI WAS SUNSET. IT IS NOT
 >
 > The claim was that Antigravity replaced Gemini CLI, retired 2026-06-18, and
 > this adapter was built on it. Measured **2026-09-19** against the npm
@@ -43,11 +43,11 @@ system (#4262).
 > **Read it before changing anything here**, and prefer it over this file where
 > the two disagree.
 >
-> Everything below was then measured against `agy 1.2.5` in the orb, signed in,
+> Everything below was then measured against `agy 1.2.5` in a Linux VM, signed in,
 > reading `~/.gemini/antigravity-cli/log/`. Where a number or a key appears, it
 > came from a captured payload or an engine log line.
 
-> ⚠️ **These hooks do nothing outside a Juscribe project** (#4404). Each runs
+> ⚠️ **These hooks do nothing outside a Juscribe project**. Each runs
 > only when the payload's `cwd` is inside a git repository whose toplevel holds
 > a `.jus/` directory; everywhere else they exit 0 in silence.
 > `JUS_HOOKS_EVERYWHERE=1` restores the old machine-wide behaviour. ⚠️ **On this
@@ -94,7 +94,7 @@ sandbox is opt-in: see _The sandbox is NOT on by default in the CLI_ below.
 
 ## Every command is `jus hook`, so `jus` has to be on PATH
 
-Since #4759 no command in this manifest names a location — each is
+Since the manifests moved to `jus hook`, no command in this manifest names a location — each is
 `jus hook [--adapt antigravity] <name>`, and `jus` resolves the bundle at run time.
 `../tests.sh` holds every manifest to that shape, and refuses one carrying a
 path, a `~` or a `$`.
@@ -104,7 +104,7 @@ when the directory it names does not exist.** `JUS_SKILLS_DIR`, then the
 Homebrew prefix, then `~/.jus-skills`: the first one found answers. So a typo in
 that variable silently disables every guard while a healthy clone sits in
 `~/.jus-skills`. It is **not** layered overrides with the most specific last,
-which is how an eye trained on git config or eslint will read it.
+which is how an eye trained on git config or a linter's cascading config will read it.
 
 ⚠️ **This is the one adapter with no end-to-end measurement.** The harness
 drives five — qwen, codex, gemini, copilot and kimi — and Antigravity is not one
@@ -128,11 +128,11 @@ describes. **It is a vendor statement, not a local check** — treat this adapte
 as the least-evidenced of the eight until someone drives it against a real
 `HOME`.
 
-⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until #4759
+⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until the manifests moved to `jus hook`,
 every command named `~/.jus-skills/…`; a shell expands `~` only at the START of
 a word, so a tilde one character later was a literal, the command was not found,
 the exit was 127, and a non-2 exit is fail-**open** — every hook silently dead
-with the session looking healthy (#4417). A missing `jus` on `PATH` produces
+with the session looking healthy. A missing `jus` on `PATH` produces
 exactly that, so it is the first thing to check when the guards go quiet:
 `jus hook --where` prints which bundle answered, and `jus doctor` says so too.
 
@@ -181,7 +181,7 @@ not ours: a malformed answer does not degrade to "allowed", it wedges the agent.
 **So the first cut's hedge was fatal.** It emitted both contested deny
 spellings — `allow_tool`/`deny_reason` from the developer guide alongside
 `decision`/`reason` from atuinsh/atuin#4117 — reasoning that an unrecognised
-sibling key is inert (#3256). Here it is not. That hedge would have broken
+sibling key is inert. Here it is not. That hedge would have broken
 **every tool call** rather than half of one, and it was named in this file as
 the single highest-risk unknown. The pull request was right; the guide was
 wrong.
@@ -207,7 +207,7 @@ shared scripts gate on the cwd being inside a repo holding `.jus/`, a shim that
 derives nothing disarms all of them, silently, while looking installed.
 
 **`$PWD` is not a fallback either.** Antigravity runs a hook in the directory
-containing its `hooks.json`, measured `/home/caleon/.gemini/config` — which for
+containing its `hooks.json`, measured `~/.gemini/config` — which for
 the global install this README now prescribes is never a Juscribe project.
 
 So the shim derives one, in this order:
@@ -230,7 +230,7 @@ keyed by conversation, written by the tool events.
 
 ⚠️ **The cwd chain here also had the empty-string defect**, where an empty
 `workspacePaths` entry beat the remembered directory this shim exists to keep.
-Fixed on #4428; the class and the seven-shim audit are in
+Fixed; the class and the seven-shim audit are in
 [`../README.md`](../README.md).
 
 ## Payload mapping
@@ -272,7 +272,7 @@ arrives as its sibling rather than at the top level.
 | `jus-ticket-claim-nudge.sh`           | `UserPromptSubmit` | `PreInvocation`                   |
 
 ✅ **`Stop` really blocks here, and this file said the opposite.** The first cut
-called the dirty-tree gate advisory, "exactly as it does on Cursor (#4261) and
+called the dirty-tree gate advisory, "exactly as it does on Cursor and
 Kimi". It is not: `{"decision": "continue", "reason": …}` refuses the stop and
 re-enters the loop with the reason injected as a system message. **Antigravity
 is the first non-Claude tool where that hook keeps its teeth.**
@@ -326,8 +326,8 @@ path.** They are different discovery mechanisms; only the hooks one failed.
 
 ## Live verification
 
-Run in the orb against `agy 1.2.5` (#4262), with the control arm
-`.jus/docs/vendor-capability-claims.md` requires:
+Run in a Linux VM against `agy 1.2.5`, with the control arm a
+capability claim requires:
 
 | Run                      | Prompt                                         | Outcome                                                 | Remote tip            |
 | ------------------------ | ---------------------------------------------- | ------------------------------------------------------- | --------------------- |

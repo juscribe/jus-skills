@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cursor → shared-script payload normalizer (#4261).
+# Cursor → shared-script payload normalizer.
 #
 # Cursor is the closest of the adapters to a straight passthrough: its
 # `preToolUse` / `postToolUse` payloads already carry `tool_name` and
@@ -31,7 +31,7 @@
 # happened.
 #
 # ⚠️ A TAB COMPLETION IS ITS OWN EVENT, AND IT IS THE EDITOR'S ONLY EDIT PATH
-# FOR SOME PEOPLE (#4429). `afterTabFileEdit` carries the same `{file_path,
+# FOR SOME PEOPLE. `afterTabFileEdit` carries the same `{file_path,
 # edits[]}` shape as `afterFileEdit`, so it shares that branch — but it exists
 # only in the Cursor EDITOR, has no `cwd` field at all (not even the empty
 # string), and sends `model: "tab"` with a null `transcript_path`. Measured in
@@ -69,7 +69,7 @@ event=$(jq -r '.hook_event_name // ""' <<<"$input")
 # an event has one, because a shell can run outside the first root.
 #
 # ⚠️ AND `cwd` IS THE EMPTY STRING, NOT NULL, ON EVERY EVENT THAT HAS THE FIELD.
-# Measured on cursor-agent 2026.09.15-d2fe57e (#4261): `beforeShellExecution`,
+# Measured on cursor-agent 2026.09.15-d2fe57e: `beforeShellExecution`,
 # `preToolUse` and `postToolUse` all arrive with `"cwd": ""`. jq's `//` falls
 # back on `null` and `false` only, so `.cwd // .workspace_roots[0]` keeps the
 # empty string and every hook loses its repository — at which point
@@ -81,9 +81,10 @@ event=$(jq -r '.hook_event_name // ""' <<<"$input")
 normalized=$(jq '
   # ⚠️ `//` IS NOT A FALLBACK OPERATOR FOR STRINGS. It falls back on `null` and
   # `false` only, so an empty string WINS a chain and a better later source is
-  # never reached (#4261, audited across all seven shims on #4428). Every chain
-  # here with more than one source goes through `pick` instead; a chain whose
-  # only alternative is a literal keeps `//`, where the two agree.
+  # never reached (Cursor sent an empty cwd; audited across all seven
+  # shims). Every chain here with more than one source goes through `pick`
+  # instead; a chain whose only alternative is a literal keeps `//`, where
+  # the two agree.
   def pick: map(select(. != null and . != false and . != "")) | first // "";
   . as $in
   | ([.cwd, (.workspace_roots // [] | map(select(. != null and . != "")) | first)] | pick) as $cwd

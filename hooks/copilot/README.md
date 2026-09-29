@@ -1,7 +1,7 @@
 # jus enforcement hooks — GitHub Copilot adapter
 
 Runs all thirteen shared hook scripts (`../scripts/`) under GitHub Copilot's
-native hooks system (#4260).
+native hooks system.
 
 > ## ✅ LIVE-VERIFIED against copilot 1.0.85, 2026-09-17
 >
@@ -22,7 +22,7 @@ native hooks system (#4260).
 > is written up under _The degradations_ below. An adapter built from another
 > vendor's payload shape passes its own tests and protects nothing.
 
-> ⚠️ **These hooks do nothing outside a Juscribe project** (#4404). Each runs
+> ⚠️ **These hooks do nothing outside a Juscribe project**. Each runs
 > only when the payload's `cwd` is inside a git repository whose toplevel holds
 > a `.jus/` directory; everywhere else they exit 0 in silence. That is the
 > shared scripts' behaviour, so it applies here however this adapter is
@@ -31,37 +31,87 @@ native hooks system (#4260).
 
 ## Setup
 
-One shared clone per machine, then either scope:
+⚠️ **The CLI reads hooks from ONE place: your user settings,
+`~/.copilot/settings.json`.** Measured on CLI 1.0.87 with a real turn and a
+control: with the manifest there, `git commit --no-verify` was refused with the
+guard's own text; with the same manifest in the repository's `.github/hooks/`,
+the command ran. Nothing reports the difference, so a hook file anywhere else
+protects nothing and looks installed.
+
+**`jus init` does this for you** — pick Copilot and it merges the manifest into
+`~/.copilot/settings.json`, keeping whatever is already there. It also makes
+the `~/.jus-skills` clone every hook runs from.
+
+**By hand**, the clone first:
 
 ```sh
 git clone https://github.com/juscribe/jus-skills.git ~/.jus-skills
 ```
 
-**Per project** — Copilot reads every `*.json` under `.github/hooks/`:
+Then, on a machine with no `~/.copilot/settings.json` yet, the manifest **is**
+the file:
 
 ```sh
-mkdir -p .github/hooks && cp ~/.jus-skills/hooks/copilot/hooks.json .github/hooks/jus.json
+mkdir -p ~/.copilot && cp ~/.jus-skills/hooks/copilot/hooks.json ~/.copilot/settings.json
 ```
 
-**Per machine** — same file, user scope:
+With one already there, **do not overwrite it** — that deletes your own
+settings. Merge the `hooks` key instead; `jus refresh-hooks` adds the missing
+registrations without touching anything else.
 
-```sh
-mkdir -p ~/.copilot/hooks && cp ~/.jus-skills/hooks/copilot/hooks.json ~/.copilot/hooks/jus.json
-```
+The hooks load in every project you open, and do nothing outside a Juscribe
+project (see the note at the top).
+
+⚠️ **Not `~/.copilot/config.json`.** It is JSONC — its first line is a `//`
+comment — and it is managed: hooks written there are migrated into
+`settings.json` and the file is reset.
+
+⚠️ **`.github/hooks/` is for the cloud agent only**, which reads the
+repository's own hook files and nothing on your machine. The CLI ignores them.
 
 ⚠️ **Copilot COMBINES hooks from every layer it finds** — policy, repository,
-user, repository settings, user settings, plugins. Installing at both scopes
-registers all thirteen twice and fires each one twice per event. Pick one. This
-is the same double-registration trap `installing-the-bundle.md` documents for
-Claude Code, and it has the same symptom: nothing fails, a counter just doubles.
+user, repository settings, user settings, plugins. Installing the manifest and
+the plugin registers all thirteen twice and fires each one twice per event. Pick
+one. This is the same double-registration trap Claude Code
+has, and it has the same symptom: nothing fails, a counter
+just doubles.
 
-The skills are a separate install and do not come with these. See
-`installing-the-bundle.md`; Copilot reads `.agents/skills/`, `.github/skills/`
+### Or install it as a plugin
+
+The bundle is a Copilot plugin marketplace, and its `.github/plugin/plugin.json`
+registers these hooks:
+
+```sh
+copilot plugin marketplace add juscribe/jus-skills
+copilot plugin install jus@jus-skills
+```
+
+Measured on CLI 1.0.87 with the plugin installed and nothing merged by hand:
+`git commit --no-verify` was refused and the same commit without the flag went
+through.
+
+⚠️ **The plugin brings the registrations, not the scripts.** Every hook runs
+`jus hook <name>`, which finds its script in `JUS_SKILLS_DIR`, a Homebrew
+bundle or the `~/.jus-skills` clone — never in the plugin's own copy. On a
+machine with none of them, **every hook fails open, in silence**. `jus init`
+makes the clone; a plugin installed from this README alone does not, so clone
+it too.
+
+⚠️ **A plugin hook's refusal prints nothing to the terminal.** The command is
+refused, and the guard's liveness record says `outcome=blocked`, but the
+person watching sees no reason. `hooks/jus-liveness` shows it.
+
+⚠️ **A plugin's `hooks` path that names a missing file falls back to the
+default in silence**, and a plugin hook runs with its working directory at the
+plugin root, not the project.
+
+The skills are a separate install and do not come with these. See the
+bundle [README](../../README.md) → _Every install path_; Copilot reads `.agents/skills/`, `.github/skills/`
 and `.claude/skills/`, so the canonical recipe works unchanged.
 
 ## Every command is `jus hook`, so `jus` has to be on PATH
 
-Since #4759 no command in this manifest names a location — each is
+Since the manifests moved to `jus hook`, no command in this manifest names a location — each is
 `jus hook [--adapt copilot] <name>`, and `jus` resolves the bundle at run time.
 `../tests.sh` holds every manifest to that shape, and refuses one
 carrying a path, a `~` or a `$`.
@@ -71,12 +121,12 @@ when the directory it names does not exist.** `JUS_SKILLS_DIR`, then the
 Homebrew prefix, then `~/.jus-skills`: the first one found answers. So a typo in
 that variable silently disables every guard while a healthy clone sits in
 `~/.jus-skills`. It is **not** layered overrides with the most specific last,
-which is how an eye trained on git config or eslint will read it.
+which is how an eye trained on git config or a linter's cascading config will read it.
 
 ⚠️ **What that moves, rather than removes, is the requirement.** The old form
 needed a shell to expand `~` at the start of a word, and a tilde one character
 later was a literal, a command not found, exit 127, and an adapter reading
-fail-**open** — every hook dead with no output (#4417). The new form needs
+fail-**open** — every hook dead with no output. The new form needs
 `jus` on `PATH` wherever Copilot spawns a hook. The failure shape is the same
 one, so if the guards go quiet, check that first: `jus hook --where` prints
 which bundle answered, and `jus doctor` says so too.
@@ -99,8 +149,8 @@ Claude-Code shape in four ways, so every hook runs behind
 ⚠️ **`toolArgs` is a string containing JSON, and that is the trap.** GitHub's own
 worked example re-parses it (`jq -r '.toolArgs'`, then `jq -r '.command'` on the
 result). Read it as an object and every field comes back `null`, which reads as
-"no command" — so every blocker passes, silently. This is the Kimi
-`tool_response` failure (#4207) with a different field name: a type mismatch that
+"no command" — so every blocker passes, silently. This is the Codex
+`tool_response` failure with a different field name: a type mismatch that
 fails **open**, and the only symptom is protection that was never there.
 
 ## The degradations
@@ -146,7 +196,7 @@ plugin tool or a later rename does not silently disable a blocker.
 cut inferred `Edit` from `old_string`/`new_string` and `Write` from `content` —
 Claude Code's names, which Copilot never sends. Every edit-based blocker
 therefore fell through its own `tool_name` guard and exited 0. Measured live on
-2026-09-17: a model-issued `edit` adding `# rubocop:disable Metrics/AbcSize`
+2026-09-17: a model-issued `edit` adding a lint-suppression comment
 went straight into the file, with `jus-block-lint-suppression.sh` registered and
 firing. **Nothing reported anything.** The tests were green because they were
 built from the same guess as the shim.
@@ -180,7 +230,7 @@ translation above, they explain themselves. **The four `postToolUse` hooks are
 observe-only**: `jus-track-edits.sh` and `jus-post-bash-tracker.sh` still do
 their real job, which is writing state to disk, but `jus-start-comment-nudge.sh`
 and `jus-docs-nudge.sh` exist to _tell the model something_ and no channel
-carries it. This is the Kimi degradation (#4207) — with the difference that Kimi
+carries it. This is the Kimi degradation — with the difference that Kimi
 could reroute through prompt-submit and Copilot cannot, because
 `userPromptSubmitted` injects nothing either.
 
@@ -206,7 +256,7 @@ COPILOT_PROVIDER_BASE_URL=http://127.0.0.1:8731 COPILOT_PROVIDER_TYPE=openai \
 ⚠️ **Without a provider override there is nothing to verify.** An unauthenticated
 run dies at the credential check _before the session starts_ — not one hook
 fires, `sessionStart` included. The codex trick of reaching for an event that
-precedes the network call (#4288) does **not** transfer.
+precedes the network call does **not** transfer.
 
 ⚠️ **`COPILOT_ALLOW_ALL=true` is what trusts the directory**, and exactly `true`:
 other truthy spellings only auto-approve tools and leave the hooks unloaded, so
@@ -222,7 +272,7 @@ UNREACHABLE** — the passthrough branch returns early on `has("session_id")`, s
 the second candidate is provably absent by the time the normalizer runs. They go
 through the shared helper regardless, in case that branch is ever narrowed.
 Copilot is also not installed here, so nothing about its payload is measured.
-The class and the audit: [`../README.md`](../README.md) (#4428).
+The class and the audit: [`../README.md`](../README.md).
 
 ## Event mapping
 

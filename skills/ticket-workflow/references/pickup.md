@@ -10,6 +10,8 @@ Orient with the agent state endpoint — never fetch full ticket lists at sessio
 jus api GET '/workspaces/{ws}/agent_state?panels=current,backlog'
 ```
 
+**MCP:** `get_workspace_summary`, which reads the board summary rather than this markdown digest.
+
 It returns compact markdown (~2–4KB): projects, velocity, users and one line per ticket, cached for 5 minutes. Decide what to work on from it, then fetch individual tickets.
 
 ## Fetch the ticket with comments AND attachments
@@ -17,6 +19,8 @@ It returns compact markdown (~2–4KB): projects, velocity, users and one line p
 ```sh
 jus api GET '/workspaces/{ws}/tickets/{id}?include_comments=true&include_attachments=true&include_label_objects=false'
 ```
+
+**MCP:** `get_ticket`, which includes comments and attachments by default.
 
 **MUST include comments and attachments.** Comments carry the stakeholder's context, open questions and decisions; attachments carry rejection screenshots and design mocks. If `comments_count` is `0`, drop `include_comments=true`.
 
@@ -58,6 +62,8 @@ The moment you decide to work the ticket, transition it and assign yourself, **b
 jus api PATCH /workspaces/{ws}/tickets/{id}/transition '{"state":"started"}'
 jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"assignee_ids":[{your_user_id}]}}'
 ```
+
+**MCP:** `transition_ticket`, then `update_ticket` with `assignee_ids`.
 
 Sequence: fetch → start → assign → THEN investigate. **NEVER reverse this order.** Where the jus hooks run, a `UserPromptSubmit` hook fetches the ticket and prints the transition command, but writes nothing: the lock is still yours to take.
 

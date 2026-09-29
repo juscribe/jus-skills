@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# jus-liveness — did the jus enforcement hooks actually RUN? (#4416)
+# jus-liveness — did the jus enforcement hooks actually RUN?
 #
 # ⚠️ EVERY OTHER CHECK WE HAVE ANSWERS "IS THIS WIRED", ONCE, AT INSTALL TIME.
 # None of them survives the tool changing its mind. Four silencers — a non-2
 # exit, a tool name the guards do not match, a cwd outside a Juscribe project,
 # and a manifest the tool never loaded — each produce NO OUTPUT AT ALL, so a
 # fully installed, correctly configured hook set can protect nothing and look
-# completely healthy. On #4261 that state shipped with tests, a README and a
-# live verification all passing over it.
+# completely healthy. On the Cursor adapter that state shipped with tests, a
+# README and a live verification all passing over it.
 #
 # This reads the record `scripts/lib/state.sh` writes on every invocation, and
 # separates the three states nothing else can tell apart:
 #
 #   ran and allowed / ran and blocked   → alive. Both are proof of life.
-#   ran, and could not tell WHERE       → a shim lost the cwd (the #4261 shape)
+#   ran, and could not tell WHERE       → a shim lost the cwd (empty-cwd shape)
 #   no record at all                    → never ran
 #
 # Usage:
@@ -25,22 +25,46 @@
 
 set -uo pipefail
 
-BASE="${CLAUDE_PLUGIN_DATA:-${TMPDIR:-/tmp}/jus}"
-SESSIONS="$BASE/sessions"
-
-session="${1:-}"
-if [[ -z "$session" ]]; then
-  # The most recently written liveness.log. `ls -t` rather than `find -printf`,
-  # which BSD find does not have.
-  newest=$(ls -t "$SESSIONS"/*/liveness.log 2>/dev/null | head -1)
-  if [[ -n "$newest" ]]; then
-    session=$(basename "$(dirname "$newest")")
-  fi
+# Every root a record can land in. `scripts/lib/state.sh` writes under
+# $CLAUDE_PLUGIN_DATA, which the TOOL sets for its hook processes and nothing
+# sets in the shell a person runs this from — so reading only that variable
+# reported "no hook has run" on every plugin install.
+#
+#   Claude Code plugin   ~/.claude/plugins/data/<plugin>/
+#   Copilot plugin       ~/.copilot/plugin-data/<marketplace>/<plugin>/
+#   anything else        $TMPDIR/jus/ — the fallback state.sh itself uses
+#
+# Set CLAUDE_PLUGIN_DATA to read one root only.
+if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
+  ROOTS=("$CLAUDE_PLUGIN_DATA")
+else
+  ROOTS=()
+  for root in "$HOME"/.claude/plugins/data/* "$HOME"/.copilot/plugin-data/*/* "${TMPDIR:-/tmp}/jus"; do
+    [[ -d "$root/sessions" ]] && ROOTS+=("$root")
+  done
 fi
 
-log="$SESSIONS/${session:-_none}/liveness.log"
+# The newest liveness.log across the roots, for one session or for any.
+# `ls -t` rather than `find -printf`, which BSD find does not have.
+newest_log() { # [session]
+  local root file files=()
+  for root in ${ROOTS[@]+"${ROOTS[@]}"}; do
+    # Unquoted on purpose: with no session named, `*` is the glob over them.
+    for file in "$root"/sessions/${1:-*}/liveness.log; do
+      [[ -f "$file" ]] && files+=("$file")
+    done
+  done
+  [[ ${#files[@]} -gt 0 ]] || return 0
+  ls -t "${files[@]}" | head -1
+}
 
-if [[ ! -s "$log" ]]; then
+session="${1:-}"
+log=$(newest_log "$session")
+if [[ -n "$log" && -z "$session" ]]; then
+  session=$(basename "$(dirname "$log")")
+fi
+
+if [[ -z "$log" || ! -s "$log" ]]; then
   printf '\033[31m✗ NO jus hook has run%s.\033[0m\n' \
     "${session:+ in session $session}"
   cat <<'WHY'
@@ -52,13 +76,16 @@ Nothing recorded means one of:
     hooks.json file(s)`, and `kimi doctor` validates its config.
   - the tool fired no event this session (a session with no tool calls
     records nothing, correctly).
-  - the hook command could not be found. Every manifest routes through
-    ~/.jus-skills/..., and the tilde is expanded by the SHELL, so it only
-    works at the start of a word — a quoted path is exit 127, and a non-2
-    exit is fail-open.
+  - the hook command failed before the script ran. Every manifest runs
+    `jus hook <name>`, so a `jus` missing from the tool's PATH, or one older
+    than its `hook` subcommand, exits non-zero — and a non-2 exit fails open.
+    `jus doctor` names both.
 
 WHY
-  printf 'Looked in: %s\n' "$log"
+  printf 'Looked in:\n'
+  printf '  %s\n' "$HOME/.claude/plugins/data/*/sessions/" "$HOME/.copilot/plugin-data/*/*/sessions/" \
+    "${TMPDIR:-/tmp}/jus/sessions/"
+  [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]] && printf '  (only %s/sessions/, because CLAUDE_PLUGIN_DATA is set)\n' "$CLAUDE_PLUGIN_DATA"
   exit 1
 fi
 
@@ -79,9 +106,9 @@ awk -F' ' '{
 }
 END { for (key in count) printf "  %s  ×%d\n", key, count[key]; }' "$log" | sort
 
-# ⚠️ THE #4261 SHAPE, AND IT LOOKS HEALTHY WITHOUT THIS. The guards ran. They
-# read a cwd their shim had already lost — Cursor sends the empty STRING and
-# jq's `//` keeps it — found no repository, and exited 0. Every one of them.
+# ⚠️ THE EMPTY-CWD SHAPE, AND IT LOOKS HEALTHY WITHOUT THIS. The guards ran.
+# They read a cwd their shim had already lost — Cursor sends the empty STRING
+# and jq's `//` keeps it — found no repository, and exited 0. Every one of them.
 if [[ "$no_cwd" -gt 0 && "$no_cwd" -eq "$total" ]]; then
   printf '\n\033[31m✗ every record says cwd=no-cwd.\033[0m\n'
   cat <<'WHY'

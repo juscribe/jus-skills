@@ -8,7 +8,7 @@ This bundle ships three on-demand Agent Skills that codify the Juscribe ticket-m
 - **hard-rules** — non-negotiable behavioral guardrails (commit-immediately, no lint suppression, stakeholder-verbatim ticket descriptions (agent additions kept current), no false deliveries, no `git push`, etc.).
 - **retrospective** — how to review an iteration and hand it over as a self-contained HTML report with charts: what to gather (the iteration's own comment log first), the sections a retrospective owes, inline-SVG charts that need no library and no network, verifying derived numbers before publishing, and writing the record back as an iteration comment.
 
-When working on a Juscribe ticket, expect both `ticket-workflow` and `hard-rules` to fire up front; `retrospective` fires only when an iteration review is asked for. (Earlier `testing-gates`, `juscribe-api`, and `estimation-labels` skills were retired in #1856 — they never reliably auto-invoked; their content now lives inside `ticket-workflow`.)
+When working on a Juscribe ticket, expect `ticket-workflow` to fire up front. `hard-rules` is loaded at session start only by the Kimi Code plugin; everywhere else it loads on demand, like any skill, so do not assume its rules are in context until it has loaded; `retrospective` fires only when an iteration review is asked for. (Earlier `testing-gates`, `juscribe-api`, and `estimation-labels` skills were retired — they never reliably auto-invoked; their content now lives inside `ticket-workflow`.)
 
 ## What's not bundled here
 

@@ -22,6 +22,34 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.44] — 2026-09-28
+
+### Changed
+
+- Bring the specs and docs in line with today's changes (#5399)
+- Teach other projects the workflow traps the stakeholder chose (#5389)
+- Add the velocity and old-backward-move traps to the retrospective skill (#5388)
+- Fill the tool-specific gaps in the install docs (#5387)
+- Re-derive a blocker's title, clear a reopened ticket's resolution, name a missing route (#5386)
+- Make the API refuse the parameters it silently ignored (#5385)
+- Document the project, notification, rate-limit and token behaviours agents trip on (#5384)
+- Document the ticket, blocker and comment API behaviours that fail silently (#5383)
+- Tell agents how the board renders raw HTML and newlines (#5382)
+- Remove this repo's furniture from the bundle and served SOP (#5392)
+- Correct the skills and served SOP where they contradict current rules (#5381)
+- Point the Copilot and Cursor installs where the tools load them (#5380)
+- Fix five defects in the hooks every plugin user runs (#5379)
+- Point the bundle README at where the enforcement table moved (#5378)
+- Fit hard-rules into what a compaction keeps (#5378)
+- Unquote the recipe paths so the tick-placement spec reads them (#5376)
+- Say why jus api refused a body, and when no project was found (#5377)
+- Say an append needs no fetch in the hard-rules description rule (#5376)
+- Stop the description recipes from wiping a description (#5376)
+- Let lint launchers chain, as in uv run python -m pytest (#5374)
+- Make the commit gate recognise any stack's linters (#5374)
+- Name the MCP tool beside every jus api recipe in the skills (#5356)
+- Define a point as effort everywhere it is defined (#5328)
+
 ## [1.4.43] — 2026-09-28
 
 ### Changed

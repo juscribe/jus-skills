@@ -1,7 +1,7 @@
 # jus enforcement hooks — Qwen Code adapter
 
 Runs all twelve shared hook scripts (`../scripts/`) under Qwen Code's hooks
-system (#4263), in **thirteen registrations** — the same count and the same
+system, in **thirteen registrations** — the same count and the same
 split as the Claude Code manifest.
 
 > ## ✅ LIVE-VERIFIED against qwen 0.24.0, 2026-09-17
@@ -24,7 +24,7 @@ split as the Claude Code manifest.
 >
 > **No sign-in was involved** — see _Verifying this yourself_ below.
 
-> ⚠️ **These hooks do nothing outside a Juscribe project** (#4404). Each runs
+> ⚠️ **These hooks do nothing outside a Juscribe project**. Each runs
 > only when the payload's `cwd` is inside a git repository whose toplevel holds
 > a `.jus/` directory; everywhere else they exit 0 in silence. That is the
 > shared scripts' behaviour, so it applies here however this adapter is
@@ -33,7 +33,7 @@ split as the Claude Code manifest.
 
 ## The ticket's question, and the answer that flipped it
 
-#4263 was filed asking whether a Qwen hook can **deny** or only annotate, and
+The ticket for this adapter was filed asking whether a Qwen hook can **deny** or only annotate, and
 said to establish that before building anything. It can deny.
 
 |                | Qwen Code                                                                                                                                            | Claude Code                       |
@@ -73,7 +73,7 @@ is selected"_ — which reads like a credential problem rather than a flag probl
 hook discovery: the run completes, looks clean, and fires nothing.
 
 ⚠️ **Do not override `HOME` to isolate the config.** `jus` resolves the bundle
-at `~/.jus-skills` (#4759), so a fake home resolves to a bundle that is not
+at `~/.jus-skills`, so a fake home resolves to a bundle that is not
 there — and a hook that cannot find its bundle fails **open**, silently, which
 is the same shape as the pre-launcher trap this replaces. Measured then: a
 clean "qwen cannot deny" result, which is the wrong answer to this adapter's
@@ -113,7 +113,7 @@ mkdir -p .qwen && cp ~/.jus-skills/hooks/qwen/settings.json .qwen/settings.json
 
 ## Every command is `jus hook`, so `jus` has to be on PATH
 
-Since #4759 no command in this manifest names a location — each is
+Since the manifests moved to `jus hook`, no command in this manifest names a location — each is
 `jus hook [--adapt qwen] <name>`, and `jus` resolves the bundle at run time.
 `../tests.sh` holds every manifest to that shape, and refuses one carrying a
 path, a `~` or a `$`.
@@ -123,22 +123,22 @@ when the directory it names does not exist.** `JUS_SKILLS_DIR`, then the
 Homebrew prefix, then `~/.jus-skills`: the first one found answers. So a typo in
 that variable silently disables every guard while a healthy clone sits in
 `~/.jus-skills`. It is **not** layered overrides with the most specific last,
-which is how an eye trained on git config or eslint will read it.
+which is how an eye trained on git config or a linter's cascading config will read it.
 
 ✅ **Qwen reaches it through a shell, which is how `jus` is found on `PATH`.**
 It does not spawn a hook command directly: `getShellConfiguration()` returns
 `argsPrefix: ["-c"]` on every POSIX platform, so the whole command string is
-handed to `bash -c` — read from qwen-code's own shipped source on #4261. Qwen is
-also one of the five adapters `script/dev/drive-adapter` drives end to end: on
-#4759 it PASSed with this launcher on `PATH`, and FAILed with hook liveness
+handed to `bash -c` — read from qwen-code's own shipped source. Qwen is
+also one of the five adapters the harness drives end to end: on
+2026-09-21 it PASSed with this launcher on `PATH`, and FAILed with hook liveness
 **SILENT** against the released CLI that predates `jus hook`. That pair is the
 measurement, and it is why the CLI must be published before the bundle.
 
-⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until #4759
+⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until the manifests moved to `jus hook`,
 every command named `~/.jus-skills/…`; a shell expands `~` only at the START of
 a word, so a tilde one character later was a literal, the command was not found,
 the exit was 127, and a non-2 exit is fail-**open** — every hook silently dead
-with the session looking healthy (#4417). A missing `jus` on `PATH` produces
+with the session looking healthy. A missing `jus` on `PATH` produces
 exactly that, so it is the first thing to check when the guards go quiet:
 `jus hook --where` prints which bundle answered, and `jus doctor` says so too.
 
@@ -152,7 +152,7 @@ exactly that, so it is the first thing to check when the guards go quiet:
 
 A `"matcher": "Bash"` **never fires**. `"Write|Edit"` fires for `edit` and not for
 `write_file`. Qwen's permission rules already map the Claude names; its hook
-matchers do not. PR #11826 is referenced as the fix, so a current build may
+matchers do not. qwen-code PR 11826 is referenced as the fix, so a current build may
 behave differently.
 
 **This manifest matches on Qwen's own names** — `run_shell_command`, `edit`,
@@ -160,7 +160,7 @@ behave differently.
 before the fix and after it, and it fails loudly rather than silently if a name
 ever changes: the hook simply does not appear in `/hooks`.
 
-⚠️ **Do not "simplify" the matchers to Claude names once #11826 ships.** It would
+⚠️ **Do not "simplify" the matchers to Claude names once qwen-code PR 11826 ships.** It would
 make this adapter silently inert on every older Qwen a user might be running, and
 a hook that does not fire produces no error at all.
 
@@ -185,12 +185,12 @@ Qwen tool, or a plugin's) and never overrides a known name.
 already what Qwen reads as a block, and a shared script's `hookSpecificOutput`
 object on exit 0 is already the shape Qwen expects. The shim `exec`s the target,
 so its stdout, stderr and exit code reach Qwen untouched. Wrapping either would
-be the Antigravity work (#4262) done where it is not needed.
+be the Antigravity work done where it is not needed.
 
 ✅ **No empty-string exposure.** The shim has no multi-source fallback chain, and a
 capture on 2026-09-19 found a real `cwd`, `session_id` and `transcript_path` on
 all four registered events. The class and the seven-shim audit:
-[`../README.md`](../README.md) (#4428).
+[`../README.md`](../README.md).
 
 ## Event mapping
 
@@ -218,24 +218,24 @@ appears once, because those tools have no matcher to split on.
 ## Skills — through Qwen's own extension system
 
 Qwen reads skills from `.qwen/skills/` **and** `.agents/skills/`, and has since
-0.13.0 — this section said it read only the first until #5189 drove it on 0.24.3.
-`jus init` installs them as a Qwen extension (#4833), which auto-updates:
+0.13.0 — this section said it read only the first until a drive on 0.24.3 showed both.
+`jus init` installs them as a Qwen extension, which auto-updates:
 
 ```sh
 qwen extensions install https://github.com/juscribe/jus-skills:jus --consent --scope project --auto-update
 ```
 
-**It carries these hooks too** (#4834): the bundle's `qwen-extension.json` points
+**It carries these hooks too**: the bundle's `qwen-extension.json` points
 the extension at `hooks/qwen/settings.json`, so a plugin install needs no merge.
 ⚠️ The scripts still run from the `~/.jus-skills` clone, through `jus hook`, which
 `jus init` makes: installed by hand with no clone, every hook fails open.
-Measured on qwen 0.24.0 with `script/dev/drive-adapter qwen --layer plugin-hooks`:
+Measured on qwen 0.24.0 with the harness driving an extension install:
 the bypass refused, the plain commit allowed, each hook fired once.
 
 ⚠️ **Extension or merge, never both.** Both load, and every hook fires twice;
 `jus init` merges only when the installed extension does not register the file.
 ⚠️ **Nor skill links beside it, in either root**: Qwen then loads every skill
-twice, once as `jus:<name>` and once plain (#4833, #5189). `jus init` removes its
+twice, once as `jus:<name>` and once plain. `jus init` removes its
 own `.qwen/skills/` links and names the `rm` for `.agents/skills/` ones, which
 another tool in the repository may read.
 
@@ -243,7 +243,7 @@ another tool in the repository may read.
 
 `jus/hooks/tests.sh`, in the `qwen adapter` section: the settings file is valid
 JSON with a `hooks` key, every script it names exists, all twelve are registered,
-**no matcher uses a Claude Code tool name** (the #11823 trap, asserted rather than
+**no matcher uses a Claude Code tool name** (the matcher trap above, asserted rather than
 remembered), and the shim renames each of Qwen's four tools before the guards see
 them — including that a `run_shell_command` force-push blocks and that `write_file`
-reaches the suppression guard, which is the exact pair #11823 reports breaking.
+reaches the suppression guard, which is the exact pair qwen-code issue 11823 reports breaking.

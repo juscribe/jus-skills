@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Antigravity (agy) → shared-script payload normalizer, and back again (#4262).
+# Antigravity (agy) → shared-script payload normalizer, and back again.
 #
 # ⚠️ THIS IS THE ONLY ADAPTER THAT TRANSLATES THE RESPONSE AS WELL AS THE INPUT,
 # and the reason is the one thing every other tool here gives us for free.
@@ -62,7 +62,7 @@ neutral() {
 # ── where a cwd comes from when the payload has none ─────────────────────────
 # ⚠️ ANTIGRAVITY SENDS NO `cwd`, AND THAT SILENTLY DISARMS EVERY GUARD.
 # `workspacePaths` came back `[]` on every captured payload, and the shared
-# scripts gate on the cwd being inside a git repo holding `.jus/` (#4404) — so
+# scripts gate on the cwd being inside a git repo holding `.jus/` — so
 # an empty one makes all twelve exit 0 without looking at anything.
 #
 # The hook process's own $PWD is no fallback either: Antigravity sets it to the
@@ -101,10 +101,10 @@ remembered_cwd=""
 normalized=$(jq --arg remembered "$remembered_cwd" '
   # ⚠️ `//` IS NOT A FALLBACK OPERATOR FOR STRINGS. It falls back on `null` and
   # `false` only, so an empty string WINS a chain and a better later source is
-  # never reached (#4261, audited across all seven shims on #4428). Here that
-  # would cost the REMEMBERED cwd — the one thing the state file below exists
-  # for — to an empty `workspacePaths[0]` or an empty `.cwd` on a payload that
-  # carries the key with nothing in it.
+  # never reached (Cursor sent an empty cwd; audited across all seven
+  # shims). Here that would cost the REMEMBERED cwd — the one thing the state
+  # file below exists for — to an empty `workspacePaths[0]` or an empty `.cwd`
+  # on a payload that carries the key with nothing in it.
   def pick: map(select(. != null and . != false and . != "")) | first // "";
   . as $in
   | ($in.toolCall.args // {}) as $args

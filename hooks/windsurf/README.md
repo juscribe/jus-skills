@@ -1,6 +1,6 @@
 # jus enforcement hooks — Windsurf Cascade adapter
 
-Runs all twelve shared hook scripts (`../scripts/`) under Cascade Hooks (#4264),
+Runs all twelve shared hook scripts (`../scripts/`) under Cascade Hooks,
 in thirteen registrations.
 
 > ## ⚠️ UNVERIFIED, AND UNLIKE THE OTHERS IT CANNOT BE VERIFIED AUTOMATICALLY.
@@ -21,7 +21,7 @@ in thirteen registrations.
 > vendor-documented — this adapter has the strongest contract of the four new
 > ones after Qwen's, and the weakest verification story of all five.
 
-> ⚠️ **These hooks do nothing outside a Juscribe project** (#4404). Each runs
+> ⚠️ **These hooks do nothing outside a Juscribe project**. Each runs
 > only when the payload's `cwd` is inside a git repository whose toplevel holds
 > a `.jus/` directory; everywhere else they exit 0 in silence. That is the
 > shared scripts' behaviour, so it applies here however this adapter is
@@ -69,7 +69,7 @@ registers every hook twice and fires each twice per action. Pick one.
 
 ## Every command is `jus hook`, so `jus` has to be on PATH
 
-Since #4759 no command in this manifest names a location — each is
+Since the manifests moved to `jus hook`, no command in this manifest names a location — each is
 `jus hook [--adapt windsurf] <name>`, and `jus` resolves the bundle at run time.
 `../tests.sh` holds every manifest to that shape, and refuses one
 carrying a path, a `~` or a `$`.
@@ -79,12 +79,12 @@ when the directory it names does not exist.** `JUS_SKILLS_DIR`, then the
 Homebrew prefix, then `~/.jus-skills`: the first one found answers. So a typo in
 that variable silently disables every guard while a healthy clone sits in
 `~/.jus-skills`. It is **not** layered overrides with the most specific last,
-which is how an eye trained on git config or eslint will read it.
+which is how an eye trained on git config or a linter's cascading config will read it.
 
 ⚠️ **What that moves, rather than removes, is the requirement.** The old form
 needed a shell to expand `~` at the start of a word, and a tilde one character
 later was a literal, a command not found, exit 127, and an adapter reading
-fail-**open** — every hook dead with no output (#4417). The new form needs
+fail-**open** — every hook dead with no output. The new form needs
 `jus` on `PATH` wherever Windsurf spawns a hook. The failure shape is the same
 one, so if the guards go quiet, check that first: `jus hook --where` prints
 which bundle answered, and `jus doctor` says so too.
@@ -95,7 +95,7 @@ which bundle answered, and `jus doctor` says so too.
 all: the five `pre_*` events block on exit 2 and every other exit proceeds. That
 is exactly what the thirteen shared scripts already do, so there is no response
 handling here whatsoever — the shim `exec`s the target and the exit code carries
-through untouched. Compare Antigravity (#4262), which needs a JSON answer on
+through untouched. Compare Antigravity, which needs a JSON answer on
 stdout for every invocation.
 
 What does need normalising is that **Cascade names its events after the action
@@ -125,8 +125,8 @@ writing, running commands and MCP, plus `pre_user_prompt`,
 `post_cascade_response`, `post_cascade_response_with_transcript` and
 `post_setup_worktree`. Nothing fires at session end.
 
-So `jus-stop-uncommitted.sh` has **no home**. On Cursor (#4261) and Antigravity
-(#4262) it degrades to advice because their stop events cannot refuse; here there
+So `jus-stop-uncommitted.sh` has **no home**. On Cursor and Antigravity
+it degrades to advice because their stop events cannot refuse; here there
 is nothing to attach it to at all.
 
 **It is registered on `post_cascade_response` instead** — which fires after every
@@ -154,7 +154,7 @@ _names_, which is its own ticket.
 is not installed on the machine this was written on and has no headless mode, so
 whether it ever sends an empty string is unmeasured — the tests pin the shim's
 contract rather than a captured payload. The class and the audit:
-[`../README.md`](../README.md) (#4428).
+[`../README.md`](../README.md).
 
 ## Event mapping
 
@@ -198,7 +198,7 @@ origin main`."**
 ## Skills
 
 Windsurf reads `.agents/skills/` natively, so the canonical install works
-unchanged — see `installing-the-bundle.md`.
+unchanged — see the bundle [README](../../README.md) → _Every install path_.
 
 ## Tests
 

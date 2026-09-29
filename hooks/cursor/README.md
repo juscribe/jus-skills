@@ -1,7 +1,7 @@
 # jus enforcement hooks — Cursor adapter
 
 Runs all thirteen shared hook scripts (`../scripts/`) under Cursor's native
-hooks system (#4261).
+hooks system.
 
 > ## ✅ LIVE-VERIFIED ON BOTH HOSTS — the CLI and the editor
 >
@@ -17,8 +17,8 @@ hooks system (#4261).
 >
 > ⚠️ **An unmoved tip is a result only if the tip COULD have moved, and that
 > has failed twice, differently.** On the CLI the model declined the overwrite on
-> its own (#4261). In the editor a previous arm's overwrite had already landed,
-> so the remote matched local and nothing could have moved it (#4429). Both look
+> its own. In the editor a previous arm's overwrite had already landed,
+> so the remote matched local and nothing could have moved it. Both look
 > exactly like a working hook.
 >
 > ⚠️ **The two hosts differ in one direction only:** a headless `cursor-agent -p`
@@ -27,9 +27,9 @@ hooks system (#4261).
 >
 > Method, event-by-event firing table and the payload shapes: _Live-verified_ below.
 
-> ⚠️ **These hooks do nothing outside a Juscribe project** (#4404). Each runs
+> ⚠️ **These hooks do nothing outside a Juscribe project**. Each runs
 > only when the payload's `cwd` is inside a git repository with a `.jus/`
-> directory in that folder or one above it, up to the toplevel (#4969);
+> directory in that folder or one above it, up to the toplevel;
 > everywhere else they exit 0 in silence. That is the
 > shared scripts' behaviour, so it applies here however this adapter is
 > installed — including a user-scope install that every project on the machine
@@ -57,7 +57,7 @@ cp ~/.jus-skills/hooks/cursor/hooks.json ~/.cursor/hooks.json
 
 ⚠️ **Do not install at both scopes.** Cursor merges what it finds, so every hook
 registers twice and fires twice per event — the same trap
-`installing-the-bundle.md` documents for Claude Code, with the same symptom:
+Claude Code has, with the same symptom:
 nothing fails, a counter just doubles.
 
 ⚠️ **The hooks load either way, but the editor's sandbox cannot reach the
@@ -66,9 +66,34 @@ project's `.cursor/sandbox.json`. Auto-review, the default mode, sandboxes
 shell commands. The bundle [README](../../README.md) → _Network allowlist_
 has the entry. The CLI's sandbox is off by default.
 
+### Or install it as a plugin
+
+The bundle ships `.cursor-plugin/plugin.json`, and its `hooks` field points at
+this directory's `hooks.json`, so the plugin registers these hooks as well as
+the skills. Install it from the editor (the CLI has no install command, only
+`agent plugin marketplace add`), or load a local copy with
+`cursor-agent --plugin-dir <dir>` or a folder under `~/.cursor/plugins/local/`.
+Measured on `cursor-agent` 2026.09.18: `git commit --no-verify` refused, the
+same commit without the flag ran, and the bypass went through once the plugin
+was removed.
+
+⚠️ **The plugin brings the registrations, not the scripts.** Every hook runs
+`jus hook <name>`, which finds its script in `JUS_SKILLS_DIR`, a Homebrew
+bundle or the `~/.jus-skills` clone — never in the plugin's own copy. On a
+machine with none of them, **every hook fails open, in silence**. `jus init`
+makes the clone; a plugin installed by hand does not, so clone it too.
+
+⚠️ **Plugin or manifest, never both** — the hooks would fire twice.
+
+⚠️ **A manifest that fails Cursor's schema is dropped in silence**, `hooks`
+pointer included, while the skills still load by directory convention — so a
+broken plugin **looks** installed. `author` must be `{"name": …}`; a spec holds
+that shape. A plugin hook runs with its working directory at the plugin root
+and `"cwd": ""` in the payload.
+
 ## Every command is `jus hook`, so `jus` has to be on PATH
 
-Since #4759 no command in this manifest names a location — each is
+Since the manifests moved to `jus hook`, no command in this manifest names a location — each is
 `jus hook --adapt cursor <name>`, and `jus` resolves the bundle at run time.
 `../tests.sh` holds every manifest to that shape and refuses one
 carrying a path, a `~` or a `$`.
@@ -78,7 +103,7 @@ when the directory it names does not exist.** `JUS_SKILLS_DIR`, then the
 Homebrew prefix, then `~/.jus-skills`: the first one found answers. So a typo in
 that variable silently disables every guard while a healthy clone sits in
 `~/.jus-skills`. It is **not** layered overrides with the most specific last,
-which is how an eye trained on git config or eslint will read it.
+which is how an eye trained on git config or a linter's cascading config will read it.
 
 ✅ **Cursor reaches it through a shell, which is how `jus` is found on `PATH`.**
 Cursor does not spawn the command directly: `executeCommandScript` builds
@@ -94,11 +119,11 @@ nothing else. `../tests.sh` runs the manifest's own first command through that
 exact transport, against a staged bundle, and asserts it still blocks a
 force-push.
 
-⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until #4759
+⚠️ **THE OLD TILDE TRAP IS GONE AND ITS FAILURE SHAPE IS NOT.** Until the manifests moved to `jus hook`,
 every command named `~/.jus-skills/…`; a shell expands `~` only at the START of
 a word, so `"~/.jus-skills/..."` or `--flag=~/...` was a literal, the command
 was not found, the exit was 127, and Cursor reads a non-2 exit as
-fail-**open** — every hook silently dead, session looking healthy (#4417). A
+fail-**open** — every hook silently dead, session looking healthy. A
 missing `jus` on `PATH` produces exactly that, so it is the first thing to
 check when the guards go quiet: `jus hook --where` prints which bundle
 answered, and `jus doctor` says so too.
@@ -120,6 +145,13 @@ publishers. So neither host puts an approval in front of the hooks.
 says nothing.** Same directory, same manifest, `.cursor/hooks.json` replaced by a
 symlink to an identical file: hooks fired **1** time before and **0** after. So
 do not symlink it at a shared clone — copy it, as _Setup_ says.
+
+⚠️ **A headless `cursor-agent -p` refuses every shell command without
+`--force`, `jus` included.** Its own Auto-review blocks each one: _"blocked by
+Auto-review and could not be run, even after requesting approval"_, measured on
+2026.09.15. Pass `--force`, which approves every call "unless explicitly
+denied", so a hook's deny still applies. Without it, a refusal proves nothing
+about the hooks.
 
 ⚠️ **Approval does not outrank a hook, which is the point.** `--force` (and
 its alias `--yolo`) auto-approve every tool call, and the force-push guard denied
@@ -160,7 +192,7 @@ What does need a shim is that Cursor splits shells, edits and prompts into their
 ✅ **The shell events are why this adapter is the sturdiest of the five.**
 `beforeShellExecution` hands over `command` directly, so the five command
 blockers never have to guess what Cursor calls its shell tool — the failure mode
-that forces shape-inference on Copilot (#4260) does not arise here.
+that forces shape-inference on Copilot does not arise here.
 
 ## The five degradations
 
@@ -217,7 +249,7 @@ fires `sessionStart`, the tool events and `sessionEnd`, and neither
 same build fires both, as documented.
 
 ✅ **The editor fires both as well** — two to three of each per arm, across
-three arms in Cursor 3.21.16 on 2026-09-20 (#4429). So this degradation belongs
+three arms in Cursor 3.21.16 on 2026-09-20. So this degradation belongs
 to the headless CLI rather than to Cursor, and the two hooks it kills are live
 for anyone working in the editor.
 
@@ -247,7 +279,7 @@ manifest registering only `afterFileEdit` therefore sees no Tab edit at all, and
 `jus-track-edits.sh`, `jus-start-comment-nudge.sh` and `jus-docs-nudge.sh` go
 blind to a whole way of working with nothing failing anywhere.
 
-✅ **Since #4429 this manifest registers `afterTabFileEdit` for those same three
+✅ **Since the editor was measured, this manifest registers `afterTabFileEdit` for those same three
 hooks**, and the shim maps it through the `afterFileEdit` branch. What stays
 degraded is that a Tab edit **cannot be refused**: like `afterFileEdit` it fires
 after the write, and Cursor has no before-tab-edit event — degradation 2 with a
@@ -375,7 +407,7 @@ Cursor.** No Claude event maps to `beforeShellExecution`, so a repo relying on
 `.claude/settings.json` alone has **no command blockers under Cursor at all** —
 it just looks like it does, because the hooks are configured and running.
 
-✅ **`jus doctor` reports this, so it is no longer only written down** (#4430).
+✅ **`jus doctor` reports this, so it is no longer only written down**.
 Documentation was the wrong instrument: the person at risk is precisely the one
 who believes they are already set up and therefore does not read this section.
 The check fires on three terms together — jus hooks in a Claude settings file,
@@ -395,7 +427,7 @@ Cursor too, so there is no Claude-only location to move them to.
 
 ⚠️ **`cwd` arrives as `""` on every event that has it, and jq's `//` keeps it** —
 the trap, the audit of all seven shims and the two conditions a test in this
-class needs are in [`../README.md`](../README.md) (#4261, #4428).
+class needs are in [`../README.md`](../README.md).
 
 ## Live-verified
 
@@ -404,10 +436,10 @@ this section** — a sentence here is about one of them, not about Cursor.
 
 ### The CLI — cursor-agent 2026.09.15-d2fe57e
 
-**macOS, 2026-09-17 (#4261).** The fixture is a
+**macOS, 2026-09-17.** The fixture is a
 throwaway git repository with a **local bare remote** beside it, a `.jus/`
 directory at its toplevel, and `.cursor/hooks.json` copied from this manifest
-with the bundle staged under a throwaway `HOME` (before #4759 this meant
+with the bundle staged under a throwaway `HOME` (before the manifests moved to `jus hook` this meant
 rewriting `~/.jus-skills/hooks` in the manifest; it now means `HOME` alone).
 Local and
 remote were deliberately diverged, so a plain push is refused and only a force
@@ -449,7 +481,7 @@ Prompted to use its edit tool instead, the event fires with
 `MultiEdit`. **If you re-measure this, say which tool made the edit**; the two
 are indistinguishable in the firing table alone.
 
-⚠️ **"All nineteen" was this section's own count until #4429, and it was two
+⚠️ **"All nineteen" was this section's own count until the editor measurement, and it was two
 short.** Every one of the 21 names the probe registers is present in
 2026.09.15-d2fe57e's bundle; the record does not say which two the earlier count
 omitted, so do not reconstruct it — register the map and let the table say what
@@ -473,7 +505,7 @@ over the bug.
 
 ### The editor — Cursor 3.21.16
 
-**macOS, 2026-09-20 (#4429).** Same fixture shape, driven by hand in the editor
+**macOS, 2026-09-20.** Same fixture shape, driven by hand in the editor
 because no agent can type into a GUI. Three arms, each a recorder on all 21
 events: `probe` (recorder only), `hook` (recorder **and** this bundle's guards,
 pointed at a staged copy), `control` (recorder only again). 96 hook invocations.
@@ -519,7 +551,7 @@ fired `afterTabFileEdit` with `model: "tab"`, a null `transcript_path` and an
 
 ⚠️ **Say which tool made the edit, on either host.** A zero on `afterFileEdit`
 means "the model used a shell redirect" as readily as "the event does not fire",
-and the firing table cannot tell them apart — the #4261 trap, still live here.
+and the firing table cannot tell them apart — the trap the CLI measurement fell into, still live here.
 
 #### `cwd` in the editor: absent as often as empty
 
@@ -528,7 +560,7 @@ and the firing table cannot tell them apart — the #4261 trap, still live here.
 | `beforeShellExecution`, `postToolUseFailure`      | `""`                |
 | `preToolUse`, `postToolUse`, `afterFileEdit`, Tab | **no field at all** |
 
-Both are the #4428 class and both are handled, because the shim treats empty and
+Both are the empty-string class and both are handled, because the shim treats empty and
 absent alike and falls through to `workspace_roots` — present on every editor
 payload measured. A shim written against the CLI's `""` alone would still be
 correct here; one written against `.cwd // …` would not.
