@@ -22,6 +22,17 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.45] — 2026-09-30
+
+### Changed
+
+- Record how the juscribe chat plugin is packaged, and what Cowork and ChatGPT would need (#5358)
+- Add a juscribe plugin that bundles the connector with the skills for Claude chat (#5358)
+- Take this board's ticket number out of the shipped description guard (#5441)
+- Count every Done-panel state in an iteration's done count (#5440)
+- Read a body file after a quoted ticket path (#5438)
+- Guard a description body the command does not show (#5438)
+
 ## [1.4.44] — 2026-09-28
 
 ### Changed

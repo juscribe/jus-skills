@@ -462,6 +462,70 @@ assert_exit 2 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \
   "#999 is accepted"
 rm -rf "$GUARD_PROJECT"
 
+# ⚠️ #5438 — A BODY THE COMMAND DOES NOT SHOW. The guard decided "description
+# edit or not" from the command text alone, so a body in a file written by an
+# EARLIER tool call, `"$(cat body.json)"` (what AGENTS.md prescribes for prose)
+# or `< body.json` passed without the state ever being read. A file the command
+# only reads is read here too; any body the hook still cannot see is checked
+# against the state and refused on a closed ticket.
+BODY_PROJECT=$(mktemp -d)
+printf '%s' '{"ticket":{"description":"rewritten"}}' > "$BODY_PROJECT/desc.json"
+printf '%s' '{"ticket":{"label_ids":[1]}}' > "$BODY_PROJECT/labels.json"
+# Already on disk, and harmless: the case below overwrites it in the same
+# command, so what the hook reads now says nothing about what gets sent.
+printf '%s' '{"ticket":{"label_ids":[1]}}' > "$BODY_PROJECT/body.json"
+printf '%s' '{"ticket":{"description":"rewritten"}}' > "$BODY_PROJECT/rewrite.txt"
+body_event() {
+  jq -cn --arg cwd "$BODY_PROJECT" --arg cmd "$1" '{tool_name:"Bash",cwd:$cwd,tool_input:{command:$cmd}}'
+}
+GUARD="$SCRIPTS/jus-block-accepted-manifest-edit.sh"
+
+stub_jus accepted
+t "blocks a description body in an @file an earlier command wrote"
+assert_exit 2 "$GUARD" "$(body_event 'jus api PATCH /workspaces/1/tickets/999 @desc.json')" "#999 is accepted"
+
+t "blocks a description body passed as \$(cat file)"
+assert_exit 2 "$GUARD" "$(body_event 'jus api PATCH /workspaces/1/tickets/999 "$(cat desc.json)"')" \
+  "#999 is accepted"
+
+t "blocks a description body redirected in with <"
+assert_exit 2 "$GUARD" "$(body_event 'jus api PATCH /tickets/999 < desc.json')" "#999 is accepted"
+
+t "allows a labels-only @file on an accepted ticket"
+assert_exit 0 "$GUARD" "$(body_event 'jus api PATCH /workspaces/1/tickets/999 @labels.json')"
+
+t "allows a labels-only \$(cat file) on an accepted ticket"
+assert_exit 0 "$GUARD" "$(body_event 'jus api PATCH /workspaces/1/tickets/999 "$(cat labels.json)"')"
+
+t "refuses a body it cannot read on an accepted ticket, and says why"
+assert_exit 2 "$GUARD" "$(body_event 'jus api PATCH /workspaces/1/tickets/999 @missing.json')" \
+  "cannot see this PATCH's body"
+
+t "does not trust a body file the same command also writes"
+assert_exit 2 "$GUARD" \
+  "$(body_event 'cp rewrite.txt body.json && jus api PATCH /workspaces/1/tickets/999 @body.json')" \
+  "cannot see this PATCH's body"
+
+# The path may be quoted, and the match includes only the OPENING quote: the
+# closing one is the first thing after it.
+t "reads a body file after a quoted path"
+assert_exit 0 "$GUARD" "$(body_event "jus api PATCH '/workspaces/1/tickets/999' @labels.json")"
+
+t "blocks a description body file after a quoted path"
+assert_exit 2 "$GUARD" "$(body_event "jus api PATCH \"/tickets/999\" @desc.json")" "#999 is accepted"
+
+t "refuses a piped body on an accepted ticket"
+assert_exit 2 "$GUARD" "$(body_event 'cat rewrite.txt | jus api PATCH /tickets/999')" \
+  "cannot see this PATCH's body"
+
+stub_jus prioritized
+t "allows a body it cannot read on an open ticket"
+assert_exit 0 "$GUARD" "$(body_event 'jus api PATCH /workspaces/1/tickets/999 @missing.json')"
+
+t "allows a description @file on an open ticket"
+assert_exit 0 "$GUARD" "$(body_event 'jus api PATCH /workspaces/1/tickets/999 @desc.json')"
+rm -rf "$BODY_PROJECT"
+
 stub_jus prioritized
 t "allows a description PATCH on an open ticket"
 assert_exit 0 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" \

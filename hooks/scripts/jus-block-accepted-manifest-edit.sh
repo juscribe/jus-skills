@@ -74,7 +74,70 @@ ticket_path="/${ticket_path#*/}"
 
 # Only a description rewrite is forbidden. Editing labels, points or assignees
 # on a closed ticket is ordinary bookkeeping.
-[[ "$command" == *description* ]] || exit 0
+#
+# ⚠️ THE COMMAND TEXT IS NOT ALWAYS THE BODY. Deciding from the command
+# alone let a description through whenever the body was somewhere the command
+# does not show: a file an EARLIER tool call wrote, `"$(cat body.json)"` (what
+# AGENTS.md prescribes for prose), `< body.json`, a pipe. So:
+#   - the command says `description`          -> a description edit, as before
+#   - an inline JSON or heredoc body that does not -> bookkeeping, allowed
+#   - a file the command only reads             -> read it, and decide the same way
+#   - anything else                             -> `unknown`, refused on a closed ticket
+#
+# Echoes `description`, `bookkeeping` or `unknown` for the text after the ticket
+# path. Patterns live in variables because bash 3.2 (macOS's stock bash, which
+# hooks must run on) mis-parses some regexes written inline after `=~`.
+body_kind() {
+  local rest="$1" file="" first_char
+  # A quoted path's match stops before its closing quote, so that quote is the
+  # first thing here: `jus api PATCH '/tickets/9' @body.json`.
+  [[ "${rest:0:1}" == "'" || "${rest:0:1}" == '"' ]] && [[ "${rest:1:1}" == [[:space:]] ]] && rest="${rest:1}"
+  rest="${rest#"${rest%%[![:space:]]*}"}"
+  first_char="${rest:0:1}"
+  local at_re='^["'"'"']?@([^"'"'"'[:space:];&|)]+)'
+  local sub_re='^["'"'"']?\$\((cat[[:space:]]+|<[[:space:]]*)([^)[:space:]]+)[[:space:]]*\)'
+  local redirect_re='^<[[:space:]]*([^<[:space:];&|]+)'
+  if [[ "$first_char" == "{" || "${rest:0:2}" == "'{" || "${rest:0:2}" == '"{' || "${rest:0:2}" == "<<" ]]; then
+    # An inline or heredoc body is IN the command text, which has already been
+    # searched for the word.
+    echo bookkeeping
+    return
+  fi
+  if [[ "$rest" =~ $at_re ]]; then
+    file="${BASH_REMATCH[1]}"
+  elif [[ "$rest" =~ $sub_re ]]; then
+    file="${BASH_REMATCH[2]}"
+  elif [[ "$rest" =~ $redirect_re ]]; then
+    file="${BASH_REMATCH[1]}"
+  fi
+  # No file, or one the same command also writes (it appears there more than
+  # once, e.g. `cp x.json body.json && … @body.json`): what is on disk now says
+  # nothing about what gets sent.
+  if [[ -z "$file" ]]; then
+    echo unknown
+    return
+  fi
+  local occurrences
+  occurrences=$( (grep -oF -- "$file" <<<"$command" || true) | wc -l | tr -d ' ')
+  if [[ "$occurrences" != 1 ]]; then
+    echo unknown
+    return
+  fi
+  [[ "$file" == /* ]] || file="$cwd/$file"
+  if [[ ! -f "$file" || ! -r "$file" ]]; then
+    echo unknown
+  elif grep -q description "$file"; then
+    echo description
+  else
+    echo bookkeeping
+  fi
+}
+
+edit=description
+if [[ "$command" != *description* ]]; then
+  edit=$(body_kind "${command##*"$match"}")
+  [[ "$edit" == bookkeeping ]] && exit 0
+fi
 
 # ⚠️ `jus api` prints an "HTTP 200" status line (with colour codes) BEFORE the
 # JSON body, so piping it straight into jq fails with "Invalid numeric literal"
@@ -97,6 +160,21 @@ fi
 
 case "$state" in
   accepted | cancelled)
+    if [[ "$edit" == unknown ]]; then
+      cat >&2 <<EOF
+[jus:hard-rules] BLOCKED: #${ticket_id} is ${state}, and this hook cannot see this PATCH's body.
+
+The body is not in the command and not in a file the command only reads, so it
+may rewrite the description of a closed ticket, which is refused.
+
+If the PATCH does not touch the description, send the body inline, or as @file
+written by an EARLIER command so this hook can read it. To correct or add to a
+closed ticket, POST A COMMENT instead:
+
+  jus api POST ${ticket_path}/comments "\$(cat body.json)"
+EOF
+      exit 2
+    fi
     cat >&2 <<EOF
 [jus:hard-rules] BLOCKED: #${ticket_id} is ${state} — do not rewrite its description.
 
