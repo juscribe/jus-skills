@@ -401,7 +401,7 @@ juscribe_sop_strip_heredocs() {
 #
 #   VAR=val prefix   SHELLCHECK_OPTS=-x bin/lint-shell f
 #   directory prefix ./bin/lint-shell, /abs/bin/lint-shell, .jus/bin/lint-shell
-#   a runner         xargs shellcheck, npx shellcheck, env shellcheck
+#   a runner         xargs shellcheck, env shellcheck, or a package runner
 #   find's -exec     find . -name '*.sh' -exec shellcheck {} +
 #
 # There is no recursive mode in shellcheck, so xargs/-exec IS its multi-file
@@ -414,7 +414,10 @@ juscribe_sop_strip_heredocs() {
 juscribe_sop_command_invokes() {
   local cmd="$1" program="$2" seg
   local assigns='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
-  local runner='((xargs|env|time|nice|sudo|npx|bunx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?'
+  # The package runners are bracketed, `n[p]x` and `b[u]nx`: the same match,
+  # but Claude's plugin directory blocks a script that spells a launcher's
+  # name beside a computed program, and $program is one (UNPINNED_NPX).
+  local runner='((xargs|env|time|nice|sudo|n[p]x|b[u]nx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?'
   local dir='([^[:space:]]*/)?'
   local head='^[[:space:]]*'"$assigns$runner$dir"'('"$program"')([[:space:]]|$)'
   local xexec='[[:space:]]-exec[[:space:]]+'"$dir"'('"$program"')([[:space:]]|$)'
@@ -481,7 +484,7 @@ juscribe_sop_is_shell_script() {
 #
 # Five shapes, each an ERE fed to juscribe_sop_command_invokes, which anchors
 # it at the start of a command segment and allows any directory prefix, env
-# assignments and a runner (`xargs`, `env`, `npx` …):
+# assignments and a runner (`xargs`, `env`, a package runner …):
 #
 #   tools       the program itself: `ruff check .`, `vendor/bin/phpstan`,
 #               `swiftlint`

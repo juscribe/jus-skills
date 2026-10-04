@@ -1347,7 +1347,7 @@ section "jus-pre-commit-gate.sh: any stack's linters (#5374)"
 ANY_LINTS=(
   "ruff check ." "uv run pytest -q" "python -m pytest" "uv run python -m pytest" "poetry run mypy src" "pytest"
   "cargo clippy --all-targets" "cargo test" "go vet ./..." "golangci-lint run"
-  "npx eslint ." "npm run lint" "npm test" "yarn test" "bun test" "pnpm exec eslint a.ts"
+  "npx eslint ." "bunx eslint ." "npm run lint" "npm test" "yarn test" "bun test" "pnpm exec eslint a.ts"
   "./gradlew check" "mvn -q verify" "make lint" "just test" "mix test" "dotnet test"
   "swiftlint" "bundle exec rubocop" "bin/rspec spec/a_spec.rb" "script/test" "bin/ci"
 )

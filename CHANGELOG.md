@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.47] — 2026-10-03
+
+### Changed
+
+- Give Claude's directory the plugin's icon and links (#5607)
+- Clear Claude plugin directory's npx and privacy findings (#5607)
+
 ## [1.4.46] — 2026-10-03
 
 ### Changed
