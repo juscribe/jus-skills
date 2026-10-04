@@ -217,6 +217,17 @@ juscribe_sop_require_jus_project() {
 # Resolve the per-session state directory.
 # Argument: $1 = session_id (may be empty)
 # Echoes the directory path. Caller decides whether to mkdir.
+# Exit the hook, silently, when the `jus` command it is about to run is not
+# installed. One plugin serves chat, Cowork and Claude Code, and Cowork
+# loads the hooks where nobody installed jus; a note there is noise, and the
+# command being guarded could not run either.
+# Argument: $1 = the command (default: jus)
+juscribe_sop_require_jus() {
+  command -v "${1:-jus}" >/dev/null 2>&1 && return 0
+  JUSCRIBE_SOP_OUTCOME=no-jus
+  exit 0
+}
+
 juscribe_sop_state_dir() {
   local session_id="${1:-}"
   local base="${CLAUDE_PLUGIN_DATA:-${TMPDIR:-/tmp}/jus}"

@@ -75,18 +75,21 @@ juscribe_sop_cli_floor_due() {
   return 0
 }
 
-# Echo one plain sentence when the CLI is missing, unreadable or older than the
-# floor, and nothing when it is new enough or the floor cannot be read. Always
-# exits 0. The caller decides how the sentence reaches the agent and the user.
+# Echo one plain sentence when the CLI is unreadable or older than the floor,
+# and nothing when it is new enough, missing, or the floor cannot be read.
+# Always exits 0. The caller decides how the sentence reaches the agent and the
+# user.
+#
+# ⚠️ A MISSING CLI SAYS NOTHING. One plugin serves chat, Cowork and
+# Claude Code, and Cowork loads the hooks where nobody installed `jus`, so "it
+# is not installed" was noise there every session. A hook cannot tell that
+# session from a coder without the CLI; `jus doctor` and the README tell the
+# coder.
 # Argument: $1 = the jus command
 juscribe_sop_cli_floor_check() {
   local jus="$1" floor raw said have
   floor=$(juscribe_sop_cli_floor) || return 0
-
-  if ! command -v "$jus" >/dev/null 2>&1; then
-    echo "The jus CLI is not installed, and this plugin needs jus ${floor} or newer. Install it with: brew install juscribe/tap/jus"
-    return 0
-  fi
+  command -v "$jus" >/dev/null 2>&1 || return 0
 
   raw=$("$jus" version </dev/null 2>/dev/null) || raw=""
   raw="${raw%%$'\n'*}"

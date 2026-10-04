@@ -22,6 +22,14 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.46] — 2026-10-03
+
+### Changed
+
+- Use the Juscribe mark as the ChatGPT plugin icon (#5449)
+- Give the jus plugin OpenAI's manifest, so it uploads to ChatGPT (#5449)
+- Name no ticket in three hook comments (#5594)
+
 ## [1.4.45] — 2026-09-30
 
 ### Changed

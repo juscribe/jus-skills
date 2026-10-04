@@ -2182,7 +2182,7 @@ assert_jq() {
   fi
 }
 
-assert_jq "plugin.json is valid JSON named \"jus\"" "$PLUGIN_JSON" '.name == "jus"'
+assert_jq "plugin.json is valid JSON named \"jus\", shown as Juscribe" "$PLUGIN_JSON" '.name == "jus" and .displayName == "Juscribe"'
 # The version is asserted by shape, not value: plugin.json is the single source
 # of truth (bin/publish-skills reads it), so pinning a literal here just breaks
 # the harness on every release bump (that exact drift shipped once: 1.0.1→1.1.0).
@@ -2192,7 +2192,7 @@ assert_jq "plugin.json has an author name" "$PLUGIN_JSON" '.author.name | type =
 
 assert_jq "marketplace.json is valid JSON named \"jus-skills\"" "$MARKET_JSON" '.name == "jus-skills"'
 assert_jq "marketplace.json has an owner name" "$MARKET_JSON" '.owner.name | type == "string" and length > 0'
-assert_jq "marketplace.json lists the jus plugin" "$MARKET_JSON" '[.plugins[].name] | index("jus") != null'
+assert_jq "marketplace.json lists the jus plugin, and only it (#5594)" "$MARKET_JSON" '[.plugins[].name] == ["jus"]'
 assert_jq "jus plugin source is \"./\" (manifest at marketplace root)" "$MARKET_JSON" '.plugins[] | select(.name == "jus") | .source == "./"'
 # Avoid the dual-version staleness gotcha: marketplace entry must NOT pin a
 # version — plugin.json is the single source of truth and silently wins.
@@ -4214,18 +4214,35 @@ done
 
 # #2183: an agent with another tracker's skills loaded can route generic
 # ticket language ("#123", board, backlog) away from Juscribe. The description
-# is the router's matching surface, so the disambiguation lives there and is
-# pinned here so it cannot drift out.
+# is the router's matching surface, so the claim that this language means
+# Juscribe lives there, and the "by default" assertions below pin it.
 assert_match "ticket-workflow: description claims generic ticket language for Juscribe" \
-  "$PLUGIN_ROOT/skills/ticket-workflow/SKILL.md" "never a skill for any other issue tracker"
-assert_match "hard-rules: description disambiguates from other issue trackers" \
-  "$PLUGIN_ROOT/skills/hard-rules/SKILL.md" "not another issue tracker"
+  "$PLUGIN_ROOT/skills/ticket-workflow/SKILL.md" "so this skill is the one to invoke for them"
+
+# #5583 took out the half of #2183 that told the model to AVOID the other
+# tracker: "never a skill for any other issue tracker" and "not another issue
+# tracker". These skills ship to Claude's plugin directory, whose policy bars a
+# description that conflicts with other software or gets between Claude and
+# another product's tools (2.C, 2.E). Claiming the language is fine; steering
+# away from someone else's skill is not. Read off the description line only,
+# since a skill body may mention another tracker for its own reasons.
+for skill_file in "${skill_files[@]}"; do
+  skill_name="$(basename "$(dirname "$skill_file")")"
+  TESTS_RUN=$((TESTS_RUN + 1))
+  TEST_NAME="$skill_name: description does not steer the model away from another tracker's skill"
+  if sed -n 's/^description: //p' "$skill_file" | head -n 1 | grep -qiE 'other issue tracker|never a skill for'; then
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$TEST_NAME")
+    printf '  \033[31m✗\033[0m %s\n' "$TEST_NAME"
+  else
+    printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+  fi
+done
 
 # #5118 softened "always" to "by default": a bare #N is often a GitHub pull
 # request or issue, and the pickup hook now hands the model hints saying so. An
 # "always" in the router's matching surface would tell it to override them.
-# The #2183 phrases above stay, so board language still routes here unless the
-# wording names another system.
+# The "by default" claim keeps board language routing here unless the wording
+# names another system.
 assert_match "ticket-workflow: description routes to Juscribe by default" \
   "$PLUGIN_ROOT/skills/ticket-workflow/SKILL.md" "means Juscribe tickets by default"
 assert_match "hard-rules: description routes to Juscribe by default" \
@@ -4910,6 +4927,71 @@ rm -f "$UG_LOG"
 t "a command -v probe for an absent binary writes nothing to stderr"
 UG_PROBE=$(command -v jus_no_such_binary_4462 2>&1 >/dev/null)
 assert_stdout "$TEST_NAME" "" "$UG_PROBE"
+
+# ---- hooks without the jus CLI (#5594) ---------------------------------------
+
+section "hooks without the jus CLI (#5594)"
+
+# One plugin serves chat, Cowork and Claude Code now, and Cowork loads the hooks
+# in places nothing installed `jus`. The three scripts that run it — the
+# accepted-ticket guard, the docs nudge and the claim nudge — must say nothing
+# there, and change nothing where it is installed. Every other script runs no
+# `jus` at all; the ones that NAME it do so in the text they print.
+#
+# ⚠️ A PATH WITH bash, jq AND git AND NO jus. This Mac has a real jus in
+# /opt/homebrew/bin and the stub above sits on the exported PATH, so the
+# examples below would pass vacuously on either; the first one proves the PATH.
+NOJUS_BIN=$(mktemp -d)
+ln -s "$(command -v jq)" "$NOJUS_BIN/jq"
+NOJUS_PATH="$NOJUS_BIN:/usr/bin:/bin"
+NOJUS_DATA=$(mktemp -d)
+
+t "the jus-less PATH really has no jus on it"
+assert_stdout "$TEST_NAME" "" "$(PATH="$NOJUS_PATH" command -v jus || true)"
+
+# Exit 0 and not one byte on stdout or stderr. <name> <script> <input>
+assert_silent_without_jus() {
+  local name="$1" script="$2" input="$3" out ec=0
+  TESTS_RUN=$((TESTS_RUN + 1))
+  out=$(printf '%s' "$input" | PATH="$NOJUS_PATH" CLAUDE_PLUGIN_DATA="$NOJUS_DATA" "$script" 2>&1) || ec=$?
+  if [[ "$ec" -eq 0 && -z "$out" ]]; then
+    printf '  \033[32m✓\033[0m %s\n' "$name"
+  else
+    TESTS_FAILED=$((TESTS_FAILED + 1)); FAILURES+=("$name")
+    printf '  \033[31m✗\033[0m %s (exit=%s, out=%s)\n' "$name" "$ec" "${out:0:200}"
+  fi
+}
+
+NOJUS_PATCH=$(jq -cn --arg cmd "jus api PATCH /workspaces/1/tickets/999 '{\"ticket\":{\"description\":\"x\"}}'" \
+  '{tool_name:"Bash",session_id:"nojus-guard",tool_input:{command:$cmd}}')
+assert_silent_without_jus "the accepted-ticket guard allows silently with no jus to ask" \
+  "$SCRIPTS/jus-block-accepted-manifest-edit.sh" "$NOJUS_PATCH"
+
+# The same command, with jus installed and the ticket accepted, still blocks.
+stub_jus accepted
+t "the accepted-ticket guard still blocks, exit 2, when jus is installed"
+assert_exit 2 "$SCRIPTS/jus-block-accepted-manifest-edit.sh" "$NOJUS_PATCH" "accepted"
+
+NOJUS_PROJECT=$(mktemp -d)
+mkdir -p "$NOJUS_PROJECT/.jus"
+printf 'label:docker\tdocs/threat.md\twhat a compromised container can reach\n' > "$NOJUS_PROJECT/.jus/docs-nudges.tsv"
+NOJUS_STARTED=$(jq -cn --arg cmd 'jus api PATCH /workspaces/1/tickets/501/transition {"state":"started"}' \
+  '{tool_name:"Bash",session_id:"nojus-docs",tool_input:{command:$cmd}}')
+t "the docs nudge says nothing at pickup with no jus to fetch the ticket"
+NOJUS_DOCS_OUT=$(printf '%s' "$NOJUS_STARTED" \
+  | CLAUDE_PROJECT_DIR="$NOJUS_PROJECT" PATH="$NOJUS_PATH" CLAUDE_PLUGIN_DATA="$NOJUS_DATA" \
+    "$SCRIPTS/jus-docs-nudge.sh" 2>&1)
+assert_stdout "$TEST_NAME" "" "$NOJUS_DOCS_OUT"
+
+# ⚠️ THIS ONE TALKED UNTIL #5594, ON PURPOSE. #5080 told a session with no jus to
+# `brew install` it, once a session; that is noise on a surface with no shell,
+# and the plugin cannot tell a Cowork session from a coder without the CLI.
+NOJUS_PROMPT=$(jq -cn --arg cwd "$NOJUS_PROJECT" \
+  '{hook_event_name:"UserPromptSubmit",session_id:"nojus-claim",cwd:$cwd,prompt:"please work #3668"}')
+assert_silent_without_jus "the claim nudge says nothing, not even the CLI notice, with no jus" \
+  "$SCRIPTS/jus-ticket-claim-nudge.sh" "$NOJUS_PROMPT"
+
+rm -rf "$NOJUS_BIN" "$NOJUS_DATA" "$NOJUS_PROJECT"
 
 # ---- summary --------------------------------------------------------------
 

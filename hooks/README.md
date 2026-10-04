@@ -29,12 +29,13 @@ Read it back with `hooks/jus-liveness`, which separates the three states nothing
 can tell apart: **ran** (allowed or blocked — both are proof of life), **ran and could
 not tell where it was** (`cwd=no-cwd`, the shape Cursor's empty `cwd` left), and **never ran**.
 
-| Outcome              | Means                                      |
-| -------------------- | ------------------------------------------ |
-| `allowed`            | ran, looked, nothing to block              |
-| `blocked`            | ran and refused                            |
-| `no-jq` / `bad-json` | the fail-open paths                        |
-| `not-a-jus-project`  | ran, knew where it was, and it was not one |
+| Outcome              | Means                                                |
+| -------------------- | ---------------------------------------------------- |
+| `allowed`            | ran, looked, nothing to block                        |
+| `blocked`            | ran and refused                                      |
+| `no-jq` / `bad-json` | the fail-open paths                                  |
+| `not-a-jus-project`  | ran, knew where it was, and it was not one           |
+| `no-jus`             | ran, and the `jus` command it needs is not installed |
 
 ⚠️ **`cwd=` is a separate field from `outcome=`, and that is the point.** A guard can
 lose its cwd _and still be rescued_ by the shared `$PWD` fallback — which is exactly

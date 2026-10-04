@@ -147,6 +147,10 @@ fi
 # Run from the session's directory: jus finds the workspace that `{ws}` and a
 # bare path resolve against by walking up from its own working directory, the
 # same walk the command's jus made.
+#
+# ⚠️ NO jus, NOTHING TO ASK, AND NOTHING SAID. The note below is for a
+# lookup that failed; with no CLI there was no lookup.
+juscribe_sop_require_jus
 state=$(cd "$cwd" && jus api GET "${ticket_path}?fields=state" 2>/dev/null \
   | sed -n '/{/,$p' \
   | jq -r '.ticket.state // empty' 2>/dev/null || true)

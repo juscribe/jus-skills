@@ -1,6 +1,6 @@
 ---
 name: hard-rules
-description: Non-negotiable behavioral guardrails for Juscribe work — every-ticket lifecycle, COMMIT-IMMEDIATELY rule, no lint/test suppression, stakeholder-verbatim ticket descriptions (agent additions kept current), no false deliveries, external blockers when waiting on user input, where a new ticket gets filed, splitting a ticket blocked on a third party, steps-as-subtasks, no `git push`, and the document-discoveries protocol. Auto-invoke before committing, before editing a ticket description, before transitioning to finished/delivered, before filing or placing a new ticket, when work turns out to depend on someone outside the team, and on hitting an unfamiliar error or workaround. In a Juscribe-wired project, generic ticket and board language means Juscribe by default — not another issue tracker — unless the wording names another system (a PR, a GitHub issue, another tracker's key).
+description: Non-negotiable behavioral guardrails for Juscribe work — every-ticket lifecycle, COMMIT-IMMEDIATELY rule, no lint/test suppression, stakeholder-verbatim ticket descriptions (agent additions kept current), no false deliveries, external blockers when waiting on user input, where a new ticket gets filed, splitting a ticket blocked on a third party, steps-as-subtasks, no `git push`, and the document-discoveries protocol. Auto-invoke before committing, before editing a ticket description, before transitioning to finished/delivered, before filing or placing a new ticket, when work turns out to depend on someone outside the team, and on hitting an unfamiliar error or workaround. In a Juscribe-wired project, generic ticket and board language means Juscribe by default, unless the wording names another system (a PR, a GitHub issue, another tracker's key).
 allowed-tools: Bash(jus *), Bash(git *), Read, Grep, Glob, Edit, Write
 license: MIT
 ---
@@ -11,7 +11,7 @@ license: MIT
 
 > **Prerequisite:** this SOP runs on the `jus` CLI, which the bundle does **not** install (`brew install juscribe/tap/jus` + `jus login`/`jus init`). If a `jus` command reports `command not found`, `No token available` or `No Juscribe project found`, the CLI is missing, unauthenticated or run from outside the project — **surface the one-line setup step and stop; do not loop `jus` commands against an unconfigured CLI.** See `ticket-workflow/references/setup.md`. **No shell, but Juscribe's MCP tools connected** (a chat app)? Use the tools instead, as `ticket-workflow` → Phase 0 says, and never tell a chat user to install Homebrew or the CLI. The rules below still apply; the commit, lint, test and git ones do not.
 
-> **Every rule here is stated in full.** Where a section ends in a `references/` file, that file holds the same rule at length — the reasons, the measured failures, the edge cases. Open it when the situation it names is in front of you. The hooks back some rules mechanically, in Claude Code and in the eight other tools with an adapter, but only where they are installed; everywhere else each rule is prompt-level only, which makes following this skill **more** important. Which rule each hook backs: [`references/enforcement.md`](references/enforcement.md).
+> **Every rule here is stated in full.** Where a section ends in a `references/` file, that file holds the same rule at length — the reasons, the measured failures, the edge cases. Open it when the situation it names is in front of you. The hooks back some rules mechanically, in the nine coding tools that run them, but only where they are installed; everywhere else each rule is prompt-level only, which makes following this skill **more** important. Which rule each hook backs: [`references/enforcement.md`](references/enforcement.md).
 
 ## Core Principles
 
@@ -166,4 +166,4 @@ If any of these are true at the moment you're about to act, stop and reset:
 
 ## Related Skills
 
-- `ticket-workflow` — the single load-bearing SOP skill: full lifecycle phases, transitions, comments, delivery format, dependency handling, plus estimation, ticket types, labels, metadata, the testing gates, and the `jus` CLI / API reference. (Claude Code plugin installs show skill names prefixed with `jus:` — invoke the prefixed form there.)
+- `ticket-workflow` — the single load-bearing SOP skill: full lifecycle phases, transitions, comments, delivery format, dependency handling, plus estimation, ticket types, labels, metadata, the testing gates, and the `jus` CLI / API reference. (Where a plugin install shows skill names prefixed with `jus:`, invoke the prefixed form.)

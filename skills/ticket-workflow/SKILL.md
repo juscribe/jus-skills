@@ -1,6 +1,6 @@
 ---
 name: ticket-workflow
-description: The single load-bearing Juscribe SOP skill — the full ticket lifecycle from pickup to delivery, plus estimation, ticket types, labels, metadata, testing gates, and the complete `jus` CLI / API reference in bundled files this skill points at. Use when working any ticket — picking one up, transitioning state, investigating, sizing, labeling, writing tests, running pre-commit gates, calling `jus api`, committing, self-reviewing, finishing, delivering, handling rejections, processing batches, or resolving dependency blockers. Auto-invoke whenever a ticket ID (`#N`) or "work on this ticket" / "pick up backlog" / "deliver" / "rejected" appears. In a project wired to Juscribe (a `.jus/` directory or the `jus` CLI), bare ticket language — `#42`, the board, the backlog, deliver — means Juscribe tickets by default, unless the wording names another system (a PR, a GitHub issue, another tracker's key), so this skill is the one to invoke for them, never a skill for any other issue tracker.
+description: The single load-bearing Juscribe SOP skill — the full ticket lifecycle from pickup to delivery, plus estimation, ticket types, labels, metadata, testing gates, and the complete `jus` CLI / API reference in bundled files this skill points at. Use when working any ticket — picking one up, transitioning state, investigating, sizing, labeling, writing tests, running pre-commit gates, calling `jus api`, committing, self-reviewing, finishing, delivering, handling rejections, processing batches, or resolving dependency blockers. Auto-invoke whenever a ticket ID (`#N`) or "work on this ticket" / "pick up backlog" / "deliver" / "rejected" appears. In a project wired to Juscribe (a `.jus/` directory or the `jus` CLI), bare ticket language — `#42`, the board, the backlog, deliver — means Juscribe tickets by default, unless the wording names another system (a PR, a GitHub issue, another tracker's key), so this skill is the one to invoke for them.
 allowed-tools: Bash(jus *), Bash(git *), Bash(make *), Bash(cd *), Read, Grep, Glob, Edit, Write
 license: MIT
 ---
@@ -9,7 +9,7 @@ license: MIT
 
 > **This skill and `.jus/SOP.md` overlap deliberately.** `jus init` appends that file to your AI context so a project with no plugin still has an SOP. This skill covers the same lifecycle in more depth and is kept more current: where the two differ, this one wins.
 >
-> Read it when working any ticket. It is the **single load-bearing skill** for Juscribe work. This file is the order of the lifecycle and, at each step, the reference file to open before it. What each step requires sits in that file, and so do the `jus` API, estimation, types, dependencies, subtasks and conversion: none of it costs anything until you open it. The companion [`hard-rules`](#related-skills) skill carries the must/must-not. Harnesses that run the jus hooks (Claude Code, with Codex and Kimi adapters) enforce the worst of those deterministically; everywhere else they are prompt-level only.
+> Read it when working any ticket. It is the **single load-bearing skill** for Juscribe work. This file is the order of the lifecycle and, at each step, the reference file to open before it. What each step requires sits in that file, and so do the `jus` API, estimation, types, dependencies, subtasks and conversion: none of it costs anything until you open it. The companion [`hard-rules`](#related-skills) skill carries the must/must-not. Harnesses that run the jus hooks enforce the worst of those deterministically; everywhere else they are prompt-level only.
 
 The lifecycle, in one line:
 
@@ -27,7 +27,7 @@ This SOP drives the board through the **`jus` CLI**, which the bundle does not i
 
 **Do not loop `jus` commands against an unconfigured CLI, or against a 401.** Surface the one setup step the error points to, and stop.
 
-**No shell, but Juscribe's MCP tools are connected?** That is a chat app such as Claude, ChatGPT or Gemini, or any AI tool with the Juscribe connector and no terminal. Use the tools: each recipe in these files is followed by an **MCP:** line naming the tool that does the same job, or saying none does and what to do instead. Every board rule here still applies. The commit, lint, test, branch and git steps do not, since there is no repository. **Never tell a chat user to install Homebrew or the CLI.**
+**No shell, but Juscribe's MCP tools are connected?** That is a chat app, or any AI tool with the Juscribe connector and no terminal. Use the tools: each recipe in these files is followed by an **MCP:** line naming the tool that does the same job, or saying none does and what to do instead. Every board rule here still applies. The commit, lint, test, branch and git steps do not, since there is no repository. **Never tell a chat user to install Homebrew or the CLI.**
 
 ## Each step, and the file to open before it
 
@@ -77,4 +77,4 @@ This SOP drives the board through the **`jus` CLI**, which the bundle does not i
 
 ## Related Skills
 
-- `hard-rules` — the non-negotiable must/must-not that overrides everything here (commit immediately, no lint suppression, stakeholder-verbatim descriptions, never deliver incomplete work, no `git push`, document discoveries), and which of them the enforcement hooks back deterministically. Claude Code plugin installs prefix skill names with `jus:` — invoke the prefixed form there.
+- `hard-rules` — the non-negotiable must/must-not that overrides everything here (commit immediately, no lint suppression, stakeholder-verbatim descriptions, never deliver incomplete work, no `git push`, document discoveries), and which of them the enforcement hooks back deterministically. Where a plugin install prefixes skill names with `jus:`, invoke the prefixed form.

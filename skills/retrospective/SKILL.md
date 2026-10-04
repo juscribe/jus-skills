@@ -300,7 +300,7 @@ jq -Rs '{retrospective:{html:.}}' <report.html> | jus api PATCH '/workspaces/{ws
 
 ### Publishing a hosted copy is optional, and it is not the record
 
-**Where your harness can publish a hosted page** — Claude Code can, through its Artifact tool — publishing gives a reader a nicer viewer, and you record its address alongside the body:
+**Where your harness can publish a hosted page**, publishing gives a reader a nicer viewer, and you record its address alongside the body:
 
 ```
 jq -Rs --arg url '<address>' '{retrospective:{html:.,url:$url}}' <report.html> | jus api PATCH '/workspaces/{ws}/iterations/{iteration}/retrospective'
@@ -310,7 +310,7 @@ jq -Rs --arg url '<address>' '{retrospective:{html:.,url:$url}}' <report.html> |
 
 **Where it cannot** — Codex, Cursor, Zed, Windsurf and Antigravity today — send the body alone. Nothing is missing: the board holds the report either way.
 
-⚠️ **A hosted page is not a substitute for the body, and this is the trap the step exists for.** Hosted documents are commonly private to whoever they were shared with, and commonly refuse to be embedded — Claude's artifacts answer `frame-ancestors 'self'`, so a link to one opens nothing for a colleague and frames nowhere at all. Sending only a `url` leaves the board with an address it cannot show and most readers cannot open.
+⚠️ **A hosted page is not a substitute for the body, and this is the trap the step exists for.** Hosted documents are commonly private to whoever they were shared with, and commonly refuse to be embedded with `frame-ancestors 'self'`, so a link to one opens nothing for a colleague and frames nowhere at all. Sending only a `url` leaves the board with an address it cannot show and most readers cannot open.
 
 ⚠️ **Never improvise an address you did not publish.** If you cannot publish, say so in one clause and send the body.
 

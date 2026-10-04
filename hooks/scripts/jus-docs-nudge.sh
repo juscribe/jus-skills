@@ -130,7 +130,7 @@ if [[ "$tool_name" == "Bash" ]]; then
   # Zero-cost for path-only maps: no trigger rows means no fetch and no nudge.
   grep -Eq '^(label|kw):' "$map_file" || exit 0
 
-  command -v jus >/dev/null 2>&1 || exit 0
+  juscribe_sop_require_jus
   [[ "$command" =~ workspaces/([0-9]+)/tickets/${ticket_id}/transition ]] || exit 0
   workspace_id="${BASH_REMATCH[1]}"
 

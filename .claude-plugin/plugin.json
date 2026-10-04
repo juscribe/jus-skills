@@ -1,16 +1,19 @@
 {
   "name": "jus",
-  "version": "1.4.45",
-  "description": "Juscribe Workflow SOP as three on-demand Claude Code skills — ticket-workflow (lifecycle plus estimation, labels, testing gates, and the jus API reference), hard-rules, and retrospective (reviewing an iteration and publishing the report) — backed by deterministic enforcement hooks.",
+  "displayName": "Juscribe",
+  "version": "1.4.46",
+  "description": "Read and change your Juscribe board, and work its tickets the way your team does. One install brings the Juscribe connector and three skills that carry the board's rules: ticket-workflow (the ticket lifecycle, estimation, labels, testing gates and the jus API reference), hard-rules (what never to do on a board) and retrospective (reviewing an iteration). In Claude Code and Cowork it adds enforcement hooks, which do nothing where the jus command is not installed.",
   "author": {
-    "name": "Caleon Chun"
+    "name": "Juscribe"
   },
   "homepage": "https://github.com/juscribe/jus-skills",
   "license": "MIT",
   "keywords": [
     "juscribe",
     "agile",
+    "project-management",
     "ticket-workflow",
-    "sop"
+    "sop",
+    "mcp"
   ]
 }

@@ -3,29 +3,19 @@
   "owner": {
     "name": "Caleon Chun"
   },
-  "description": "The Juscribe Workflow SOP as two plugins: jus for Claude Code, with on-demand skills plus deterministic enforcement hooks, and juscribe for a Claude chat window, with the same skills plus the Juscribe connector.",
+  "description": "The Juscribe plugin for Claude and every coding agent: the Juscribe connector, the ticket-workflow, hard-rules and retrospective skills, and enforcement hooks where there is a shell.",
   "plugins": [
     {
       "name": "jus",
+      "displayName": "Juscribe",
       "source": "./",
-      "description": "Juscribe Workflow SOP — ticket-workflow, hard-rules and retrospective skills backed by deterministic enforcement hooks.",
-      "homepage": "https://github.com/juscribe/jus-skills",
-      "keywords": [
-        "juscribe",
-        "agile",
-        "ticket-workflow",
-        "sop"
-      ]
-    },
-    {
-      "name": "juscribe",
-      "source": "./plugins/juscribe",
-      "description": "For a Claude chat window: the Juscribe connector plus the ticket-workflow, hard-rules and retrospective skills, in one install. No hooks, since chat has no shell.",
+      "description": "Read and change your Juscribe board: the Juscribe connector, the ticket-workflow, hard-rules and retrospective skills, and enforcement hooks in Claude Code and Cowork.",
       "homepage": "https://github.com/juscribe/jus-skills",
       "keywords": [
         "juscribe",
         "agile",
         "project-management",
+        "ticket-workflow",
         "mcp"
       ]
     }
