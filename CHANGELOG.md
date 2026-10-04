@@ -22,6 +22,14 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.48] — 2026-10-03
+
+### Changed
+
+- Build the docs nudge list in jq, not with escaped backticks (#5607)
+- Open no case arm on a variable in jus-docs-nudge.sh (#5607)
+- Keep the command patterns out of the hook scripts (#5607)
+
 ## [1.4.47] — 2026-10-03
 
 ### Changed

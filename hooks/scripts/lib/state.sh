@@ -414,10 +414,7 @@ juscribe_sop_strip_heredocs() {
 juscribe_sop_command_invokes() {
   local cmd="$1" program="$2" seg
   local assigns='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
-  # The package runners are bracketed, `n[p]x` and `b[u]nx`: the same match,
-  # but Claude's plugin directory blocks a script that spells a launcher's
-  # name beside a computed program, and $program is one (UNPINNED_NPX).
-  local runner='((xargs|env|time|nice|sudo|n[p]x|b[u]nx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?'
+  local runner="$JUSCRIBE_SOP_RUNNER"
   local dir='([^[:space:]]*/)?'
   local head='^[[:space:]]*'"$assigns$runner$dir"'('"$program"')([[:space:]]|$)'
   local xexec='[[:space:]]-exec[[:space:]]+'"$dir"'('"$program"')([[:space:]]|$)'
@@ -471,38 +468,22 @@ juscribe_sop_is_shell_script() {
   return 1
 }
 
-# Linters, type checkers, formatters and test runners that count as "the
-# linters ran", in every stack the bundle may be installed into.
+# The lint and test patterns are DATA, in command-patterns.txt beside this
+# file, which explains each shape: one NAME, a tab and an ERE per line, read
+# once when this library loads into JUSCRIBE_SOP_<NAME>. Claude's plugin
+# directory blocks a hook script that names a package runner beside a program
+# it computes, and these patterns must name every one.
 #
-# ⚠️ STACK-NEUTRAL BY CONSTRUCTION. This list decides whether a project can
-# commit at all, and the bundle ships to projects in any language: a project
-# whose checks are missing here is blocked with no way to clear the gate. It
-# once knew only the tools of the repository the bundle is developed in, so a
-# Python project running `ruff check` and `pytest` could never commit. When a
-# project's check is not recognised, the fix is to add its SHAPE here, never
-# to loosen the anchoring below.
-#
-# Five shapes, each an ERE fed to juscribe_sop_command_invokes, which anchors
-# it at the start of a command segment and allows any directory prefix, env
-# assignments and a runner (`xargs`, `env`, a package runner …):
-#
-#   tools       the program itself: `ruff check .`, `vendor/bin/phpstan`,
-#               `swiftlint`
-#   launchers   package runners in front of a tool, any number of them:
-#               `uv run python -m pytest`, `bundle exec rspec`, `pnpm exec eslint`
-#   subcommands a toolchain's own check verb: `cargo clippy`, `go vet`
-#   targets     a task runner's conventional target: `make lint`,
-#               `./gradlew check`, `npm run test:unit`
-#   wrappers    a project script named for its job: `script/test`, `bin/lint`,
-#               `./ci.sh` — the escape hatch for a check nothing else knows
-#
-# `npm ci` is the one a name list gets wrong: it installs, it checks nothing,
-# which is why the package-script targets leave `ci` out.
-JUSCRIBE_SOP_LINT_TOOLS='rubocop|reek|rspec|standardrb|eslint|prettier|tsc|vitest|jest|biome|oxlint|stylelint|mocha|ruff|flake8|pylint|mypy|pyright|black|isort|pytest|tox|nox|bandit|golangci-lint|staticcheck|gofmt|rustfmt|swiftlint|swiftformat|ktlint|detekt|phpunit|phpstan|psalm|phpcs|php-cs-fixer|clang-tidy|clang-format|cppcheck|ctest'
-JUSCRIBE_SOP_LINT_LAUNCHERS='((bundle|pnpm|npm|yarn|bun|uv|poetry|pipenv|pdm|hatch|rye)([[:space:]]+(exec|run|x|dlx))?[[:space:]]+|python3?[[:space:]]+-m[[:space:]]+)'
-JUSCRIBE_SOP_LINT_SUBCOMMANDS='cargo[[:space:]]+(clippy|test|check|fmt|nextest)|go[[:space:]]+(test|vet|fmt)|deno[[:space:]]+(lint|test|check|fmt)|dotnet[[:space:]]+(test|format)|swift[[:space:]]+test|mix[[:space:]]+(test|credo|format|dialyzer)|rails[[:space:]]+test|python3?[[:space:]]+-m[[:space:]]+unittest|(pre-commit|lefthook)[[:space:]]+run'
-JUSCRIBE_SOP_LINT_TARGETS='(make|just|task|rake|gradlew?|mvnw?|xcodebuild|composer)([[:space:]]+[^[:space:]]+)*[[:space:]]+(lint|test|tests|check|checks|ci|spec|specs|typecheck|verify)([:_-][^[:space:]]*)?|(npm|pnpm|yarn|bun)([[:space:]]+run)?[[:space:]]+(lint|test|tests|check|spec|typecheck|type-check)(:[^[:space:]]*)?'
-JUSCRIBE_SOP_LINT_WRAPPERS='[^[:space:]]*/(lint|test|tests|check|ci|cibuild)(\.[A-Za-z]+)?'
+# ⚠️ A missing file leaves every pattern empty, so no command reads as a lint
+# run and the gate stays shut. That is the safe way to fail.
+juscribe_sop_load_command_patterns() {
+  local name pattern
+  while IFS=$'\t' read -r name pattern; do
+    case "$name" in '' | '#'*) continue ;; esac
+    printf -v "JUSCRIBE_SOP_$name" '%s' "$pattern"
+  done <"$(dirname "${BASH_SOURCE[0]}")/command-patterns.txt"
+}
+juscribe_sop_load_command_patterns
 
 # Recognize a Bash command string as a linter or test invocation.
 # Returns 0 if matched, 1 otherwise.
