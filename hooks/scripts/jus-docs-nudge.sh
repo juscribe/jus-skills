@@ -205,10 +205,10 @@ file_path=$(jq -r '.tool_input.file_path // ""' <<<"$input")
 [[ -n "$file_path" ]] || exit 0
 
 # Only project files can match project-relative prefixes.
-case "$file_path" in
-  "$project_dir"/*) relative_path="${file_path#"$project_dir"/}" ;;
-  *) exit 0 ;;
-esac
+# `[[ == ]]` rather than a case arm opening on "$project_dir": Claude's plugin
+# directory reads such an arm as a command whose program is computed.
+[[ "$file_path" == "$project_dir"/* ]] || exit 0
+relative_path="${file_path#"$project_dir"/}"
 
 # Longest-prefix match so a specific rule can override a broader one.
 # label:/kw: rows are pickup triggers, never path prefixes.
@@ -220,15 +220,11 @@ while IFS=$'\t' read -r prefix doc hint; do
   case "$prefix" in
     label:* | kw:*) continue ;;
   esac
-  case "$relative_path" in
-    "$prefix"*)
-      if (( ${#prefix} > matched_len )); then
-        matched_doc="$doc"
-        matched_hint="$hint"
-        matched_len=${#prefix}
-      fi
-      ;;
-  esac
+  if [[ "$relative_path" == "$prefix"* ]] && (( ${#prefix} > matched_len )); then
+    matched_doc="$doc"
+    matched_hint="$hint"
+    matched_len=${#prefix}
+  fi
 done < "$map_file"
 
 [[ -n "$matched_doc" ]] || exit 0
