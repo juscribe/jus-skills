@@ -1,0 +1,799 @@
+#!/usr/bin/env bash
+# Shared helpers for hooks. Sourced — not executed directly.
+
+set -euo pipefail
+
+# ── the liveness record ──────────────────────────────────────────────────────
+#
+# ⚠️ NOTHING ANYWHERE PROVED A HOOK HAD RUN. Four silencers — a non-2 exit, a
+# tool name the guards do not match, a cwd outside a Juscribe project, and a
+# manifest the tool never loaded — each produce NO OUTPUT AT ALL, so
+# "installed, configured, protecting nothing" reads exactly like "installed,
+# configured, nothing to block". On the Cursor adapter that state shipped with
+# tests, a README and a live verification all passing over it.
+#
+# One line per invocation, key=value so a person tailing the file can read it:
+#
+#   script=jus-block-force-push.sh event=PreToolUse tool=Bash cwd=payload outcome=blocked
+#
+# ⚠️ WRITTEN OUTSIDE THE PROJECT, DELIBERATELY. A record under `.jus/` cannot be
+# written in exactly the case it exists to report. It goes to the same
+# per-session directory juscribe_sop_state_dir already returns, which is under
+# $CLAUDE_PLUGIN_DATA or $TMPDIR.
+#
+# ⚠️ NO TIMESTAMP, AND THAT IS A COST DECISION. bash 3.2 ships on macOS and has
+# neither `printf '%(%s)T'` nor `$EPOCHSECONDS`, so a timestamp means a `date`
+# fork on every hook of every tool call. The session directory answers "this
+# session?" and the file's mtime answers "recently?".
+#
+# ⚠️ IT MUST NEVER SPEAK. A hook that prints on the happy path is noise in every
+# session forever; `jus-liveness` is what people run.
+JUSCRIBE_SOP_OUTCOME=""
+JUSCRIBE_SOP_EVENT=""
+JUSCRIBE_SOP_TOOL=""
+JUSCRIBE_SOP_SESSION=""
+JUSCRIBE_SOP_CWD_SOURCE="payload"
+
+# Called by the EXIT trap, so it runs on every path out — including the early
+# `exit 0` each silencer leaves through.
+#
+# ⚠️ IT MUST NOT CHANGE THE HOOK'S EXIT STATUS. `$?` is captured first and every
+# step is guarded, because a trap that fails under `set -e` would turn an
+# allowing hook into a non-zero exit that some hosts read as a block.
+juscribe_sop_record() {
+  local status=$? outcome="${JUSCRIBE_SOP_OUTCOME:-}" dir file
+  if [[ -z "$outcome" ]]; then
+    if [[ "$status" -eq 2 ]]; then outcome=blocked; else outcome=allowed; fi
+  fi
+  dir=$(juscribe_sop_state_dir "${JUSCRIBE_SOP_SESSION:-}") || return 0
+  [[ -d "$dir" ]] || mkdir -p "$dir" 2>/dev/null || return 0
+  file="$dir/liveness.log"
+  printf 'script=%s event=%s tool=%s cwd=%s outcome=%s\n' \
+    "${0##*/}" "${JUSCRIBE_SOP_EVENT:-}" "${JUSCRIBE_SOP_TOOL:-}" \
+    "${JUSCRIBE_SOP_CWD_SOURCE:-payload}" "$outcome" >> "$file" 2>/dev/null || true
+  return 0
+}
+
+# Fail-open if `jq` is missing on the host. We never want a missing dependency
+# to break the user's session — better to skip enforcement than to wedge the
+# tool call. The README lists `jq` as a prerequisite.
+juscribe_sop_require_jq() {
+  if ! command -v jq >/dev/null 2>&1; then
+    # ⚠️ THE ONE OUTCOME THAT CANNOT USE jq TO WRITE ITSELF, which is why the
+    # record is built from shell builtins and nothing else.
+    JUSCRIBE_SOP_OUTCOME=no-jq
+    juscribe_sop_record
+    exit 0
+  fi
+}
+
+# Fail open if stdin is not valid JSON. Same philosophy as require_jq: a hook
+# must never break a tool call because the harness handed it unexpected input —
+# a parse error becomes a silent no-op (exit 0) rather than a non-zero exit
+# (jq exits 5 on malformed JSON, which under `set -euo pipefail` would otherwise
+# abort the hook). Call immediately after reading stdin.
+# Argument: $1 = the raw stdin string.
+juscribe_sop_require_valid_json() {
+  local fields
+  # ⚠️ THE VALIDATION AND THE EXTRACTION ARE ONE CALL, DELIBERATELY.
+  # The liveness record needs the event, the tool and the session id; forking a
+  # second jq for them would put a fork on every hook of every tool call. Asking
+  # for the fields IS the validity check — malformed input and a JSON scalar
+  # both fail here.
+  #
+  # ⚠️ A SCALAR USED TO GET FURTHER THAN THIS, AND WORSE. `jq .` accepts
+  # `"hello"`, so the old form let the script continue to `.cwd`, which errors
+  # with exit 5 — and under `set -e` that left the hook on a non-zero exit some
+  # hosts read as a BLOCK. Now it is a recorded no-op.
+  #
+  # ⚠️ THE SEPARATOR IS \x1f, NOT A TAB. Tab is IFS WHITESPACE, so
+  # `read` collapses a run of them: an empty tool_name — every UserPromptSubmit
+  # and Stop — shifted the session id into the tool slot, and those records went
+  # to `_anonymous`. A non-whitespace separator keeps an empty field empty.
+  fields=$(jq -r '[.hook_event_name // "", .tool_name // "", .session_id // ""] | map(tostring) | join("\u001f")' \
+    <<<"${1:-}" 2>/dev/null) || {
+    JUSCRIBE_SOP_OUTCOME=bad-json
+    juscribe_sop_record
+    exit 0
+  }
+  IFS=$'\x1f' read -r JUSCRIBE_SOP_EVENT JUSCRIBE_SOP_TOOL JUSCRIBE_SOP_SESSION <<<"$fields" || true
+  # ⚠️ THE TRAP IS WHAT MAKES AN EARLY `exit 0` VISIBLE. Every silencer below
+  # this line leaves through one, and without the trap each of them is silence.
+  trap juscribe_sop_record EXIT
+}
+
+# Exit the hook unless it is running inside a Juscribe-wired project — a git
+# repository with a `.jus/` directory in the cwd or in any folder above it, up
+# to and including the toplevel.
+#
+# ⚠️ WHY THIS EXISTS. Every hook here used to act in any repository at all, so
+# installing the bundle for one project vetoed commands in every other one on
+# the machine: a force push refused in an unrelated checkout, a dirty-tree nag
+# on somebody else's weekend project. Six of the twelve did it demonstrably and
+# the rest were quiet only by accident, so the rule is stated once, here, and
+# every hook calls it.
+#
+# ⚠️ THE MARKER IS `.jus/`, NOT `.jus/config/`. The config directory is
+# gitignored, so a fresh clone of a properly wired repository does not have one
+# until `jus init` runs — keying on it would silence every hook on exactly the
+# projects that want them. `.jus/bin`, `.jus/docs` and `.jus/hooks` are tracked,
+# so a git worktree carries the marker too, which is the case that matters most
+# here: worktrees are this project's isolation strategy.
+#
+# ⚠️ THE WALK STOPS AT THE GIT TOPLEVEL RATHER THAN AT `/`, AND THE FIRST CUT
+# WALKED TO `/`. A bare upward walk treats a `.jus` in ANY ancestor as wiring
+# the project, and ancestors are not ours: measured on this machine,
+# `$TMPDIR/.jus/baseline/` exists — litter from an edge check — so every
+# `mktemp -d` repository on it read as Juscribe-wired and the guard passed
+# everywhere it was supposed to stop. `$HOME/.jus` would do the same for every
+# project a person owns. The toplevel is the boundary the marker belongs to.
+#
+# ⚠️ BUT IT DOES WALK UP TO THE TOPLEVEL, because the toplevel is not always
+# where `.jus/` is. `jus init` in a monorepo package puts it in the
+# package, so checking the toplevel alone left every hook silent there. A
+# sibling package with no `.jus/` of its own stays unwired, and so does the
+# monorepo root: the walk only ever goes UP from the cwd.
+#
+# ⚠️ THE WALK IS OVER `--show-prefix`, NOT `dirname` ON THE CWD. Git answers
+# the toplevel with symlinks resolved, and the cwd often is not: `mktemp -d`
+# gives `/var/folders/…` where git says `/private/var/folders/…`. A `dirname`
+# walk waiting to reach the toplevel would never see it, carry on to `/`, and
+# be the `$TMPDIR/.jus` bug above again. The prefix is the cwd relative to that
+# same resolved toplevel, so there is no path comparison to get wrong.
+#
+# The toplevel is checked first because it is where `.jus/` sits in every
+# project that is not a monorepo package, and it costs no second `git` call.
+#
+# ⚠️ NOT A GIT REPOSITORY MEANS NOT A JUSCRIBE PROJECT, deliberately. `jus init`
+# refuses to set one up outside git and the whole workflow is
+# commit-shaped, so there is no such thing as a wired non-repository.
+#
+# `JUS_HOOKS_EVERYWHERE=1` restores the old machine-wide behaviour for anyone
+# who installed the bundle for the SOP and never ran `jus init`.
+#
+# ── the `$PWD` fallback STAYS, decided by an audit of every shim ─────────────
+#
+# The open question was whether `[[ -d "$dir" ]] || dir="$PWD"` should go. It is
+# what hid a broken Cursor shim: it handed over an empty cwd for weeks and the
+# adapter looked healthy, because Cursor happens to spawn hooks with the
+# workspace root as their working directory. A fallback that rescues a broken
+# shim is exactly a fallback that makes a broken shim undetectable.
+#
+# It stays, for three reasons and one replacement:
+#
+#   1. ⚠️ ON WINDSURF IT IS THE MECHANISM, NOT A RESCUE. Cascade documents
+#      `working_directory` as defaulting to the workspace root and sends no cwd
+#      at all on `post_cascade_response`. Remove the fallback and the dirty-tree
+#      gate finds no repository and stays silent — which looks exactly like a
+#      clean tree.
+#   2. ⚠️ REMOVING IT WOULD NOT MAKE ANYTHING LOUD. An empty cwd fails the
+#      `-d` test either way and this function exits 0 either way; the only
+#      change is which directory it exits 0 about. The failure mode is silence
+#      before and after, so the trade buys no diagnosis.
+#   3. On Antigravity it is actively wrong — the hook's cwd is the directory
+#      holding hooks.json — but the Antigravity adapter already answered that
+#      in the right layer: that shim derives a cwd from the tool arguments and
+#      remembers it, so it never reaches this line.
+#
+# ⚠️ THE REPLACEMENT IS WHAT MAKES THAT SAFE, so do not read the decision
+# without it. Detectability moved into `../../tests.sh`: every test in the
+# empty-string class runs from a directory that is NOT a Juscribe project and
+# with `JUS_HOOKS_EVERYWHERE` unset, which is the only arrangement in which a
+# shim handing over an empty cwd shows up as a failure rather than as nothing.
+# A shim bug is now caught by the suite instead of by a live session, which is
+# what the fallback was being asked to do and was never able to.
+#
+# Argument: $1 = the payload's cwd (may be empty; falls back to $PWD).
+juscribe_sop_require_jus_project() {
+  [[ "${JUS_HOOKS_EVERYWHERE:-}" == "1" ]] && return 0
+  local dir="${1:-}" toplevel prefix
+  # ⚠️ RECORDED EVEN WHEN THE FALLBACK RESCUES IT. A payload with no usable
+  # cwd is the broken-Cursor-shim shape — it sent `""` and every guard
+  # lost its repository — and it stayed invisible for weeks precisely because
+  # `$PWD` happened to be right. `cwd=no-cwd` on a line that otherwise reads
+  # healthy is that bug announcing itself.
+  if [[ ! -d "$dir" ]]; then
+    JUSCRIBE_SOP_CWD_SOURCE=no-cwd
+    dir="$PWD"
+  fi
+  toplevel=$(juscribe_sop_repo_toplevel "$dir")
+  if [[ -n "$toplevel" ]]; then
+    [[ -d "${toplevel}/.jus" ]] && return 0
+    prefix=$(git -C "$dir" rev-parse --show-prefix 2>/dev/null || true)
+    prefix="${prefix%/}"
+    while [[ -n "$prefix" ]]; do
+      [[ -d "${toplevel}/${prefix}/.jus" ]] && return 0
+      if [[ "$prefix" == */* ]]; then
+        prefix="${prefix%/*}"
+      else
+        prefix=""
+      fi
+    done
+  fi
+  JUSCRIBE_SOP_OUTCOME=not-a-jus-project
+  exit 0
+}
+
+# Resolve the per-session state directory.
+# Argument: $1 = session_id (may be empty)
+# Echoes the directory path. Caller decides whether to mkdir.
+# Exit the hook, silently, when the `jus` command it is about to run is not
+# installed. One plugin serves chat, Cowork and Claude Code, and Cowork
+# loads the hooks where nobody installed jus; a note there is noise, and the
+# command being guarded could not run either.
+# Argument: $1 = the command (default: jus)
+juscribe_sop_require_jus() {
+  command -v "${1:-jus}" >/dev/null 2>&1 && return 0
+  JUSCRIBE_SOP_OUTCOME=no-jus
+  exit 0
+}
+
+juscribe_sop_state_dir() {
+  local session_id="${1:-}"
+  local base="${CLAUDE_PLUGIN_DATA:-${TMPDIR:-/tmp}/jus}"
+  if [[ -z "$session_id" ]]; then
+    echo "$base/sessions/_anonymous"
+  else
+    echo "$base/sessions/$session_id"
+  fi
+}
+
+# Read a numeric counter file (returns 0 if missing).
+juscribe_sop_read_num() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    cat "$file" 2>/dev/null || echo 0
+  else
+    echo 0
+  fi
+}
+
+# Echo the git repository toplevel for a working directory, or nothing when it
+# is not a git worktree (or git is unavailable). Callers resolve the toplevel
+# rather than using the cwd directly so porcelain paths are always
+# root-relative, whatever subdirectory the tool call happened in.
+juscribe_sop_repo_toplevel() {
+  local cwd="${1:-}"
+  [[ -z "$cwd" ]] && return 0
+  command -v git >/dev/null 2>&1 || return 0
+  git -C "$cwd" rev-parse --show-toplevel 2>/dev/null || true
+}
+
+# Echo the `git status --porcelain` lines for the dirty files in a worktree —
+# ALL of them, one per line, so callers can display or count them.
+#
+# ⚠️ There is deliberately no per-session scoping here. This used to
+# intersect the dirty set against a log of the files each session had edited, so
+# two sessions sharing one checkout would not claim each other's work. That
+# apparatus — an ownership log, three precedence-ordered markers, and a
+# verification step on every commit — was removed: **worktrees are the isolation
+# strategy**, and under a worktree "every dirty file in my tree is mine" is
+# simply true, which is what the scoping spent five tickets approximating.
+#
+# The trade is real and accepted: in a SHARED checkout this again reports
+# another session's files as yours. Use a worktree per work stream.
+#
+# Fails open (a git error becomes "nothing dirty"): every consumer is a guard or
+# a nudge, and one that cannot read the tree should stay quiet rather than
+# guess. -uall lists files inside untracked directories individually, and
+# core.quotepath=false keeps non-ASCII paths literal.
+#
+# Argument: $1 = repo toplevel
+juscribe_sop_dirty_lines() {
+  local toplevel="$1"
+  git -C "$toplevel" -c core.quotepath=false status --porcelain -uall 2>/dev/null || true
+}
+
+# Echo the checkout this SESSION is actually working in: the worktree it locked
+# in its own name, or nothing when there is no such worktree.
+#
+# ── why the cwd is not the answer ────────────────────────────────────────────
+#
+# A session following the documented worktree recipe keeps its cwd at the MAIN
+# checkout — `EnterWorktree` is blocked and `jus api` has no token inside a
+# worktree — and `cd`s into the worktree per command. So the
+# `cwd` a hook receives names a tree the session never edits, and a guard
+# reading it reports somebody else's uncommitted work as yours. Measured 5 Sep:
+# a session with everything committed on its branch was blocked from stopping
+# three times running by another session's in-flight mobile/** edits.
+#
+# The lock reason is the link, and it already exists. The recipe locks with
+# `jus session <session_id> (pid N)`, and that id is the `session_id` the hook
+# receives on stdin — so the worktree list can be searched for it.
+#
+# ⚠️ This is NOT the per-session ownership tracking that worktrees replaced
+# (see juscribe_sop_dirty_lines above), and the distinction is the whole reason
+# it is allowed to exist. Nothing here records
+# which files a session edited, and nothing intersects a dirty set against a
+# log. The worktree remains the unit of isolation; this only decides WHICH
+# worktree to ask about, after which "every dirty file in it is mine" is as
+# true as it ever was.
+#
+# Reads `git worktree list --porcelain` rather than globbing
+# `<git-common-dir>/worktrees/*/locked`: it pairs each path with its own lock
+# reason, so there is no arithmetic from an admin directory back to a checkout,
+# and a pruned worktree is never considered. A git too old to print `locked`
+# (pre-2.36) simply matches nothing, which is the unchanged behaviour.
+#
+# Fails open — no session id, no git, no match, or an unreadable list all echo
+# nothing and leave the caller on its original tree.
+#
+# Arguments: $1 = repo toplevel, $2 = session_id
+juscribe_sop_session_worktree() {
+  local toplevel="$1" session_id="${2:-}" line path="" first=""
+  # ⚠️ LOAD-BEARING: an empty session id would substring-match EVERY reason and
+  # hand back an arbitrary worktree — somebody else's, and silently.
+  [[ -n "$toplevel" && -n "$session_id" ]] || return 0
+  command -v git >/dev/null 2>&1 || return 0
+  while IFS= read -r line; do
+    case "$line" in
+      'worktree '*) path="${line#worktree }" ;;
+      # A lock with no reason is the bare word `locked`, which names no session
+      # and must not match — hence the required trailing space in the pattern.
+      'locked '*)
+        [[ -n "$path" ]] || continue
+        [[ "${line#locked }" == *"$session_id"* ]] || continue
+        # A session already running inside one of its own worktrees keeps that
+        # one, rather than being redirected to whichever it locked first.
+        if [[ "$path" == "$toplevel" ]]; then
+          printf '%s' "$path"
+          return 0
+        fi
+        [[ -n "$first" ]] || first="$path"
+        ;;
+    esac
+  done < <(git -C "$toplevel" worktree list --porcelain 2>/dev/null || true)
+  printf '%s' "$first"
+  return 0
+}
+
+# Programs that count as "the shell linter ran".
+#
+# The bare TOOL names are the portable contract: a PUBLISHED bundle cannot know
+# a project's wrapper name. The wrapper alternations cover the common naming
+# shapes as a convenience — never the only way to clear the gate.
+# juscribe_sop_command_invokes allows any directory prefix, so bin/lint-shell,
+# ./bin/lint-shell and an absolute path all reduce to the same name.
+#
+# `<shell> -n` is a genuine syntax check, and it is what keeps this list honest
+# for zsh and ksh — shellcheck refuses those outright (SC1071).
+JUSCRIBE_SOP_SHELL_LINTERS='shellcheck|shfmt|(lint|check)[-_](shell|sh|bash|zsh)|(shell|sh|bash|zsh)[-_](lint|check)|(sh|bash|zsh|ksh|dash)[[:space:]]+-n'
+
+# Remove heredoc BODIES from a command string before it is segmented.
+#
+# ⚠️ juscribe_sop_command_segments turns every NEWLINE into a separator, so each
+# line of a heredoc body becomes a segment anchored at column 0 — segment
+# anchoring alone does NOT stop prose from matching. Measured: a commit body
+# line beginning "shellcheck and the lint wrapper now record ..." otherwise
+# reads as a shellcheck run and disarms the gate for the very commit shipping
+# it. The SOP mandates writing prose through `<<'EOF'` heredocs, so this is the
+# normal shape here, not an exotic one.
+#
+# Strips only when the terminator is actually FOUND, and only for a word-shaped
+# delimiter not preceded by a third `<` (so `<<<` here-strings are untouched).
+# An unterminated match was not a heredoc — restore the text rather than
+# swallowing what might be a real invocation.
+juscribe_sop_strip_heredocs() {
+  local cmd="$1" line delim="" out="" body="" stripped
+  local hd='(^|[^<])<<-?[[:space:]]*["'"'"']?([A-Za-z_][A-Za-z0-9_]*)'
+  while IFS= read -r line; do
+    if [[ -n "$delim" ]]; then
+      body+="$line"$'\n'
+      stripped="${line#"${line%%[![:space:]]*}"}"
+      if [[ "$stripped" == "$delim" ]]; then
+        delim=""
+        body=""
+      fi
+      continue
+    fi
+    out+="$line"$'\n'
+    if [[ "$line" =~ $hd ]]; then
+      delim="${BASH_REMATCH[2]}"
+    fi
+  done <<<"$cmd"
+  printf '%s%s' "$out" "$body"
+}
+
+# Does any simple-command segment of $1 invoke the program named by the ERE in
+# $2? Anchored at segment start — the same shape as
+# juscribe_sop_segment_invokes_git — so prose that merely MENTIONS the
+# tool cannot match, but tolerant of the shapes an invocation actually takes:
+#
+#   VAR=val prefix   SHELLCHECK_OPTS=-x bin/lint-shell f
+#   directory prefix ./bin/lint-shell, /abs/bin/lint-shell, .jus/bin/lint-shell
+#   a runner         xargs shellcheck, env shellcheck, or a package runner
+#   find's -exec     find . -name '*.sh' -exec shellcheck {} +
+#
+# There is no recursive mode in shellcheck, so xargs/-exec IS its multi-file
+# form. (Do not start this line with the tool's name — a comment beginning
+# "# shellcheck " is parsed as a DIRECTIVE and fails the lint with SC1072.)
+#
+# `command`, `which` and `type` are deliberately NOT runners. A `command -v`
+# probe is how an agent checks whether the tool is installed, and counting it
+# would disarm the gate at exactly that moment.
+juscribe_sop_command_invokes() {
+  local cmd="$1" program="$2" seg
+  local assigns='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+  local runner="$JUSCRIBE_SOP_RUNNER"
+  local dir='([^[:space:]]*/)?'
+  local head='^[[:space:]]*'"$assigns$runner$dir"'('"$program"')([[:space:]]|$)'
+  local xexec='[[:space:]]-exec[[:space:]]+'"$dir"'('"$program"')([[:space:]]|$)'
+  while IFS= read -r seg; do
+    [[ -n "$seg" ]] || continue
+    [[ "$seg" =~ $head ]] && return 0
+    [[ "$seg" =~ $xexec ]] && return 0
+  done < <(juscribe_sop_command_segments "$(juscribe_sop_strip_heredocs "$cmd")")
+  return 1
+}
+
+# Is $1 a shell script, decided by its SHEBANG? $2 is the base directory a
+# repo-relative path resolves against.
+#
+# Extension alone is not enough here. Measured in the repository the bundle is
+# developed in: 18 files end in `.sh`, but 76 are shell scripts by shebang — the
+# bin/* majority is extensionless, so an extension-only rule leaves most of the
+# shell surface ungated.
+juscribe_sop_is_shell_script() {
+  local path="$1" base_dir="${2:-}" base first=""
+  case "$path" in
+    /*) ;;
+    *)
+      # A recorded path may be repo-relative: Codex's `*** Update File:` header
+      # and Kimi's `path` key are both root-relative. With no base we
+      # must NOT probe — `[[ -f ]]` on a bare relative path consults the HOOK
+      # PROCESS's cwd, so an unrelated checkout's file would answer the
+      # question, and here that answer can BLOCK a commit.
+      [[ -n "$base_dir" ]] || return 1
+      path="$base_dir/$path"
+      ;;
+  esac
+  base="${path##*/}"
+  # ⚠️ LOAD-BEARING: this guard, not the clause order in is_code_file, is what
+  # keeps synthetic and nonexistent paths off the filesystem. An extension we do
+  # not recognise is positive evidence of some other file type. `${base#.}` so
+  # dotfiles (.envrc) still get probed.
+  case "${base#.}" in
+    *.*) return 1 ;;
+  esac
+  # -f, not -e: a FIFO or device would hang the read against the hook timeout.
+  # -n 200 bounds it — an extensionless blob with no newline would otherwise be
+  # slurped whole.
+  [[ -f "$path" && -r "$path" ]] || return 1
+  IFS= read -r -n 200 first < "$path" 2>/dev/null || true
+  case "$first" in
+    '#!'*bash* | '#!'*zsh* | '#!'*ksh* | '#!'*dash* | '#!'*/sh | '#!'*/sh[[:space:]]* | '#!'*'env sh' | '#!'*'env sh '*)
+      return 0
+      ;;
+  esac
+  return 1
+}
+
+# The lint and test patterns are DATA, in command-patterns.txt beside this
+# file, which explains each shape: one NAME, a tab and an ERE per line, read
+# once when this library loads into JUSCRIBE_SOP_<NAME>. Claude's plugin
+# directory blocks a hook script that names a package runner beside a program
+# it computes, and these patterns must name every one.
+#
+# ⚠️ A missing file leaves every pattern empty, so no command reads as a lint
+# run and the gate stays shut. That is the safe way to fail.
+juscribe_sop_load_command_patterns() {
+  local name pattern
+  while IFS=$'\t' read -r name pattern; do
+    case "$name" in '' | '#'*) continue ;; esac
+    printf -v "JUSCRIBE_SOP_$name" '%s' "$pattern"
+  done <"$(dirname "${BASH_SOURCE[0]}")/command-patterns.txt"
+}
+juscribe_sop_load_command_patterns
+
+# Recognize a Bash command string as a linter or test invocation.
+# Returns 0 if matched, 1 otherwise.
+#
+# ⚠️ Anchored at a command segment, like every invocation check in this file.
+# The loose form it replaced matched a linter's name anywhere in the string,
+# so `echo <linter> && git commit` read as a lint run and cleared the gate.
+juscribe_sop_is_lint_command() {
+  local cmd="$1"
+  juscribe_sop_command_invokes "$cmd" "${JUSCRIBE_SOP_LINT_LAUNCHERS}*(${JUSCRIBE_SOP_LINT_TOOLS})" && return 0
+  juscribe_sop_command_invokes "$cmd" "${JUSCRIBE_SOP_LINT_LAUNCHERS}*(${JUSCRIBE_SOP_LINT_SUBCOMMANDS}|${JUSCRIBE_SOP_LINT_TARGETS})" && return 0
+  juscribe_sop_command_invokes "$cmd" "$JUSCRIBE_SOP_LINT_WRAPPERS" && return 0
+  # Shell. `brew install shellcheck` and `command -v shellcheck` are commands
+  # an agent plausibly runs in the very session it is editing shell, and a
+  # false positive here silently disarms the gate.
+  juscribe_sop_command_invokes "$cmd" "$JUSCRIBE_SOP_SHELL_LINTERS"
+}
+
+# Recognize a Bash command string as a `git commit` invocation.
+juscribe_sop_is_git_commit() {
+  local cmd="$1" seg
+  # Match `git commit` but not `git commit-tree`, across chained and quoted
+  # contexts.
+  #
+  # ⚠️ This required `git` IMMEDIATELY followed by `commit`, so `git -C . commit`
+  # and `git -c core.editor=true commit` matched NOTHING — and the pre-commit
+  # gate therefore never ran for them. A session could commit unlinted code just
+  # by phrasing the commit with a global option, which agents emit routinely
+  # when avoiding `cd`.
+  #
+  # juscribe_sop_segment_invokes_git already tolerates env-var prefixes and git
+  # global options, so the fix is to reuse it rather than grow a second regex
+  # that has to be kept in step with the first. `commit` as the subcommand still
+  # excludes `commit-tree`: the pattern requires whitespace or end-of-string
+  # after it, and `commit-tree` has a hyphen.
+  #
+  # ⚠️ HEREDOC-STRIPPED, like every other invocation check here. The
+  # splitter turns each newline into a separator, so a heredoc body line
+  # beginning "git commit" is a segment anchored at column 0 and matches. The
+  # SOP mandates writing prose through `<<'EOF'`, so that is the normal shape,
+  # and the cost was paid three ways: a board comment describing a commit was
+  # refused outright, and in the two trackers a commit-shaped sentence clears
+  # `edits.log` and `last_modified_at` — disarming the pre-commit gate for the
+  # real commit that follows. A heredoc BODY is data, never the command word, so
+  # nothing real is lost; an unterminated one is restored by the stripper rather
+  # than swallowed.
+  while IFS= read -r seg; do
+    [[ -n "$seg" ]] || continue
+    juscribe_sop_segment_invokes_git "$seg" "commit" && return 0
+  done < <(juscribe_sop_command_segments "$(juscribe_sop_strip_heredocs "$cmd")")
+  return 1
+}
+
+# Does the command stage files for the commit it runs? True when a segment runs
+# `git add` or `git stage`, or when the commit takes working-tree content
+# itself: `-a`, `--all`, `-i`, `--include`, `-o` or `--only`, alone or in a
+# cluster like `-am`, or a pathspec (juscribe_sop_commit_names_paths).
+# Heredoc-stripped, like every invocation check here.
+juscribe_sop_command_stages() {
+  local cmd="$1" seg
+  local flags='[[:space:]](-[A-Za-z]*[aio][A-Za-z]*|--all|--include|--only)([[:space:]]|$)'
+  while IFS= read -r seg; do
+    [[ -n "$seg" ]] || continue
+    juscribe_sop_segment_invokes_git "$seg" "(add|stage)" && return 0
+    juscribe_sop_segment_invokes_git "$seg" "commit" && [[ "$seg" =~ $flags ]] && return 0
+  done < <(juscribe_sop_command_segments "$(juscribe_sop_strip_heredocs "$cmd")")
+  juscribe_sop_commit_names_paths "$cmd"
+}
+
+# Does a commit in the command name paths? `git commit -m x -- a.ts` and
+# `git commit -m x a.ts` both take those files' WORKING-TREE content, exactly as
+# `-o` does, so a scan of the index alone misses a line the shell wrote and
+# never staged: measured, `-- a.ts` exited 0 where the same commit with `-o`
+# exited 2.
+#
+# Walks the commit's arguments, skipping each value of an option that takes
+# one, and answers yes on `--` followed by a word, on `--pathspec-from-file`,
+# or on any positional word left over.
+#
+# ⚠️ QUOTED STRINGS BECOME ONE PLACEHOLDER WORD HERE, not nothing. The shared
+# splitter drops them, which would turn `-m "msg" a.ts` into `-m a.ts` and read
+# the path as the message. Redirections are skipped with their targets, so a
+# heredoc's `<<'EOF'` is not a path.
+juscribe_sop_commit_names_paths() {
+  local cmd="$1" seg word i n
+  local -a words
+  local short_valued='[mFCct]'
+  local long_valued='^--(message|file|reuse-message|reedit-message|fixup|squash|author|date|template|cleanup|trailer)$'
+  while IFS= read -r seg; do
+    juscribe_sop_segment_invokes_git "$seg" "commit" || continue
+    read -ra words <<<"$seg"
+    n=${#words[@]}
+    i=0
+    # To the `git` word, past any env or runner prefix, then past git's own
+    # options to the subcommand. `-C` and `-c` take the next word.
+    while (( i < n )) && [[ "${words[i]}" != "git" ]]; do i=$((i + 1)); done
+    i=$((i + 1))
+    while (( i < n )) && [[ "${words[i]}" == -* ]]; do
+      [[ "${words[i]}" == "-C" || "${words[i]}" == "-c" ]] && i=$((i + 1))
+      i=$((i + 1))
+    done
+    [[ "${words[i]:-}" == "commit" ]] || continue
+    i=$((i + 1))
+    while (( i < n )); do
+      word="${words[i]}"
+      if [[ "$word" == "--" ]]; then
+        (( i + 1 < n )) && return 0
+        break
+      elif [[ "$word" == --pathspec-from-file* ]]; then
+        return 0
+      elif [[ "$word" =~ ^[0-9]*[\<\>] ]]; then
+        # A bare operator (`>`, `2>`, `<<`) is followed by its target.
+        [[ "$word" =~ ^[0-9]*[\<\>]+$ ]] && i=$((i + 1))
+      elif [[ "$word" =~ $long_valued ]]; then
+        i=$((i + 1))
+      elif [[ "$word" == --* ]]; then
+        :
+      elif [[ "$word" == -?* ]]; then
+        # A cluster: the first letter that takes a value takes the rest of
+        # the word, or the next word when it is the last letter.
+        local rest="${word#-}"
+        while [[ -n "$rest" ]]; do
+          if [[ "${rest:0:1}" =~ $short_valued ]]; then
+            [[ -z "${rest:1}" ]] && i=$((i + 1))
+            break
+          fi
+          rest="${rest:1}"
+        done
+      else
+        return 0
+      fi
+      i=$((i + 1))
+    done
+  done < <(tr '\n' ';' <<<"$(juscribe_sop_strip_heredocs "$cmd")" \
+             | sed -E "s/'[^']*'/_q_/g; s/\"[^\"]*\"/_q_/g" \
+             | tr ';|&(){}`' '\n')
+  return 1
+}
+
+# Recognize a code file (one whose changes should require linting before commit).
+#
+# Extension first, because it answers for most files without touching the disk.
+# Only an EXTENSIONLESS path falls through to the shebang probe — which is where
+# the shell scripts are: `.sh` is the minority spelling.
+#
+# Argument $2 is optional and only used to resolve a repo-relative path; without
+# it such a path is never probed. See juscribe_sop_is_shell_script.
+juscribe_sop_is_code_file() {
+  local path="$1" base_dir="${2:-}"
+  if [[ "$path" =~ \.(rb|ts|tsx|js|jsx|mjs|cjs|css|scss|sass|py|go|rs|java|kt|swift|c|cc|cpp|h|hpp|sh|bash|zsh)$ ]]; then
+    return 0
+  fi
+  juscribe_sop_is_shell_script "$path" "$base_dir"
+}
+
+# If the command is a `jus api` ticket transition to `started`, echo the ticket
+# id (used by jus-start-comment-nudge.sh to know a ticket is in progress).
+# Always echoes (empty when no match) and returns 0 so callers under `set -e`
+# are safe.
+juscribe_sop_started_ticket() {
+  local cmd="$1"
+  if [[ "$cmd" =~ tickets/([0-9]+)/transition ]]; then
+    local id="${BASH_REMATCH[1]}"
+    if [[ "$cmd" =~ \"state\"[[:space:]]*:[[:space:]]*\"started\" ]]; then
+      printf '%s' "$id"
+    fi
+  fi
+  return 0
+}
+
+# Split a Bash command string into simple-command segments, one per output
+# line. Newlines become separators, quoted regions are removed, and the
+# remainder splits on ;, |, &, parens/braces, and backticks. A quoted string
+# can only ever be an ARGUMENT of a command — never the command being invoked —
+# so dropping quoted regions means prose or JSON that merely mentions a
+# forbidden invocation can't produce a matching segment. Known
+# limitation: an unmatched apostrophe in unquoted prose can mis-pair with a
+# later quote and hide a real invocation — these hooks are a guardrail, not a
+# sandbox.
+juscribe_sop_command_segments() {
+  local cmd="$1"
+  tr '\n' ';' <<<"$cmd" \
+    | sed -E "s/'[^']*'//g; s/\"[^\"]*\"//g" \
+    | tr ';|&(){}`' '\n'
+}
+
+# Does a segment invoke git — optionally a specific subcommand ($2, a word or
+# ERE)? Tolerates leading whitespace, VAR=val env prefixes, and git global
+# options between `git` and the subcommand (-C <path>, -c <k>=<v>, --long[=v]).
+# ⚠️ A RUNNER PREFIX ONCE DEFEATED EVERY CALLER, and it is one word.
+# `env git commit --no-verify` and `sudo git push --force` were both allowed:
+# the pattern anchored `git` at the head of the segment, so anything in front of
+# it meant no match at all — not a weaker match, no match. Measured against the
+# earlier guards, both returned exit 0.
+#
+# The runner list is `juscribe_sop_command_invokes`'s, deliberately identical.
+# A second list that has to be kept in step with the first is the drift this
+# file keeps warning about, and there is no reason for git to recognise fewer
+# runners than anything else.
+#
+# ⚠️ `command -v git` STILL DOES NOT MATCH, which is why `command` is safe to
+# include here though `command_invokes` excludes it: that probe has no
+# subcommand after `git`, and this pattern requires one. A probe for whether git
+# exists must not read as a git invocation.
+#
+# Widening only ever makes a caller match MORE, and every caller is a guard —
+# so the direction is toward blocking, never toward allowing.
+juscribe_sop_segment_invokes_git() {
+  local seg="$1" sub="${2:-[A-Za-z-]+}"
+  local assigns='([A-Za-z_][A-Za-z0-9_]*=[^[:space:]]*[[:space:]]+)*'
+  local runner='((xargs|env|time|nice|sudo|command)([[:space:]]+-[^[:space:]]+)*[[:space:]]+)*'
+  local gitopts='([[:space:]]+(-[Cc][[:space:]]*[^[:space:]]+|--[A-Za-z][A-Za-z-]*(=[^[:space:]]*)?))*'
+  local re='^[[:space:]]*'"$runner$assigns$runner"'git'"$gitopts"'[[:space:]]+'"$sub"'([[:space:]]|$)'
+  [[ "$seg" =~ $re ]]
+}
+
+# If the command POSTs a comment to a ticket, echo that ticket id. Matches
+# `tickets/<id>/comments` only when `comments` is NOT followed by `/` — so a
+# comment-reaction toggle (`.../comments/<cid>/reactions/...`) does NOT count as
+# posting a start comment. Requires a POST so a GET listing never trips it.
+juscribe_sop_commented_ticket() {
+  local cmd="$1"
+  [[ "$cmd" =~ (^|[[:space:]])POST([[:space:]]) ]] || return 0
+  if [[ "$cmd" =~ tickets/([0-9]+)/comments([^/]|$) ]]; then
+    printf '%s' "${BASH_REMATCH[1]}"
+  fi
+  return 0
+}
+
+# Echo the Juscribe workspace id for a working directory, or nothing when none
+# resolves.
+#
+# Mirrors `jus_find_project_jus_dir` (.jus/bin/jus:68): walk UP for a directory
+# holding `.jus/config`, and read `workspace_id` out of it.
+#
+# ⚠️ THIS IS NOT THE GIT TOPLEVEL, and the difference decides whether a hook
+# works in a worktree. `.jus/config` is gitignored, so a worktree holds no copy;
+# resolving from `git rev-parse --show-toplevel` finds the worktree and no
+# config. The walk-up reaches the main checkout's, because worktrees sit inside
+# it. Mirroring the CLI leaves a hook wrong exactly where `jus` is already wrong,
+# and nowhere else.
+#
+# ⚠️ Reads `workspace_id` ONLY. `.jus/config/` is also where `api_token.txt`
+# lives.
+#
+# ⚠️ SILENCE RATHER THAN A DEFAULT. Returning a fallback id from here
+# would have a hook in the published bundle reach a REAL ticket in somebody
+# else's workspace — read it, and back when the claim hook still reacted,
+# mutate it. An unresolvable workspace means this is not a jus project,
+# which is not an error worth saying anything about.
+#
+# Argument: $1 = the directory to start from (defaults to $PWD).
+juscribe_sop_workspace_id() {
+  local dir="${1:-$PWD}"
+  while :; do
+    if [[ -r "$dir/.jus/config/workspace_id" ]]; then
+      tr -d "[:space:]" < "$dir/.jus/config/workspace_id"
+      return 0
+    fi
+    [[ "$dir" == "/" || -z "$dir" ]] && return 1
+    dir="$(dirname "$dir")"
+  done
+}
+
+# Echo the repository's default branch for a working directory, or nothing when
+# it cannot be established. `origin/HEAD` is the authoritative answer
+# and is what a clone sets; the fallbacks are for a repository with no remote,
+# which is the ordinary case for a project a `jus` session was started in.
+juscribe_sop_default_branch() {
+  local dir="${1:-$PWD}" head local_branch
+  command -v git >/dev/null 2>&1 || return 0
+
+  head=$(git -C "$dir" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+  if [[ -n "$head" ]]; then
+    echo "${head#origin/}"
+    return 0
+  fi
+
+  # `init.defaultBranch` says what THIS git would create, which is the right
+  # guess for a repository nobody cloned. Then the two conventional names, in
+  # the order a modern repository is likely to use them.
+  for local_branch in "$(git -C "$dir" config --get init.defaultBranch 2>/dev/null || true)" main master; do
+    [[ -n "$local_branch" ]] || continue
+    if git -C "$dir" show-ref --verify --quiet "refs/heads/$local_branch"; then
+      echo "$local_branch"
+      return 0
+    fi
+  done
+  return 0
+}
+
+# Is a merge waiting to be completed in $1 — a `git merge` that stopped on
+# conflicts, whose next step is a `git commit`?
+#
+# ⚠️ `--git-path`, NOT a literal `.git/MERGE_HEAD`. In a linked worktree the
+# per-worktree state lives under `.git/worktrees/<name>/`, and worktrees are
+# exactly where a landing merge happens — so the hardcoded path would answer
+# "no merge" precisely where the answer matters.
+#
+# ⚠️ `--git-path` prints RELATIVE to the directory git ran in, so it is resolved
+# against $1 rather than against whatever the hook process's cwd happens to be.
+#
+# Answers "no" whenever it cannot tell — no git, not a worktree, no path. The
+# caller uses this to RELAX a refusal, so an unanswerable case must leave the
+# guard where it stands rather than open it.
+juscribe_sop_merge_in_progress() {
+  local dir="${1:-$PWD}" merge_head
+  command -v git >/dev/null 2>&1 || return 1
+  merge_head=$(git -C "$dir" rev-parse --git-path MERGE_HEAD 2>/dev/null) || return 1
+  [[ -n "$merge_head" ]] || return 1
+  [[ "$merge_head" == /* ]] || merge_head="$dir/$merge_head"
+  [[ -f "$merge_head" ]]
+}

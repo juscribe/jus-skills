@@ -1,0 +1,46 @@
+# Command patterns the jus hooks use to recognise commands, read once by
+# lib/state.sh when it loads. One pattern per line: NAME, a tab, then an
+# extended regular expression. A line starting with # is a comment.
+#
+# Why this is a data file: Claude's plugin directory blocks a hook
+# script that names a package runner beside a program the script computes,
+# and these patterns have to name every package manager. Kept here, no hook
+# script names one.
+#
+# RUNNER: what may precede a recognised program in juscribe_sop_command_invokes,
+# with its flags: xargs shellcheck, npx shellcheck, env shellcheck.
+#
+# Linters, type checkers, formatters and test runners that count as "the
+# linters ran", in every stack the bundle may be installed into.
+#
+# ⚠️ STACK-NEUTRAL BY CONSTRUCTION. This list decides whether a project can
+# commit at all, and the bundle ships to projects in any language: a project
+# whose checks are missing here is blocked with no way to clear the gate. It
+# once knew only the tools of the repository the bundle is developed in, so a
+# Python project running `ruff check` and `pytest` could never commit. When a
+# project's check is not recognised, the fix is to add its SHAPE here, never
+# to loosen the anchoring below.
+#
+# Five shapes, each an ERE fed to juscribe_sop_command_invokes, which anchors
+# it at the start of a command segment and allows any directory prefix, env
+# assignments and a runner (`xargs`, `env`, a package runner …):
+#
+#   tools       the program itself: `ruff check .`, `vendor/bin/phpstan`,
+#               `swiftlint`
+#   launchers   package runners in front of a tool, any number of them:
+#               `uv run python -m pytest`, `bundle exec rspec`, `pnpm exec eslint`
+#   subcommands a toolchain's own check verb: `cargo clippy`, `go vet`
+#   targets     a task runner's conventional target: `make lint`,
+#               `./gradlew check`, `npm run test:unit`
+#   wrappers    a project script named for its job: `script/test`, `bin/lint`,
+#               `./ci.sh` — the escape hatch for a check nothing else knows
+#
+# `npm ci` is the one a name list gets wrong: it installs, it checks nothing,
+# which is why the package-script targets leave `ci` out.
+#
+RUNNER	((xargs|env|time|nice|sudo|npx|bunx)([[:space:]]+-[^[:space:]]+)*[[:space:]]+)?
+LINT_TOOLS	rubocop|reek|rspec|standardrb|eslint|prettier|tsc|vitest|jest|biome|oxlint|stylelint|mocha|ruff|flake8|pylint|mypy|pyright|black|isort|pytest|tox|nox|bandit|golangci-lint|staticcheck|gofmt|rustfmt|swiftlint|swiftformat|ktlint|detekt|phpunit|phpstan|psalm|phpcs|php-cs-fixer|clang-tidy|clang-format|cppcheck|ctest
+LINT_LAUNCHERS	((bundle|pnpm|npm|yarn|bun|uv|poetry|pipenv|pdm|hatch|rye)([[:space:]]+(exec|run|x|dlx))?[[:space:]]+|python3?[[:space:]]+-m[[:space:]]+)
+LINT_SUBCOMMANDS	cargo[[:space:]]+(clippy|test|check|fmt|nextest)|go[[:space:]]+(test|vet|fmt)|deno[[:space:]]+(lint|test|check|fmt)|dotnet[[:space:]]+(test|format)|swift[[:space:]]+test|mix[[:space:]]+(test|credo|format|dialyzer)|rails[[:space:]]+test|python3?[[:space:]]+-m[[:space:]]+unittest|(pre-commit|lefthook)[[:space:]]+run
+LINT_TARGETS	(make|just|task|rake|gradlew?|mvnw?|xcodebuild|composer)([[:space:]]+[^[:space:]]+)*[[:space:]]+(lint|test|tests|check|checks|ci|spec|specs|typecheck|verify)([:_-][^[:space:]]*)?|(npm|pnpm|yarn|bun)([[:space:]]+run)?[[:space:]]+(lint|test|tests|check|spec|typecheck|type-check)(:[^[:space:]]*)?
+LINT_WRAPPERS	[^[:space:]]*/(lint|test|tests|check|ci|cibuild)(\.[A-Za-z]+)?

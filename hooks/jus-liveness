@@ -1,0 +1,134 @@
+#!/usr/bin/env bash
+# jus-liveness — did the jus enforcement hooks actually RUN?
+#
+# ⚠️ EVERY OTHER CHECK WE HAVE ANSWERS "IS THIS WIRED", ONCE, AT INSTALL TIME.
+# None of them survives the tool changing its mind. Four silencers — a non-2
+# exit, a tool name the guards do not match, a cwd outside a Juscribe project,
+# and a manifest the tool never loaded — each produce NO OUTPUT AT ALL, so a
+# fully installed, correctly configured hook set can protect nothing and look
+# completely healthy. On the Cursor adapter that state shipped with tests, a
+# README and a live verification all passing over it.
+#
+# This reads the record `scripts/lib/state.sh` writes on every invocation, and
+# separates the three states nothing else can tell apart:
+#
+#   ran and allowed / ran and blocked   → alive. Both are proof of life.
+#   ran, and could not tell WHERE       → a shim lost the cwd (empty-cwd shape)
+#   no record at all                    → never ran
+#
+# Usage:
+#   jus-liveness              # the most recently active session
+#   jus-liveness <session-id>
+#
+# Exit 0 when the hooks are alive, 1 when they are not. Prints either way —
+# this is the command a person runs, not something a hook emits.
+
+set -uo pipefail
+
+# Every root a record can land in. `scripts/lib/state.sh` writes under
+# $CLAUDE_PLUGIN_DATA, which the TOOL sets for its hook processes and nothing
+# sets in the shell a person runs this from — so reading only that variable
+# reported "no hook has run" on every plugin install.
+#
+#   Claude Code plugin   ~/.claude/plugins/data/<plugin>/
+#   Copilot plugin       ~/.copilot/plugin-data/<marketplace>/<plugin>/
+#   anything else        $TMPDIR/jus/ — the fallback state.sh itself uses
+#
+# Set CLAUDE_PLUGIN_DATA to read one root only.
+if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
+  ROOTS=("$CLAUDE_PLUGIN_DATA")
+else
+  ROOTS=()
+  for root in "$HOME"/.claude/plugins/data/* "$HOME"/.copilot/plugin-data/*/* "${TMPDIR:-/tmp}/jus"; do
+    [[ -d "$root/sessions" ]] && ROOTS+=("$root")
+  done
+fi
+
+# The newest liveness.log across the roots, for one session or for any.
+# `ls -t` rather than `find -printf`, which BSD find does not have.
+newest_log() { # [session]
+  local root file files=()
+  for root in ${ROOTS[@]+"${ROOTS[@]}"}; do
+    # Unquoted on purpose: with no session named, `*` is the glob over them.
+    for file in "$root"/sessions/${1:-*}/liveness.log; do
+      [[ -f "$file" ]] && files+=("$file")
+    done
+  done
+  [[ ${#files[@]} -gt 0 ]] || return 0
+  ls -t "${files[@]}" | head -1
+}
+
+session="${1:-}"
+log=$(newest_log "$session")
+if [[ -n "$log" && -z "$session" ]]; then
+  session=$(basename "$(dirname "$log")")
+fi
+
+if [[ -z "$log" || ! -s "$log" ]]; then
+  printf '\033[31m✗ NO jus hook has run%s.\033[0m\n' \
+    "${session:+ in session $session}"
+  cat <<'WHY'
+
+Nothing recorded means one of:
+
+  - the manifest was never installed, or the tool never loaded it. Several
+    tools say so themselves — Antigravity logs `loaded N named hooks from N
+    hooks.json file(s)`, and `kimi doctor` validates its config.
+  - the tool fired no event this session (a session with no tool calls
+    records nothing, correctly).
+  - the hook command failed before the script ran. Every manifest runs
+    `jus hook <name>`, so a `jus` missing from the tool's PATH, or one older
+    than its `hook` subcommand, exits non-zero — and a non-2 exit fails open.
+    `jus doctor` names both.
+
+WHY
+  printf 'Looked in:\n'
+  printf '  %s\n' "$HOME/.claude/plugins/data/*/sessions/" "$HOME/.copilot/plugin-data/*/*/sessions/" \
+    "${TMPDIR:-/tmp}/jus/sessions/"
+  [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]] && printf '  (only %s/sessions/, because CLAUDE_PLUGIN_DATA is set)\n' "$CLAUDE_PLUGIN_DATA"
+  exit 1
+fi
+
+total=$(grep -c . "$log")
+no_cwd=$(grep -c 'cwd=no-cwd' "$log")
+
+printf 'session: %s\n' "$session"
+printf 'records: %s\n\n' "$total"
+
+# script × tool × cwd-source × outcome, one row per distinct combination. The
+# line is key=value, so the fields are read by NAME rather than by position —
+# a new key added later cannot silently shift this.
+awk -F' ' '{
+  delete f;
+  for (i = 1; i <= NF; i++) { split($i, kv, "="); f[kv[1]] = kv[2]; }
+  key = sprintf("%-32s %-8s %-9s %s", f["script"], (f["tool"] == "" ? "-" : f["tool"]), f["cwd"], f["outcome"]);
+  count[key]++;
+}
+END { for (key in count) printf "  %s  ×%d\n", key, count[key]; }' "$log" | sort
+
+# ⚠️ THE EMPTY-CWD SHAPE, AND IT LOOKS HEALTHY WITHOUT THIS. The guards ran.
+# They read a cwd their shim had already lost — Cursor sends the empty STRING
+# and jq's `//` keeps it — found no repository, and exited 0. Every one of them.
+if [[ "$no_cwd" -gt 0 && "$no_cwd" -eq "$total" ]]; then
+  printf '\n\033[31m✗ every record says cwd=no-cwd.\033[0m\n'
+  cat <<'WHY'
+
+The hooks ran and could not tell which project they were in, so all of them
+declined. That is a broken payload shim, not a quiet session — and it is
+indistinguishable from a healthy run in every other signal we have.
+
+Look at the adapter's normalizer for a fallback chain that keeps an empty
+string: jq's `//` falls back on null and false ONLY. See
+hooks/README.md → "An empty string is not a missing value".
+WHY
+  exit 1
+fi
+
+printf '\n\033[32m✓ the jus hooks are alive.\033[0m\n'
+
+if [[ "$no_cwd" -gt 0 ]]; then
+  printf '\033[33m⚠ %s of %s records lost the payload cwd (cwd=no-cwd).\033[0m\n' "$no_cwd" "$total"
+  printf '  Those ran against $PWD rather than the cwd they were handed.\n'
+fi
+
+exit 0

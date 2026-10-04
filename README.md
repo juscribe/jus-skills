@@ -1,0 +1,424 @@
+# jus-skills
+
+One plugin, `jus`, shown as Juscribe, for Claude and every coding agent: the Juscribe connector, three on-demand skills packaging the Juscribe ticket-lifecycle SOP, and enforcement hooks. The skills load in any tool that supports the [Agent Skills standard](https://agentskills.io).
+
+Juscribe is the control plane for agent work — a job board for your agents.
+
+[![A board that moved while nobody was watching it](https://juscribe.ai/videos/product-poster-v6.jpg)](https://juscribe.ai/)
+
+## Who it is for
+
+Someone already running a coding agent who wants somewhere for it to check in, and anyone who would rather ask Claude about the board from a chat window. One install serves both, because each Claude surface loads what it can use: chat takes the skills and the connector, and Cowork and Claude Code take the hooks as well.
+
+## Install
+
+```sh
+/plugin marketplace add juscribe/jus-skills   # Claude Code
+/plugin install jus@jus-skills
+git clone https://github.com/juscribe/jus-skills.git ~/.jus-skills   # every other tool
+mkdir -p .agents/skills && ln -sfn ~/.jus-skills/skills/* .agents/skills/
+```
+
+Codex, Cursor, Kimi Code, Gemini CLI, Windsurf, Zed and Antigravity all read `.agents/skills/`. [Every install path](#every-install-path) has the per-tool notes and the hook adapters.
+
+In a Claude chat window or Cowork, open **Customize > Plugins > Add > Add marketplace**, enter `juscribe/jus-skills` and install **Juscribe**. Then connect it on the plugin's **Connectors** tab and sign in. On a Team or Enterprise plan, an Owner adds the connector first.
+
+## What it contacts
+
+The connector sends your requests to `mcp.juscribe.ai`, which reads and writes your Juscribe workspaces as you, after you sign in. Where Claude has a shell, as in Claude Code, the skills and the hooks also run the `jus` command-line tool, which talks to `app.juscribe.ai`, Juscribe's own API. Where `jus` is not installed, the hooks do nothing. The hooks keep small per-session records on your machine, in Claude's plugin data folder: which files were edited and whether the linters ran. The plugin contacts nothing else.
+
+Already running the local [`@juscribe/mcp`](https://www.npmjs.com/package/@juscribe/mcp) server? Then you have two sets of Juscribe tools. Remove the one you added (`claude mcp remove juscribe` in Claude Code), or keep it and turn this plugin's connector off in `/mcp`.
+
+## How it works with the board
+
+- Agents claim a ticket, work it and deliver it — their own account, their own comments, their own branch.
+- Only a human accepts. An agent can finish; it cannot decide the work is done.
+- Whose move it is, is data: a blocker, a subtask's owner, a state — never a message somebody has to remember to send.
+
+## Links
+
+- [juscribe.ai](https://juscribe.ai) — the board
+- [jus](https://github.com/juscribe/jus) — the `jus` CLI's public repository, under MIT
+- [jus-dispatch](https://github.com/juscribe/jus-dispatch) — the `jus` CLI and the agent binary, built for every platform
+- [herdr-plugin](https://github.com/juscribe/herdr-plugin) — the Herdr plugin
+- [homebrew-tap](https://github.com/juscribe/homebrew-tap) — the Homebrew formula
+- [@juscribe/mcp](https://www.npmjs.com/package/@juscribe/mcp) — the MCP server and its install block, for any tool that speaks MCP
+- [Support](https://juscribe.ai/support)
+
+## What's in the box
+
+```
+jus/
+├── .claude-plugin/
+│   ├── plugin.json                 # Claude Code plugin manifest
+│   └── marketplace.json            # Claude Code marketplace manifest (distributable install)
+├── CHANGELOG.md                    # Release history + versioning strategy
+├── gemini-extension.json           # Gemini CLI extension manifest
+├── GEMINI.md                       # Gemini CLI baseline context
+├── AGENTS.md                       # Shared baseline context for every AGENTS.md reader
+├── .mcp.json                       # the Juscribe connector, mcp.juscribe.ai
+├── skills/
+│   ├── hard-rules/SKILL.md         # Non-negotiable rules + the why
+│   ├── retrospective/SKILL.md      # Reviewing an iteration and publishing the report
+│   └── ticket-workflow/SKILL.md    # Single load-bearing skill: lifecycle + estimation/labels/testing/API
+└── hooks/
+    ├── hooks.json                  # Claude Code hook manifest
+    ├── tests.sh                    # Hook + manifest test harness
+    └── scripts/                    # bash hook scripts (jq required)
+```
+
+> **Distributable layout.** The standalone [`juscribe/jus-skills`](https://github.com/juscribe/jus-skills) repo's root is the contents of this `jus/` directory, so `plugin.json` and `marketplace.json` both sit at the repo root's `.claude-plugin/` and the plugin `source` is `"./"`.
+
+The skills are tool-agnostic Markdown — readable by any agent that loads them. The hooks are a deterministic backstop for the most painful hard rules, wherever a tool runs them: Claude Code and Cowork from `hooks/hooks.json`, every other tool through its adapter under `hooks/`. A Claude chat window ignores them.
+
+## Skills
+
+| Skill                 | When it fires                                                                                                                                                              |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jus:hard-rules`      | Loaded at session start by the Kimi Code plugin (`kimi.plugin.json`) only. Everywhere else, on demand: about-to-write-code; about-to-edit-description                      |
+| `jus:ticket-workflow` | The single load-bearing skill — any ticket work: lifecycle, transitions, comments, delivery, **plus** estimation, labels, testing gates, and the `jus` CLI / API reference |
+| `jus:retrospective`   | "retrospective", "retro", "sprint review", reviewing what an iteration delivered — gathering, the sections it owes, inline-SVG charts, verification, and the write-back    |
+
+> **One load-bearing skill, by design.** Cold-start validation found that only `ticket-workflow` (and `hard-rules`) reliably auto-invoke — the earlier `testing-gates`, `juscribe-api`, and `estimation-labels` skills never fired, because `ticket-workflow` already had their content resident. They were retired and their reference folded into `ticket-workflow`. Don't slim that content on the assumption a specialist skill will auto-load to cover it — none will.
+>
+> ⚠️ **`retrospective` is not a counter-example to that, and the difference is why it fires.** The three retired skills carved up the _same task_ — working a ticket — so `ticket-workflow` was always already resident when their trigger words appeared, and they never got a turn. A retrospective is a different task with its own vocabulary ("retro", "sprint review", an iteration by number), asked for at a moment when no ticket is being worked. Don't read it as licence to split ticket work back up.
+
+## Hooks
+
+Twelve bash scripts wired into Claude Code's hook system. Each is a deterministic backstop (hard block) or soft nudge supporting the prompt-level rules in `hard-rules` / `ticket-workflow`. All are `jus-`prefixed.
+
+| Hook                                              | Event                           | What it does                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jus-block-force-push.sh`                         | `PreToolUse Bash`               | Blocks `git push --force`, `-f`, and `--force-with-lease`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `jus-block-no-verify.sh`                          | `PreToolUse Bash`               | Blocks `--no-verify`, `-n`, a one-off `-c core.hooksPath=…`, and the environment variables that skip git hooks: `HUSKY=0`, `LEFTHOOK=0`, `LEFTHOOK_EXCLUDE`, `SKIP`, `PRE_COMMIT_ALLOW_NO_CONFIG`                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `jus-pre-commit-gate.sh`                          | `PreToolUse Bash`               | Blocks a `git commit` that adds a lint or type-check suppression, whatever wrote it, or that follows code edits no linter has run on since. A plain commit is scanned on its staged diff; a command that also stages files is scanned on the whole working tree                                                                                                                                                                                                                                                                                                                                                   |
+| `jus-block-accepted-manifest-edit.sh`             | `PreToolUse Bash`               | Blocks a `jus api PATCH` that edits the description of an accepted or cancelled ticket. It reads a body file the command only reads (`@file`, `$(cat file)`, `< file`), and on such a ticket refuses a body it cannot see (a pipe, a file the same command writes)                                                                                                                                                                                                                                                                                                                                                |
+| `jus-block-lint-suppression.sh`                   | `PreToolUse Edit/Write`         | Blocks edits that introduce a new `rubocop:disable`, `eslint-disable`, `@ts-ignore`, `:reek:`, `shellcheck disable`, etc. It sees tool events only, so a suppression written with `sed` or a heredoc is caught by `jus-pre-commit-gate.sh` when it is committed. The table both read is `hooks/scripts/lib/lint_suppressions.sh`.                                                                                                                                                                                                                                                                                 |
+| `jus-track-edits.sh` + `jus-post-bash-tracker.sh` | `PostToolUse`                   | Records edits, lint/commit successes, and ticket-lifecycle state (active ticket, `started` transition, start-comment posted) in per-session state                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `jus-start-comment-nudge.sh`                      | `PostToolUse Edit/Write`        | On the first source-file edit after a `started` transition with no start comment yet, nudges (non-blocking) to post the start comment first                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `jus-docs-nudge.sh`                               | `PostToolUse Bash + Edit/Write` | Nudges (non-blocking) at the project docs mapped in `.jus/docs-nudges.tsv` — at ticket pickup for `label:<name>`/`kw:<word>` rows matching the started ticket's labels/title (one sparse `jus api` GET, fail-open), and on the first edit under a mapped path prefix. Once per doc per active ticket across both moments; a silent no-op for projects with no map. A row is `<trigger>\t<doc path>` with an **optional** third `<when-to-read hint>` column — omit it and the hint is read from the `When to read:` line of the `INDEX.md` beside the doc, first clause only; no index or no entry means no nudge |
+| `jus-blocker-date-nudge.sh`                       | `PreToolUse Bash`               | Nudges (non-blocking) when a dependency is written with a time in its text and no date in its columns                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `jus-stop-uncommitted.sh`                         | `Stop`                          | Prevents the session from ending while the working tree is dirty. Checks the worktree this session locked when there is one — see _Which tree the stop guard reads_. ⚠️ Runs only on a turn that ends normally: an interrupted or errored turn skips it, and the next turn that ends normally is blocked instead                                                                                                                                                                                                                                                                                                  |
+| `jus-ticket-claim-nudge.sh`                       | `UserPromptSubmit`              | When a prompt mentions `#N` or `jus-N`, hands the agent that ticket as a candidate, with hints on what the number may be, and the command that starts it. Once a session, also says when the installed `jus` CLI is older than [`JUS_MIN_VERSION`](JUS_MIN_VERSION), or missing (non-blocking). ⚠️ Claude Code only: every other tool launches this hook through `jus hook`, which a missing or too-old CLI refuses first, so there `jus doctor` gives the verdict                                                                                                                                                |
+
+### Where the hooks act
+
+**Every hook is a no-op outside a Juscribe project**. A hook runs only when its payload's `cwd` sits in a git repository with a `.jus/` directory in that folder or one above it, up to and including the repository's toplevel. Everywhere else all twelve exit 0 silently.
+
+In a monorepo that means the package you ran `jus init` in is wired, along with every folder inside it. A sibling package, or the monorepo root, is not: the check only ever looks **up** from the `cwd`.
+
+This is what stops an install in one project from reaching into every other checkout on the machine — a force push refused in an unrelated repository, a dirty-tree stop nag on somebody's weekend project. It also makes the install scope the only thing that decides where the bundle acts.
+
+⚠️ **A `.jus` in an ANCESTOR does not count, deliberately.** The upward look stops at the git toplevel rather than carrying on to `/`, because ancestors are not the project's to claim: a `.jus` in `$HOME` would wire every repository a person owns, and on the authoring machine `$TMPDIR/.jus/` already exists as litter from an unrelated tool. Not being in a git repository at all means not being in a Juscribe project — `jus init` refuses to set one up outside git.
+
+⚠️ **In a git worktree, `.jus/` exists only if something under it is tracked.** `jus init` keeps `.jus/config/` and `.jus/tmp/` out of git, so in a project with no tracked file under `.jus/`, a worktree has no `.jus/` and every hook is silently off there. `git ls-files .jus` printing nothing is the sign. Commit a file under `.jus/` to fix it.
+
+Set `JUS_HOOKS_EVERYWHERE=1` to restore the old machine-wide behaviour, if you use the SOP without ever running `jus init`:
+
+```sh
+export JUS_HOOKS_EVERYWHERE=1
+```
+
+### Which tree the stop guard reads
+
+`jus-stop-uncommitted.sh` needs to know which checkout is _yours_. It takes that from the `cwd` the harness hands it — **unless** a `git worktree` is locked with a reason carrying the session id, in which case that worktree is the tree it reads.
+
+This matters for one workflow in particular: an agent that works in a worktree but keeps its `cwd` at the main checkout, `cd`ing in per command. Its `cwd` then names a tree it never edits, so without the lock the stop hook blocks on somebody else's uncommitted files.
+
+Lock the worktree when you create it:
+
+```sh
+git worktree add --lock --reason "jus session $CLAUDE_CODE_SESSION_ID (pid $$)" path/to/tree -b my-branch
+```
+
+**The requirement is the session id, not the prefix.** The matcher (`juscribe_sop_session_worktree` in `hooks/scripts/lib/state.sh`) does a plain substring test of the session id against the `locked <reason>` line, so any reason containing it resolves. `jus session …` is the recommended spelling, for a reason that has nothing to do with matching.
+
+⚠️ **Do not begin the reason `claude session ` or `claude agent `.** That is Claude Code's own ownership spelling, and it releases any lock wearing it once the recorded pid is gone — so the lock vanishes and another session can remove your worktree while you are working in it. `jus session …` is outside that pattern by construction.
+
+**With no matching lock, both hooks fall back to the `cwd`'s checkout** — the behaviour they have always had. That fallback is correct and silent: nothing warns you that a hand-written lock reason, git's bare `locked`, or no lock at all has left the redirect inert. If a stop block or a nudge is counting files you did not touch, this is the first thing to check.
+
+### Per-session state
+
+Hooks track timestamps and counters in `${CLAUDE_PLUGIN_DATA}/sessions/<session_id>/`. State is reset when a successful `git commit` is observed. The `stop-uncommitted.sh` hook respects `stop_hook_active=true` to avoid infinite stop-block loops.
+
+## Every install path
+
+> **Non-Claude tools all install the same way** — the canonical `.agents/skills/` recipe below. Options D–G add per-tool notes only; none has its own install path.
+
+### The canonical `.agents/skills/` install (all non-Claude tools)
+
+`.agents/skills/` is the open-standard directory read by Codex, Cursor 2.4+, Kimi Code, Windsurf, Zed, Antigravity, and Claude Code. Install with one shared clone plus per-skill symlinks in the **standard layout** (`.agents/skills/<name>/SKILL.md`):
+
+```sh
+git clone https://github.com/juscribe/jus-skills.git ~/.jus-skills             # once per machine
+mkdir -p .agents/skills && ln -sfn ~/.jus-skills/skills/* .agents/skills/      # this project
+mkdir -p ~/.agents/skills && ln -sfn ~/.jus-skills/skills/* ~/.agents/skills/  # or: every project
+```
+
+Update with `git -C ~/.jus-skills pull` (re-run the `ln` line if a release adds a new skill). `jus init` runs this recipe for you on skills-capable tools.
+
+- **The clone can live anywhere** — set `JUS_SKILLS_DIR` and `jus init` uses it everywhere: the clone itself, the symlink targets, the Codex hook merge and the `.claude/skills/` bridge. Export it where your shell will see it on every `jus` run, not just once; the default stays `~/.jus-skills`.
+
+  ```sh
+  export JUS_SKILLS_DIR=~/code/jus-skills
+  ```
+
+- **Standard layout only — never clone the repo into a skills directory.** A nested clone (`.agents/skills/jus/skills/<name>/…`) loads only on tools whose discovery happens to recurse (Codex today, and [openai/codex#22275](https://github.com/openai/codex/issues/22275) asks for that to be restricted). `jus init` offers a migration when it finds one.
+- **Symlink caveat** — if a tool doesn't list the skills (Antigravity's IDE ignores symlinks for global skills, [vercel-labs/skills#633](https://github.com/vercel-labs/skills/issues/633)), replace the symlinks with copies: `cp -r ~/.jus-skills/skills/* .agents/skills/`.
+- **Legacy Continue (pre-acquisition v2.x)** — reads skills only from `.continue/skills/` or `.claude/skills/` (never `.agents/skills/`) and its released builds don't follow symlinks: residual Continue users should `cp -r ~/.jus-skills/skills/* .continue/skills/`. (Continue's hosted Hub shut down after Cursor's 2026-06 acquisition — there is no packaged Continue channel.)
+- **Baseline context is optional** — the skills are self-sufficient; auto-invocation runs on their `description` frontmatter. The bundle's `AGENTS.md`/`GEMINI.md` stay in `~/.jus-skills/` for tools that want them; `jus init`'s legacy append embeds the SOP into a context file instead (never do both). That append is the whole SOP, about 80 KB, and `jus init` says so first: Codex reads 32 KiB of project docs by default and cuts the rest, and Kimi warns on every session above 32 KB. ⚠️ **`AGENTS.md` is read by more tools than it used to be, Claude Code among them**: its `instructionFiles` default `claude-md-or-agents-md` discovers `AGENTS.md` and `.claude/AGENTS.md` **while the project has no `CLAUDE.md`, `.claude/CLAUDE.md` or `CLAUDE.local.md`**. So one shared `AGENTS.md` can serve Codex, Kimi, Antigravity and Claude Code — but creating a `CLAUDE.md` switches the shared file off rather than adding to it. ⚠️ **Two more ways it is not read:** Claude Code before 2.1.277, or on Bedrock, Vertex or Foundry, reads no `AGENTS.md` at all; and a `CLAUDE.md` in **any folder above** hides it as surely as one beside it, because Claude Code's walk up does not stop at the git root. A `CLAUDE.md` beside `AGENTS.md` holding only `@AGENTS.md` loads both.
+
+### Option A — local development (working on the bundle itself)
+
+Point Claude Code at a checkout of the bundle:
+
+```sh
+claude --plugin-dir <path-to-the-bundle>
+```
+
+`/reload-plugins` picks up changes without restarting.
+
+### Option B — via the marketplace (distributable install)
+
+The bundle ships a `marketplace.json`, so once the `juscribe/jus-skills` repo is
+published you install it in two commands from inside Claude Code:
+
+```sh
+/plugin marketplace add juscribe/jus-skills   # registers the "jus-skills" marketplace
+/plugin install jus@jus-skills                # installs the "jus" plugin from it
+```
+
+> **The install asks which scope, and the wrong answer is listed first.**
+> `/plugin install` offers `Install for you (user scope)`,
+> `Install for all collaborators on this repository (project scope)` and
+> `Install for you, in this repo only (local scope)`, in that order. Pick the
+> **second** unless you really do want the bundle everywhere: user scope loads
+> the skills and fires the enforcement hooks in every project on your machine,
+> including ones with no `.jus` directory. The non-interactive equivalent is
+> `claude plugin install -s project jus@jus-skills` — that form takes the scope
+> as a flag and defaults to `user` without asking.
+
+The `@jus-skills` suffix is the marketplace `name` (from `marketplace.json`), not
+the repo name — they happen to match here by design. The version is pinned by
+`plugin.json`; see [`CHANGELOG.md`](CHANGELOG.md) for the versioning strategy.
+`/plugin marketplace update jus-skills` pulls later releases.
+
+⚠️ **It does not update by itself unless auto-update is on, and for this marketplace it is off by default.** Claude Code auto-updates Anthropic's own marketplaces and no other. Switch it on inside Claude Code with `/plugin` → Marketplaces → `jus-skills` → Enable auto-update. `jus init` declares it in the project's `.claude/settings.json`, which Claude Code applies once the folder is trusted. Even when it is on:
+
+- The session you are in keeps the version it launched with, until `/reload-plugins` or the next launch.
+- The update runs after a session's first prompt, up to ten minutes later.
+- A Homebrew or npm install of Claude Code switches plugin updates off, and so does `DISABLE_AUTOUPDATER` or `DISABLE_UPDATES`, unless `FORCE_AUTOUPDATE_PLUGINS=1` is set too.
+
+`jus doctor` reports whether it is on, and names the setting that switches it off.
+
+⚠️ **Claude Code on the web cannot reach the board until you allow it.** Its default network level stops at package registries; [Network allowlist](#network-allowlist) has the setting.
+
+> **Activation is not always immediate.** The install summary tells you where
+> you stand: `Plugin is now active.` means you're done, while
+> `Run /reload-plugins to activate.` means the skills wait for that command
+> (Claude Code before v2.1.221 always needs it). Hooks from a newly installed
+> plugin need `/reload-plugins` either way.
+>
+> ⚠️ **A plugin "enabled" declaratively via a project's checked-in
+> `.claude/settings.json` is not installed by that alone** — not on the next
+> trusted launch, not on any launch. Measured on Claude Code 2.1.259:
+> `extraKnownMarketplaces` is honoured (the marketplace clones), while
+> `installed_plugins.json` stays empty and no skill loads. Run the install.
+
+### Option C — manual skills copy (skills only, no hooks)
+
+> Prefer **Option B (marketplace)** — it's the recommended path for external Claude Code users and is the only one that also installs the enforcement hooks. This manual copy is a fallback for users who want _only_ the skills in their personal config without enabling the full plugin.
+
+```sh
+cp -r jus/skills/* ~/.claude/skills/
+```
+
+Hooks must be installed via Option A or B — they require `${CLAUDE_PLUGIN_ROOT}` resolution that only works inside an enabled plugin.
+
+### Option D — Google Antigravity CLI (`agy`)
+
+> ⚠️ **GEMINI CLI IS NOT SUNSET — THIS BOX SAID IT WAS, AS FACT.** Google announced a transition to Antigravity for 2026-06-18 ([announcement](https://developers.googleblog.com/an-important-update-transitioning-gemini-cli-to-antigravity-cli/)), and the CLI kept shipping regardless: measured 2026-09-19 against the npm registry, `@google/gemini-cli` was on **0.60.0** with a nightly cut that same morning, under Apache-2.0. **Antigravity is a separate product, not Gemini CLI's replacement** — it has its own adapter, and Gemini CLI has its own, in [Option I](#option-i--gemini-cli-gemini).
+
+Antigravity discovers **project skills** from `<workspace-root>/.agents/skills/<name>/SKILL.md` — the same cross-tool path Claude Code, Codex, Cursor, Windsurf, and Zed use. (Antigravity's current default is the plural `.agents/skills/`, with the singular `.agent/skills/` kept for backward compatibility; the official [skills codelab](https://codelabs.developers.google.com/getting-started-with-antigravity-skills) still shows the singular form.) **Install via the canonical `.agents/skills/` recipe above.**
+
+Global (user-level) skills live at `~/.gemini/antigravity/skills/<name>/SKILL.md`.
+
+- **Context files** — Antigravity reads `GEMINI.md` and `AGENTS.md` unchanged ("no modifications needed"; `GEMINI.md` wins on conflict). Do **not** add a `.antigravity.md`; it is not part of the documented context hierarchy.
+- **Legacy extension** — bring the existing `gemini-extension.json` across with `agy plugin import gemini` (per Google's migration guide; the exact `agy plugin install/list/...` syntax is not yet documented — only `import gemini` is).
+- **Do NOT hand-author an Antigravity `plugin.json`** — its field schema is undocumented in every primary source. Generate it via `agy plugin import gemini`, never by guessing keys. (The bundle's `.claude-plugin/plugin.json` is a _Claude Code_ manifest — unrelated; leave it untouched.)
+- **Symlink caveat — verify on a live install.** Antigravity's IDE is reported to ignore symlinks for _global_ skills in `~/.gemini/antigravity/skills/` ([vercel-labs/skills#633](https://github.com/vercel-labs/skills/issues/633), open); project-level symlink-following is unconfirmed. If skills don't appear, swap the `.agents/skills/` symlinks for real copies: `cp -r jus/skills/* .agents/skills/`.
+
+Smoke-test (requires a real `agy` install): launch `agy` in a repo whose `.agents/skills/` exposes the bundle, and confirm the 3 skills appear (they convert to `/slash-commands` in the TUI) and auto-activate on matching intent.
+
+### Option E — Antigravity IDE (Antigravity desktop / successor to Gemini Code Assist)
+
+> ⚠️ **Gemini Code Assist's IDE agent extension was announced as sunset for 2026-06-18.** Its successor is the Antigravity editor, which shares the same agent harness as the CLI. ⚠️ **This is Gemini Code Assist, a different product from the Gemini CLI** — the CLI is alive, and the box under Option D says so. Nobody has re-measured this one.
+
+The IDE reads the **same project `.agents/skills/<name>/SKILL.md`** layout as the CLI (Option D) — no separate manifest or registration; the portable alias covers both surfaces. Keep `GEMINI.md` + `AGENTS.md` for baseline context.
+
+Smoke-test (requires the Antigravity editor): open a workspace whose `.agents/skills/` exposes the bundle, open the agent panel, and confirm the 3 skills are listed and auto-activate. **If they don't appear, suspect symlink discovery** ([vercel-labs/skills#633](https://github.com/vercel-labs/skills/issues/633)) and switch to copied skill directories.
+
+⚠️ **The Antigravity 2.0 app sandboxes commands with no network by default**, so `jus` cannot reach the board there until you add an allow rule. [Network allowlist](#network-allowlist) has it. The IDE's sandbox is off by default.
+
+### Option F — OpenAI Codex (CLI / IDE / app)
+
+OpenAI Codex adopted the [Agent Skills standard](https://agentskills.io) in Dec 2025 across all three surfaces — CLI, the VS Code / JetBrains IDE plugins, and the Codex app. They all read the same `SKILL.md` files this bundle ships; no per-surface variants are needed. (Codex's older "custom prompts" mechanism is deprecated upstream in favor of skills.)
+
+Codex's **documented** skill roots are exactly the canonical ones — project `.agents/skills/` (scanned in every directory from the CWD up to the repo root) and user `~/.agents/skills/` — so **install via the canonical `.agents/skills/` recipe above**; Codex needs nothing else.
+
+Two Codex-specific locations exist but should **not** be used:
+
+- `~/.codex/skills/` still loads, but as a deprecated backward-compat location.
+- A project `.codex/skills/` works only through an undocumented config layer, and the previously documented `git clone … .codex/skills/jus` layout survives only because discovery currently recurses six levels deep — behavior [openai/codex#22275](https://github.com/openai/codex/issues/22275) asks OpenAI to restrict. If you installed that way, re-install with the canonical recipe and delete the old clone.
+
+Notes:
+
+- Codex does **not** read the bundle's `AGENTS.md` out of a skills directory — instruction files are composed from the project root down to the CWD only. Use `jus init`'s append if you want the SOP in a context file (never alongside the skills install).
+- Auto-invocation uses the `description` frontmatter — the same matching heuristic as Claude Code and Gemini. `allowed-tools` is ignored.
+
+**⚠️ Network: Codex's sandbox blocks it by default, so `jus` cannot reach the board from inside Codex until you turn it on.** Every `jus` call fails with `Could not reach the Juscribe server`, and the token is fine. Add this to `~/.codex/config.toml` (or `$CODEX_HOME/config.toml`), then start a new Codex session:
+
+```toml
+[sandbox_workspace_write]
+network_access = true
+```
+
+For one session instead, start Codex with `codex -c sandbox_workspace_write.network_access=true`. The key applies in `workspace-write`, the mode Codex gives a trusted project. In `read-only` (an untrusted project) it does nothing. `jus doctor` flags a Codex project whose config leaves the network off, and when a `jus` call fails inside the sandbox the error names Codex and prints the fix. **Codex cloud has its own setting**, in the environment rather than `config.toml`: see [Network allowlist](#network-allowlist).
+
+**No-clone alternative — `$skill-installer` (user scope):** Codex's bundled installer skill pulls straight from GitHub; in any Codex session:
+
+```text
+$skill-installer install https://github.com/juscribe/jus-skills/tree/main/skills/ticket-workflow
+$skill-installer install https://github.com/juscribe/jus-skills/tree/main/skills/hard-rules
+```
+
+One skill per invocation, installed to `~/.codex/skills/<name>`. Caveat: there is no upgrade path — updating means deleting the installed directory and re-running. Prefer the canonical recipe for anything long-lived. (There is no official third-party skills registry to submit to — the old `openai/skills` catalog is deprecated in favor of plugins, whose public directory has no self-serve publishing yet; Codex plugin packaging for this bundle is tracked separately.)
+
+Verify after install: open a Codex session (CLI, IDE chat panel, or app) and ask something like _"what's the ticket workflow?"_ — the `ticket-workflow` skill should auto-activate. `/skills` lists loaded skills; a `$ticket-workflow` mention invokes one explicitly.
+
+### Network allowlist
+
+`jus` talks to `app.juscribe.ai`. The six places below block that host in their default setup, so every `jus` call fails with `Could not reach the Juscribe server` although the token is fine. The fix is in each tool's own settings, and **you make it yourself**: none of them lets the agent widen its own network access.
+
+| Where the agent runs   | What blocks it by default                                                                                                                                   | Allow `app.juscribe.ai`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Checked                               |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Cursor editor          | Auto-review, the default mode since 3.6, sandboxes shell commands. The sandbox reaches `sandbox.json` plus Cursor's list of package hosts, and nothing else | Add `{"networkPolicy":{"allow":["app.juscribe.ai"]}}` to `~/.cursor/sandbox.json` or the project's `.cursor/sandbox.json`. A team admin's allowlist **replaces** yours. Until then, Cursor asks to run each blocked command outside the sandbox                                                                                                                                                                                                                                                                                              | `checked:cursor 2026-09-23 docs`      |
+| Antigravity 2.0 app    | The Default preset sandboxes commands, and a sandboxed command has no network                                                                               | An allow rule `read_url(app.juscribe.ai)` under Settings → General → Permission Settings, or per project under Settings → Projects. It opens the host to shell commands such as `jus`, not only to the URL tool. macOS and Linux only; on Windows no preset sandboxes. The older Antigravity IDE does not sandbox by default. ⚠️ [antigravity-cli#984](https://github.com/google-antigravity/antigravity-cli/issues/984), open, reports the rule not reaching a sandboxed `curl`; if it fails, approve the prompt to run outside the sandbox | `checked:antigravity 2026-09-23 docs` |
+| Claude Code on the web | The default network level, **Trusted**, reaches package registries and nothing else                                                                         | Edit the environment, set **Network access** to **Custom**, add `app.juscribe.ai` to **Allowed domains**, and tick the box that keeps the default package-manager list                                                                                                                                                                                                                                                                                                                                                                       | `checked:claude 2026-09-23 docs`      |
+| Codex cloud            | The agent phase has no internet. Only setup scripts do                                                                                                      | In the environment's settings, turn **Agent internet access** on and add `app.juscribe.ai`. Allow **all** HTTP methods: the GET, HEAD and OPTIONS option refuses every `jus` write. Put the token in an **environment variable**, because Secrets are removed before the agent phase                                                                                                                                                                                                                                                         | `checked:codex 2026-09-23 docs`       |
+| Copilot cloud agent    | A firewall covers every command the agent runs through its Bash tool                                                                                        | Repository **Settings → Copilot → Internet access → Custom allowlist**, add `app.juscribe.ai`, or the organization's custom allowlist. A blocked call leaves a warning in the pull request body                                                                                                                                                                                                                                                                                                                                              | `checked:copilot 2026-09-23 docs`     |
+| Codex CLI / IDE / app  | The sandbox denies the network                                                                                                                              | `network_access = true` under `[sandbox_workspace_write]` in `~/.codex/config.toml`. See [Option F](#option-f--openai-codex-cli--ide--app)                                                                                                                                                                                                                                                                                                                                                                                                   | `checked:codex 2026-09-23 live`       |
+
+**Nothing to allow** in the default setup of Claude Code on your machine, the Cursor CLI, the Antigravity CLI (`agy`), the Copilot CLI, Gemini CLI, Qwen Code, Kimi Code, Windsurf or Cursor Cloud Agents. Most have a sandbox or an allowlist you can turn on, and then the host needs allowing:
+
+- **Claude Code** — `/sandbox`, or `sandbox.enabled`, turns it on. It then allows no domain until you approve one, so the first `jus` call asks. To allow it up front, add `app.juscribe.ai` to `sandbox.network.allowedDomains` in `.claude/settings.json`. `checked:claude 2026-09-23 docs`
+- **Cursor CLI** — off by default, though the default is a flag Cursor's server sets. `--sandbox enabled`, or `sandbox.mode` in `~/.cursor/cli-config.json`, turns it on, and it reads the same `sandbox.json` as the editor, so the entry above allows the host. `checked:cursor 2026-09-23 shipped`
+- **Antigravity CLI** — `--sandbox`, or `enableTerminalSandbox`, turns it on. Sandboxed commands then have no network until `~/.gemini/antigravity-cli/settings.json` carries `"permissions":{"allow":["read_url(app.juscribe.ai)"]}`. `checked:antigravity 2026-09-23 shipped`
+- **Copilot CLI** — its sandbox is experimental and off by default. It has no per-host list: `allowOutbound` lets every host through or none. `checked:copilot 2026-09-23 shipped`
+- **Gemini CLI and Qwen Code** — `--sandbox` turns it on. On macOS the default profile, `permissive-open`, allows the network. A `-proxied` profile allows only its proxy on `localhost:8877`, and Qwen's `-closed` profiles allow nothing. Neither has a per-host list, so switch to the same profile's `-open` form, such as `SEATBELT_PROFILE=restrictive-open qwen`. On Linux, Qwen's `QWEN_SANDBOX_NET` must stay `open`. `checked:gemini 2026-09-23 docs` `checked:qwen 2026-09-23 shipped`
+- **Cursor Cloud Agents** — internet is on by default. If you or a team admin pick an allowlist mode, add `app.juscribe.ai` to the allowlist on the Cloud Agents dashboard. `checked:cursor 2026-09-23 docs`
+- **Kimi Code and Windsurf** — no sandbox found in either. `checked:kimi 2026-09-23 shipped` `checked:windsurf 2026-09-23 docs`
+
+### Option G — Cursor 2.4+
+
+Cursor 2.4 added an Agent Skills surface that reads `SKILL.md` files directly — there is no extension manifest to register, just a directory convention. Cursor auto-loads skills from any of:
+
+| Path                             | Scope                              |
+| -------------------------------- | ---------------------------------- |
+| `.cursor/skills/` (project root) | Per-project                        |
+| `.agents/skills/` (project root) | Per-project, portable across tools |
+| `~/.cursor/skills/`              | Global, all projects               |
+| `~/.agents/skills/`              | Global, portable across tools      |
+
+Cursor reads the canonical `.agents/skills/` path natively — **install via the canonical recipe above**. (`.cursor/skills/` also works as a Cursor-only location, but prefer the shared path so one install serves every tool.)
+
+**Cursor Marketplace:** the bundle ships a `.cursor-plugin/plugin.json` manifest, making the repo a submittable Cursor plugin (skills auto-discover from the `skills/<name>/SKILL.md` layout; its `hooks` field registers the Cursor adapter's hooks too, which run through `jus hook` and so need the `~/.jus-skills` clone — see `hooks/cursor/README.md` → _Or install it as a plugin_). Submission happens at cursor.com/marketplace/publish (open-source required — satisfied; manual security review, no fee). Until the listing is live, the canonical install above is the Cursor path.
+
+Verify after install (or after `Reload Window`) by opening Cursor's agent panel and asking _"how do I deliver this ticket?"_ — the `ticket-workflow` skill should auto-activate based on its `description` frontmatter, the same way Claude Code, Gemini, and Codex do.
+
+⚠️ **The Cursor editor sandboxes shell commands by default, and the sandbox cannot reach the board** until `app.juscribe.ai` is in a `sandbox.json`. [Network allowlist](#network-allowlist) has the entry. The Cursor CLI's sandbox is off by default.
+
+Cursor recognizes the same `name` and `description` fields Claude Code uses; `allowed-tools` is silently ignored — same delta we already document for Gemini and Codex. The bundle ships skills only — Cursor's separate Subagents surface (`.cursor/agents/`) is out of scope, and per Cursor's docs, subagents currently can't load skills anyway.
+
+### Cross-tool support matrix
+
+| Tool                                                 | Skills supported                                                                                                                                      | Hooks bundled                                                                                                                                                                                                                   | Install path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Vendor facts checked                  |
+| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| Claude Code                                          | ✅ via `.claude-plugin/plugin.json`; reads `AGENTS.md` when no `CLAUDE.md` is here or in a folder above (2.1.277+, not on Bedrock, Vertex or Foundry) | ✅                                                                                                                                                                                                                              | `claude --plugin-dir ./jus` or `/plugin marketplace add juscribe/jus-skills` → `/plugin install jus@jus-skills`                                                                                                                                                                                                                                                                                                                                                                                   | `checked:claude 2026-09-19 shipped`   |
+| Google Antigravity CLI (`agy`)                       | ✅ via `.agents/skills/`                                                                                                                              | ✅ via `hooks/antigravity/` adapter — **live-verified** with a control arm; install at `~/.gemini/config/hooks.json`, NOT project scope                                                                                         | canonical `.agents/skills/` install; `agy plugin import gemini` for the legacy ext                                                                                                                                                                                                                                                                                                                                                                                                                | `checked:antigravity 2026-09-17 live` |
+| Antigravity IDE (desktop)                            | ✅ via `.agents/skills/` (Gemini Code Assist IDE announced sunset 2026-06-18)                                                                         | ⚠️ same `hooks/antigravity/` adapter; verified on the CLI only                                                                                                                                                                  | canonical `.agents/skills/` install (same project path as the CLI)                                                                                                                                                                                                                                                                                                                                                                                                                                | `checked:antigravity 2026-09-17 docs` |
+| OpenAI Codex (CLI / IDE / app)                       | ✅ via `.agents/skills/` (documented roots; same `SKILL.md`)                                                                                          | ✅ via `hooks/codex/` adapter (same scripts, Codex-native manifest + trust flow)                                                                                                                                                | canonical `.agents/skills/` install + `hooks/codex/README.md`                                                                                                                                                                                                                                                                                                                                                                                                                                     | `checked:codex 2026-09-15 live`       |
+| Cursor                                               | ✅ via Skills surface (uses same `SKILL.md`)                                                                                                          | ✅ via `hooks/cursor/` adapter — **live-verified** with a control arm on a signed-in agent turn; `stop` cannot block, so the dirty-tree gate is advisory                                                                        | canonical `.agents/skills/` install (`.cursor/skills/` also read); Marketplace listing via `.cursor-plugin/plugin.json` pending submission                                                                                                                                                                                                                                                                                                                                                        | `checked:cursor 2026-09-17 live`      |
+| Kimi Code (CLI / VS Code / ACP)                      | ✅ via `.agents/skills/` (also `.kimi-code/skills/`; does **not** read `.claude/skills/`)                                                             | ✅ via `hooks/kimi-code/` adapter or the `kimi.plugin.json` plugin (PostToolUse nudges degrade — see its README)                                                                                                                | Kimi plugin (`kimi.plugin.json` — skills + hooks + session-start hard-rules) or canonical `.agents/skills/` install                                                                                                                                                                                                                                                                                                                                                                               | `checked:kimi 2026-09-15 docs`        |
+| GitHub Copilot (coding agent / CLI / IDE agent mode) | ✅ via `.agents/skills/` (also `.github/skills/`, `.claude/skills/`; user scope `~/.copilot/skills/` + `~/.agents/skills/`)                           | ✅ via `hooks/copilot/` adapter — **live-verified** with a control arm on copilot 1.0.85                                                                                                                                        | `gh skill install juscribe/jus-skills` (gh ≥ 2.90, preview) or canonical `.agents/skills/` install                                                                                                                                                                                                                                                                                                                                                                                                | `checked:copilot 2026-09-17 live`     |
+| Qwen Code (`qwen` CLI)                               | ✅ via a Qwen extension, or `.agents/skills/` + `.qwen/skills/` (both since 0.13.0)                                                                   | ✅ via `hooks/qwen/` adapter — exit 2 blocks and `Stop` blocks, so no degradation; **live-verified** with a control arm on qwen 0.24.0, driven again on 0.24.3                                                                  | the Qwen extension, carrying skills and hooks: `qwen extensions install https://github.com/juscribe/jus-skills:juscribe --consent --scope project --auto-update`, which `jus init` runs. ⚠️ A second project's `install` answers `already installed`, exit 1: run `qwen extensions enable --scope workspace juscribe` there instead, which `jus init` does, and `disable --scope workspace` to undo it. ⚠️ Links in either root beside it load every skill twice. Details: `hooks/qwen/README.md` | `checked:qwen 2026-09-26 live`        |
+| Windsurf (now Devin Desktop)                         | ✅ via `.agents/skills/` (native skills)                                                                                                              | ⚠️ via `hooks/windsurf/` adapter — **unverified, and NOT verifiable headlessly**; Cascade has no `Stop` event at all                                                                                                            | canonical `.agents/skills/` install                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `checked:windsurf 2026-09-16 docs`    |
+| Gemini CLI (`gemini`)                                | ✅ via `.agents/skills/` — **takes precedence over its own `.gemini/skills/`**                                                                        | ✅ via `hooks/gemini/` adapter — exit 2 blocks, **live-driven** on a stub with a control arm on 0.60.0; no `Stop` event, and `AfterAgent` **retries** on deny instead of blocking, read from the shipped package and not driven | canonical `.agents/skills/` install + `hooks/gemini/README.md`                                                                                                                                                                                                                                                                                                                                                                                                                                    | `checked:gemini 2026-09-21 live`      |
+| Zed                                                  | ✅ via `.agents/skills/` (native skills)                                                                                                              | ❌                                                                                                                                                                                                                              | canonical `.agents/skills/` install                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `checked:zed 2026-09-15 docs`         |
+
+**Frontmatter portability.** The `SKILL.md` files use `name`, `description`, and `allowed-tools`. The first two are required by every tool above; `allowed-tools` is a Claude Code-only allowlist hint that other tools ignore. One set of skill files works for every supported tool — no per-tool variants needed.
+
+**Hooks run on Claude Code natively, and on every tool the matrix marks ✅ or ⚠️ under "Hooks bundled"** — eight adapters under `hooks/<tool>/`, each reusing the same scripts through that tool's own hooks system (Kimi additionally installs as a plugin via `kimi.plugin.json`). The matrix cell says what each one costs; the adapter's README says why, and the `hard-rules` skill carries the same degradations where the rules are.
+
+⚠️ **The ❌ in "Hooks bundled" means WE ship no adapter — not that the tool has no hooks.** This paragraph once said the opposite: _"Cursor, Copilot, Windsurf, Zed, and Antigravity have no hook mechanism."_ Four of those five do, and can refuse an action. Cursor returns `{"permission": "deny"}` from `preToolUse`, `beforeShellExecution`, `beforeMCPExecution`, `beforeReadFile` and two more; Copilot's `preToolUse` denies; Windsurf's Cascade Hooks block on **exit code 2** from any of five `pre_*` events; Antigravity has lifecycle hooks and sandboxes by default. Zed is the only one with no hook surface found. **Copilot, Cursor, Antigravity and Qwen Code now have adapters** (`hooks/copilot/`, `hooks/cursor/`, `hooks/antigravity/`, `hooks/qwen/`). All four are now live-verified against a real install with a control arm — Cursor, Copilot, the Antigravity CLI and Qwen Code. Each README says how. Windsurf has one too (`hooks/windsurf/`), which brings it to five, and Gemini CLI's makes six — driven on a stub with a control arm, though its `AfterAgent` retry is still read from the shipped package. Antigravity's is the weakest-EVIDENCE because Google documents none of its hook internals; **Windsurf's has the weakest VERIFICATION story** — Cascade hooks are IDE-only, so a human has to confirm it once by hand, and Cascade has no `Stop` event at all; **Qwen's is the strongest**, and the only one with no degradation against Claude Code, because its `Stop` event blocks where Cursor's cannot. ⚠️ **Antigravity's `Stop` blocks too, and this paragraph said otherwise until it was measured** — see the ✅ note in `hooks/antigravity/README.md`, which retracts the first cut's "advisory, exactly as on Cursor"; what Antigravity degrades is its PostToolUse channel, which the shim buffers into the next `PreInvocation`. Until an adapter exists, `hard-rules` is the prompt-level fallback on all of them.
+
+**Each row carries the date its vendor facts were last verified, and how.** They are claims about someone else's product and they rot without anyone editing this file — four of five were wrong within seven weeks of being written. The third token in `checked:<tool> <date> <grade>` says what the check actually was:
+
+- **`live`** — we ran the tool and watched the behaviour, with a control arm wherever the claim is that something gets refused.
+- **`shipped`** — read out of the vendor's own binary or package, not their website.
+- **`docs`** — read off the vendor's published documentation, and nothing else. This is the grade that was measured to be unreliable.
+
+The procedure, the per-tool source URLs, and the 42-day threshold a spec holds every row to are kept in the repository the bundle is developed in, not in this bundle.
+
+### Option I — Gemini CLI (`gemini`)
+
+Gemini CLI reads `.agents/skills/` and gives it **precedence over its own `.gemini/skills/`**, so the canonical `.agents/skills/` recipe above installs the skills with nothing extra.
+
+Hooks go in `settings.json` — Gemini's whole configuration file, not a hooks file, so **merge, never copy**:
+
+```sh
+jq -s '.[0] * .[1]' .gemini/settings.json ~/.jus-skills/hooks/gemini/settings.json > .gemini/settings.json.new && mv .gemini/settings.json.new .gemini/settings.json
+```
+
+`jus init` does this for you. Full notes, including the event map and the one degradation, are in `hooks/gemini/README.md`.
+
+⚠️ **There is no `Stop` event, and the nearest one runs backwards.** Denying on `AfterAgent` sends the reason back as a new prompt and **retries the turn**, so the dirty-tree gate makes the agent keep working rather than refusing to stop. Every other adapter's `Stop` degradation is "cannot block"; this one blocks in a direction the script did not choose.
+
+✅ **Live-driven, on a stub.** The upstream repo's adapter harness ran Gemini CLI 0.60.0 end to end on 2026-09-21 against a local stub model, with no account and no key: the deny arm was refused and the control arm committed. What is under test is the hook machinery, not Google's model. ⚠️ **The `AfterAgent` retry above is not part of that run** — it is still read out of the published `@google/gemini-cli` package (`bundle/docs/hooks/reference.md`).
+
+## Prerequisites
+
+- Claude Code with plugin support
+- `jq` on the host — used by every hook script. Install with `brew install jq` (macOS) or `apt install jq` (Debian/Ubuntu)
+- `bash` 4+ — the scripts use `[[ ... ]]` and `=~` regex
+- `git` — for the dirty-tree and stop hooks
+- The `jus` CLI, at [`JUS_MIN_VERSION`](JUS_MIN_VERSION) or newer — `brew install juscribe/tap/jus`, and `brew upgrade jus` to keep up. The plugin and the CLI release separately, so the prompt hook checks once a session and says so when yours is older. Without the CLI the hooks do nothing, and say nothing, so the plugin runs clean where there is no shell. ⚠️ That warning is Claude Code's alone: every other tool runs the hook through `jus hook`, which a missing or too-old CLI refuses before the check runs. There, `jus doctor` compares the two
+
+If `jq` is missing, hooks **fail open** (exit 0 without enforcing) rather than wedge the tool call. You'll lose enforcement, not Claude Code itself.
+
+## Testing the hooks & manifests
+
+```sh
+./jus/hooks/tests.sh
+```
+
+Synthetic Claude Code hook inputs are piped to each script; exit codes and output are asserted. A final section validates the distributable manifests — `plugin.json` and `marketplace.json` are well-formed, the version is pinned to `plugin.json`, and the marketplace/plugin names stay consistent with `source: "./"`. The harness uses an isolated `CLAUDE_PLUGIN_DATA` temp dir so it doesn't pollute real state.
+
+## Limitations
+
+- **Hooks cover every tool with an adapter under `hooks/`** — Claude Code, Codex, Cursor, Copilot, Kimi Code, Qwen, Windsurf, Antigravity and Gemini CLI. Zed and Aider have none and get the skill layer only. ⚠️ **An adapter is not a guarantee of parity**: each README names its own degradation, and one of the nine, Windsurf's, has never been run — Cascade hooks have no headless surface to drive. Codex additionally gates project hooks behind its per-hash trust flow (`/hooks` to approve).
+- **Hooks are advisory, not a sandbox.** A determined model can `disableAllHooks` or edit `settings.json`. The hooks raise the cost of skipping a rule, not the impossibility.
+- **The pre-commit gate detects linters by command shape.** It knows the common linters, type checkers and test runners of each mainstream stack, the package runners they are launched through (`uv run`, `npx`, `python -m` …), task-runner targets (`make lint`, `./gradlew check`, `npm run test`) and project scripts whose path ends in `/lint`, `/test`, `/check` or `/ci`. A check none of those covers can be run through such a script, or its shape added to `juscribe_sop_is_lint_command` in `hooks/scripts/lib/state.sh`. The match is anchored at a command, so a linter's name in an `echo` or an argument does not count.
+- **Chained commands are heuristic.** `make lint && git commit` is allowed because the gate sees the lint invocation in the command string. Truly novel chaining patterns may need additional patterns.
+
+## Related skills
+
+The hooks back up specific rules in `jus:hard-rules`. The skill's `references/enforcement.md` ("Two-Layer Enforcement") maps each rule to its hook (or notes that no hook exists). Read the skill first, then this README for the mechanics.
+
+## License
+
+[MIT](LICENSE) © Juscribe. The license covers copyright only — you may copy, fork, and redistribute the skills and hooks, but the **Juscribe / jus name and brand** are not licensed for reuse.
+
+---
+
+_Outpace your vision™_

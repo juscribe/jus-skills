@@ -1,0 +1,65 @@
+{
+  "hooks": {
+    "pre_run_command": [
+      {
+        "command": "jus hook --adapt windsurf jus-block-force-push",
+        "show_output": true
+      },
+      {
+        "command": "jus hook --adapt windsurf jus-block-no-verify",
+        "show_output": true
+      },
+      {
+        "command": "jus hook --adapt windsurf jus-pre-commit-gate",
+        "show_output": true
+      },
+      {
+        "command": "jus hook --adapt windsurf jus-block-accepted-manifest-edit",
+        "show_output": true
+      },
+      {
+        "command": "jus hook --adapt windsurf jus-blocker-date-nudge"
+      }
+    ],
+    "pre_write_code": [
+      {
+        "command": "jus hook --adapt windsurf jus-block-lint-suppression",
+        "show_output": true
+      }
+    ],
+    "post_run_command": [
+      {
+        "command": "jus hook --adapt windsurf jus-post-bash-tracker"
+      },
+      {
+        "command": "jus hook --adapt windsurf jus-docs-nudge",
+        "show_output": true
+      }
+    ],
+    "post_write_code": [
+      {
+        "command": "jus hook --adapt windsurf jus-track-edits"
+      },
+      {
+        "command": "jus hook --adapt windsurf jus-start-comment-nudge",
+        "show_output": true
+      },
+      {
+        "command": "jus hook --adapt windsurf jus-docs-nudge",
+        "show_output": true
+      }
+    ],
+    "pre_user_prompt": [
+      {
+        "command": "jus hook --adapt windsurf jus-ticket-claim-nudge",
+        "show_output": true
+      }
+    ],
+    "post_cascade_response": [
+      {
+        "command": "jus hook --adapt windsurf jus-stop-uncommitted",
+        "show_output": true
+      }
+    ]
+  }
+}

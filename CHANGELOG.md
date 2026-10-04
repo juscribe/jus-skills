@@ -1,0 +1,724 @@
+# Changelog
+
+All notable changes to the **jus** plugin are documented here. The format follows
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project adheres
+to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## Versioning strategy
+
+The plugin version tracks the **Juscribe SOP itself**, not the monumental app. The
+single source of truth is `version` in [`.claude-plugin/plugin.json`](.claude-plugin/plugin.json);
+the marketplace entry deliberately omits a version so the two can never drift
+(Claude Code lets `plugin.json` silently win when both declare one).
+
+Bump the version when the SOP changes, by impact on an adopting agent:
+
+| Bump      | When                                                                                                                                                                                                                    |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **MAJOR** | Breaking change to the behavioral contract — a skill removed/renamed, a hook's block semantics changed, the lifecycle reshaped, or anything that would make an existing setup behave differently in a non-additive way. |
+| **MINOR** | Backwards-compatible additions — a new skill or hook, a new rule, a new lifecycle phase, expanded reference material.                                                                                                   |
+| **PATCH** | Clarifications and fixes that don't change behavior — wording, typos, doc polish, a hook bug fix that only makes it match its documented intent.                                                                        |
+
+Each release entry below should name the SOP change and, where relevant, the
+Juscribe ticket (`#N`) that introduced it.
+
+## [1.4.47] — 2026-10-03
+
+### Changed
+
+- Give Claude's directory the plugin's icon and links (#5607)
+- Clear Claude plugin directory's npx and privacy findings (#5607)
+
+## [1.4.46] — 2026-10-03
+
+### Changed
+
+- Use the Juscribe mark as the ChatGPT plugin icon (#5449)
+- Give the jus plugin OpenAI's manifest, so it uploads to ChatGPT (#5449)
+- Name no ticket in three hook comments (#5594)
+
+## [1.4.45] — 2026-09-30
+
+### Changed
+
+- Record how the juscribe chat plugin is packaged, and what Cowork and ChatGPT would need (#5358)
+- Add a juscribe plugin that bundles the connector with the skills for Claude chat (#5358)
+- Take this board's ticket number out of the shipped description guard (#5441)
+- Count every Done-panel state in an iteration's done count (#5440)
+- Read a body file after a quoted ticket path (#5438)
+- Guard a description body the command does not show (#5438)
+
+## [1.4.44] — 2026-09-28
+
+### Changed
+
+- Bring the specs and docs in line with today's changes (#5399)
+- Teach other projects the workflow traps the stakeholder chose (#5389)
+- Add the velocity and old-backward-move traps to the retrospective skill (#5388)
+- Fill the tool-specific gaps in the install docs (#5387)
+- Re-derive a blocker's title, clear a reopened ticket's resolution, name a missing route (#5386)
+- Make the API refuse the parameters it silently ignored (#5385)
+- Document the project, notification, rate-limit and token behaviours agents trip on (#5384)
+- Document the ticket, blocker and comment API behaviours that fail silently (#5383)
+- Tell agents how the board renders raw HTML and newlines (#5382)
+- Remove this repo's furniture from the bundle and served SOP (#5392)
+- Correct the skills and served SOP where they contradict current rules (#5381)
+- Point the Copilot and Cursor installs where the tools load them (#5380)
+- Fix five defects in the hooks every plugin user runs (#5379)
+- Point the bundle README at where the enforcement table moved (#5378)
+- Fit hard-rules into what a compaction keeps (#5378)
+- Unquote the recipe paths so the tick-placement spec reads them (#5376)
+- Say why jus api refused a body, and when no project was found (#5377)
+- Say an append needs no fetch in the hard-rules description rule (#5376)
+- Stop the description recipes from wiping a description (#5376)
+- Let lint launchers chain, as in uv run python -m pytest (#5374)
+- Make the commit gate recognise any stack's linters (#5374)
+- Name the MCP tool beside every jus api recipe in the skills (#5356)
+- Define a point as effort everywhere it is defined (#5328)
+
+## [1.4.43] — 2026-09-28
+
+### Changed
+
+- Say hooks ship per tool in the bundle's AGENTS.md (#5193)
+- Stop Qwen loading skills twice, it reads .agents/skills (#5189)
+- Ship the reference cut of ticket-workflow (#5149)
+- Point the Gemini test block at its live run (#5188)
+- Keep the Qwen row's pointer to its hook README (#5184)
+- Cite the right symlink bug and mark Qwen and Gemini live-verified (#5184)
+- Name the ticket-workflow skill in the claim hook, so Haiku loads it (#5144)
+- Make agent tokens organization-wide, converting every existing one (#5179)
+- Add the juscribe/jus README and link it from every public README (#5140)
+- Tell customers when their jus CLI is older than the plugin needs (#5080)
+- Offer a prompt's #N as a candidate ticket, with hints (#5118)
+- Put the tick-the-boxes step where adopting agents finish (#5052)
+
+## [1.4.42] — 2026-09-25
+
+### Changed
+
+- Send a newcomer without Homebrew to brew.sh (#5025)
+- Stop an agent at finished unless a person asks it to deliver (#5044)
+- Cut ticket-workflow's retellings down to the rules they justify (#4739)
+- Move ticket-workflow's cold path and api.md halves into reference files (#4739)
+
+## [1.4.41] — 2026-09-23
+
+### Changed
+
+- Retire the lint-suppression count, keep its exemption checks (#4993)
+- Match Cursor's wording, and link the runbook to the anchor (#5001)
+- List the opt-in sandboxes that would block the board (#5001)
+- Say which agents block app.juscribe.ai, and how to allow it (#5001)
+- Say in Phase 0 that jus doctor flags Codex's network-off sandbox (#4983)
+- Say that Codex's sandbox blocks the network, and how to turn it on (#4983)
+- Quote the plugin root in the bundle's Claude Code hooks (#4973)
+
+## [1.4.40] — 2026-09-23
+
+### Changed
+
+- Wire a monorepo package by its own .jus in the hook guard (#4969)
+- Catch {ws} and bare /tickets/N description edits in the accepted-ticket guard (#4971)
+- Read the accepted-ticket guard's state from the workspace the command names (#4940)
+
+## [1.4.39] — 2026-09-23
+
+### Changed
+
+- Link the MCP install block from jus-skills, and record step 14's findings (#4655)
+- Name the agent tokens page as the app does (#4915)
+- Say the ticket index refuses an unknown parameter (#4931)
+
+## [1.4.38] — 2026-09-22
+
+### Changed
+
+- Give Cursor's plugin manifest an author object (#4876)
+
+## [1.4.37] — 2026-09-22
+
+### Changed
+
+- A plugin brings the hook registrations, not the scripts (#4834)
+- jus init installs Codex's skills as a Codex plugin (#4836)
+- Record which tools' plugins now carry their own hooks (#4834)
+- Each tool's plugin manifest names its own hook file (#4834)
+- jus init installs Qwen's skills as a Qwen extension (#4833)
+- Correct the hook table in the bundle README (#4827)
+- Refuse lint suppressions at commit time in the bundle (#4827)
+
+## [1.4.36] — 2026-09-22
+
+### Changed
+
+- Bring the adapter READMEs onto the launcher (#4792)
+- Measure the codex PreToolUse deny end to end (#4412)
+- Resolve the bundle at run time with jus hook (#4759)
+
+## [1.4.35] — 2026-09-21
+
+### Changed
+
+- Let jus api omit the workspace prefix (#4729)
+- The Cursor editor is verified, and a Tab edit now reaches the edit hooks (#4429)
+
+## [1.4.34] — 2026-09-20
+
+### Changed
+
+- Keep the premise paragraphs the openings displaced (#4640)
+- One opening and one sign-off across the four public READMEs (#4640)
+
+## [1.4.33] — 2026-09-19
+
+### Changed
+
+- Guard the adapter count the same prose keeps getting wrong (#4603)
+- Name every hook adapter the bundle ships in hard-rules (#4603)
+
+## [1.4.32] — 2026-09-19
+
+### Changed
+
+- Retire the self-hosted CLI tarball and installer (#4571)
+- Name Claude Code as an AGENTS.md reader in all three tables (#4516)
+- Gemini CLI hook adapter, and correct the sunset claim (#4419)
+- Notice and refresh a stale hook manifest (#4421)
+- Say when Cursor has no command blockers (#4430)
+- jus doctor — is the SOP surface actually loaded? (#4508)
+- A liveness record, so a dead hook set stops looking healthy (#4416)
+- Audit the empty-string fallback class across all seven shims (#4428)
+
+## [1.4.31] — 2026-09-18
+
+### Changed
+
+- Stop the CLI reporting an unreachable server as a dead token (#4520)
+- Fail the hooks suite on an undefined assertion helper (#4462)
+- A runner prefix was a one-word bypass of every git guard (#4446)
+- Match the class of hook bypass, not one spelling of it (#4446)
+
+## [1.4.30] — 2026-09-18
+
+### Changed
+
+- Define the grade where the bundle's own readers meet it (#4439)
+- Grade a capability claim by how it was checked (#4439)
+- Say why three manifests are outside the tilde walk (#4417)
+- Guard the ~ word-start rule across all seven manifests (#4417)
+- Cut the dirty-tree stop message to three lines (#4431)
+
+## [1.4.29] — 2026-09-17
+
+### Changed
+
+- Say that codex hooks need trust, and correct the docker row (#4450)
+
+## [1.4.28] — 2026-09-17
+
+### Changed
+
+- Rewrite the Antigravity claims against what was measured (#4262)
+- Rebuild the Antigravity adapter against the measured contract (#4262)
+- Correct the trust claim, and the one the live check falsified (#4261)
+- Realign the shim's event table after the cwd note (#4261)
+- Live-verify the Cursor adapter, and fix what it found (#4261)
+- Verify the Cursor adapter's transport, and what it found (#4261)
+- Live-verify the Qwen adapter against a stub model (#4263)
+- Correct the four places that said this hangs (#4413)
+- Live-verify the Copilot adapter, and fix what that found (#4260)
+- Measure codex sandbox precedence and hook deny (#4288)
+
+## [1.4.27] — 2026-09-17
+
+### Changed
+
+- Gate every hook on being inside a Juscribe project (#4404)
+- Name the install scope on every printed install path (#4403)
+
+## [1.4.26] — 2026-09-17
+
+### Changed
+
+- Title the one dated-blocker example the sweep missed (#4387)
+- Keep the ASCII apostrophe the surrounding file uses (#4387)
+- Give a handoff blocker a short title and no body (#4387)
+- Stop saying dispatch is off (#4212)
+- Guard lint suppressions at commit time, not only at tool time (#4347)
+
+## [1.4.25] — 2026-09-16
+
+### Changed
+
+- [#4264] Hook adapter for Windsurf Cascade (#4264)
+- [#4263] Hook adapter for Qwen Code — it can deny (#4263)
+- [#4262] Hook adapter for Antigravity (#4262)
+- [#4261] Hook adapter for Cursor (#4261)
+- [#4260] Hook adapter for GitHub Copilot (#4260)
+- [#4241] JUS_SKILLS_DIR moves the bundle clone (#4241)
+- [#4259] Date every vendor capability claim and fail the suite when one goes stale (#4259)
+
+## [1.4.24] — 2026-09-15
+
+### Changed
+
+- [#4239] Install the Codex hooks from jus init (#4239)
+- [#4234] Record that a Codex plugin carries the skills and not the hooks (#4234)
+- [#4208] Mirror the drifted blockers into Kimi, and make its two manifests agree (#4208)
+- [#4207] Name the two test sections this ticket added (#4207)
+- [#4207] Rewrap the tracker comment the type guard widened (#4207)
+- [#4207] Complete the Codex hook adapter, and revive its dead lint gate (#4207)
+- [#4152] Say that resolving a dependency is not ticket-nested (#4152)
+- [#2707] Say that a board may merge Finished into Delivered (#2707)
+
+## [1.4.23] — 2026-09-09
+
+### Changed
+
+- [#3987] Stop advertising jus-dispatch (#3987)
+
+## [1.4.22] — 2026-09-09
+
+### Changed
+
+- Delete the dirty-tree nudge; it was never reaching the model (#3952)
+- Adopt Conventional Commits here, and mandate no format for anyone else (#3394)
+
+## [1.4.21] — 2026-09-08
+
+### Changed
+
+- Retire the workflow-strategy guard and its permanent cache (#3936)
+- Record that --git-path answers relative to git's own cwd (#3921)
+- Let the workflow-strategy guard finish a conflicted merge (#3921)
+- Stop the shipped SOP promising a pull request nobody opens (#3901)
+- `jus station` becomes `jus dispatch`, and the sandbox prompt goes (#3912)
+
+## [1.4.20] — 2026-09-07
+
+### Changed
+
+- Merge lands the work where it happened (#3861)
+- Stop telling people to press a button that does not exist (#3860)
+- Tell a CLI session where its work goes, in three layers (#3832)
+
+## [1.4.19] — 2026-09-07
+
+### Changed
+
+- Delete the eyes-reaction automation (#3796)
+- Read Jus-Ticket: from commit trailers, and emit it from agent commits (#3779)
+- Make a blocker that names a time carry the date, and say so when it does not (#3782)
+
+## [1.4.18] — 2026-09-06
+
+### Changed
+
+- Point the claim hook's env note at the helper that replaced its function (#3684)
+- Take the eyes back off a ticket once the work is over (#3684)
+- Close a dangling colon in the lock-reason section (#3676)
+- Tell the bundle's readers how to lock a worktree its hooks can find (#3676)
+- Count the worktree this session locked, not the cwd's checkout (#3669)
+- Ship the ticket-claim hook, and stop it guessing the workspace (#3674)
+- Say which worktree the blocked files are in (#3667)
+- The stop hook asks the worktree this session locked (#3667)
+
+## [1.4.17] — 2026-09-04
+
+### Changed
+
+- Give hard-rules the state check it was telling people to run (#3575)
+- Refuse a project past `started` as a home for a new ticket (#3575)
+- Make jus init install the plugin, not describe an install that never happens (#3565)
+- Split the retrospective skill — 549 lines to 401 (#3516)
+- Bind each nudge message once, so the two channels cannot drift (#3498)
+- Make the two soft nudges reach the agent (#3498)
+- Remove the idle-detection pair, and give the dirty-tree nudge per-ticket dedup (#3507)
+- Nudge the agent to commit work it left dirty across an idle pause (#3507)
+- The two rules an adopting project never received, and a trigger claim we do not have (#3509)
+- Two failures the merge created, and one it only exposed (#3501)
+- Move the reference half of ticket-workflow into files beside it (#3501)
+- Fix eight defects in the generated retrospective and its pane (#3479)
+
+## [1.4.16] — 2026-09-02
+
+### Changed
+
+- Retrain the retrospective on what the reader actually wants (#3472)
+- A retrospective suggests follow-ups; a reply is what files them (#3451)
+
+## [1.4.15] — 2026-09-01
+
+### Changed
+
+- Placeholders in the copies that leave this workspace (#3434)
+- Tell the two shipped references that the field exists (#3434)
+- Carry the decision into the app's own copy of the claim (#3415)
+- The testimony is on the tickets, so read it there (#3415)
+- Name the field that answers this, and say when it is absent (#3414)
+- Count the whole iteration, and check the count against a second source (#3414)
+- Hold the retrospective report, and serve it (#3427)
+
+## [1.4.14] — 2026-09-01
+
+### Changed
+
+- One thing to do needs no subtask (#3430)
+
+## [1.4.13] — 2026-09-01
+
+### Changed
+
+- The activity feed already answers what #3404 wanted serialized (#3403)
+- Three traps the skill's first real run walked into (#3403)
+- Self-review: the bundle's own harness enumerated its two skills (#3403)
+
+## [1.4.12] — 2026-08-31
+
+### Changed
+
+- A blocker's description IS editable, and the guard that should have caught it was vacuous (#3293)
+
+## [1.4.11] — 2026-08-30
+
+### Changed
+
+- A stale description, a probe that proved nothing, and two guards that do not work (#3234)
+- The bundle described this project as though it were everyone's (#3229)
+- Ten board rules the bundle never had (#3228)
+- The bundle documented subtasks, then told everyone not to use them (#3224)
+- 45,740 bytes of the agent context were column-alignment whitespace (#3225)
+
+## [1.4.10] — 2026-08-29
+
+### Changed
+
+- Setting a subtask complete, rather than flipping it (#3138)
+
+## [1.4.9] — 2026-08-26
+
+### Changed
+
+- Name the subtask assignee's membership constraint (#2691)
+- Document blocker dates, subtasks, references and the CLI's own behaviour (#2691)
+
+## [1.4.8] — 2026-08-25
+
+### Changed
+
+- Self-review: the section is no longer only about projects (#2898)
+- Say that only a research ticket can be converted (#2898)
+- Self-review: the create template is where placement is actually found (#2888)
+- The published skill can place a ticket on create, and knows the bulk endpoints (#2888)
+
+## [1.4.7] — 2026-08-24
+
+### Changed
+
+- Self-review: the section note quoted the wrong figure and pointed at the wrong tests (#2807)
+- Drop the five sleeps, and assert what they were believed to be covering (#2807)
+
+## [1.4.6] — 2026-08-21
+
+### Changed
+
+- The enforcement table said a rule was absent from the skill stating it (#2682)
+- Guard the hook text too, not just the skill bodies (#2586)
+- The published SOP stops mandating a testing methodology (#2586)
+
+## [1.4.5] — 2026-08-19
+
+### Changed
+
+- Fix a false API claim this ticket published, and wire the guards into the gate (#2506)
+- .jus/SOP.md becomes a generated artefact, and a phantom param dies (#2506)
+
+## [1.4.4] — 2026-08-15
+
+### Changed
+
+- References are automatic; a prerequisite is a dependency (#2532)
+- Move the batch rule to CLAUDE.md — it is not the plugin's to carry (#2525)
+- Drain deliverable tickets before asking a blocking question (#2525)
+
+## [1.4.3] — 2026-08-14
+
+### Changed
+
+- Marker titles name the thing itself — no prefixes, no leading icons (#2462)
+- Nudge project docs at ticket pickup, keyed on labels and title (#2487)
+
+## [1.4.2] — 2026-08-11
+
+### Changed
+
+- Strip the per-session file-ownership tracking out of the hooks (#2392)
+- Shell was invisible to the gate in both directions (#2387)
+- Partition the log instead of bailing on the first out-of-repo entry (#2388)
+- A session that edited nothing no longer claims the whole dirty tree (#2366)
+- Prune the resolved entries from a kept edits.log (#2362)
+- Close the gate bypass: git global options no longer hide a commit (#2363)
+- Record the 1.4.1 changelog entry that the release shipped without (#2261)
+
+## [1.4.1] — 2026-08-10
+
+> Entry written after `v1.4.1` was tagged, so the published snapshot at that tag
+> does not contain it. Recorded here rather than skipped: the changelog is the
+> record of what a version contains, and a missing entry is worse than a late
+> one. It publishes with the next release. See #2374 — the release tool now
+> takes the entry as an input, so the step cannot be skipped again.
+
+### Fixed
+
+- **The stop gate no longer blocks on other sessions' files after a commit**
+  (#2355): the #2216 session scoping fell back to blocking on _any_ dirty file
+  in the post-commit window, so a second agent working in the same repo could
+  not stop. Resolution is now verified against git — a commit clears tracking
+  only when it actually resolved the tracked edits — and a cross-repo or failed
+  commit keeps the log rather than reading as resolved.
+- **The dirty-tree nudge counts what it claims** (#2352): it fired at three
+  edits reporting five, because it counted edit _events_ rather than distinct
+  uncommitted files, and repeated delivery double-counted. It now derives the
+  count from files, stays silent until checks have run since the last edit, and
+  matches repo-relative recorded paths — the shape Codex records, which the
+  session scoping previously missed entirely.
+- **Editing an accepted release manifest is refused** (#2333): nothing
+  mechanically prevented a description `PATCH` on an accepted ticket, so a
+  shipped runbook could be rewritten to look like it had unrun commands. Comments
+  are untouched — they are the sanctioned correction path — as are transitions
+  and non-description updates.
+
+## [1.4.0] — 2026-08-09
+
+### Added
+
+- **Mixed-actor ticket rule** (`hard-rules` → "Mixed-Actor Tickets — One Timeline, Both Assigned"; `ticket-workflow` → description conventions + `assignee_ids` metadata row): tickets that interleave stakeholder-only steps with agent steps assign BOTH parties and carry a single numbered, actor-tagged, checkboxed step list in execution order — never separate per-actor sections. The first unchecked box shows whose move it is; the External-blocker protocol fires whenever the next unchecked step is the stakeholder's.
+
+## [1.3.1] — 2026-08-09
+
+### Changed
+
+- **Description rule scoped to its actual intent** (#2300, stakeholder
+  correction): the append-only protection covers _stakeholder-authored_ text
+  only — preserved verbatim, always. Agent-authored additions below the
+  `---` separator are living documentation with an affirmative duty to stay
+  current: edit them in place when facts change; do **not** stack dated
+  "Update (…):" layers onto agent-authored sections. Reworded in
+  `hard-rules` (rule section, enforcement table, frontmatter) and
+  `ticket-workflow` (description conventions, cross-reference).
+
+## [1.3.0] — 2026-08-09
+
+### Added
+
+- **`jus-docs-nudge.sh`** (`PostToolUse Edit|Write|MultiEdit`): on the first
+  edit under a path the project maps in `.jus/docs-nudges.tsv`, a non-blocking
+  nudge names the project doc for that subsystem and its when-to-read hint —
+  once per doc per active ticket. A silent no-op for projects with no map, so
+  the hook is safe everywhere. Registered for Claude Code and the Codex
+  adapter; Kimi rides the prompt-time reminder like the other nudges (#2290,
+  measured motivation in #2277: a documented gotcha re-derived from scratch
+  15 hours after being written up).
+- **Read-side documentation rule** in the `hard-rules` skill's Document
+  Discoveries section: check the project docs index before debugging a
+  subsystem, and route shared-relevance gotchas to the shared docs rather
+  than per-user auto-memory (#2290, #2287).
+
+## [1.2.3] — 2026-08-08
+
+### Added
+
+- **Ticket→project conversion**, documented in the `ticket-workflow` skill —
+  the previously-missing `converted` and `archived` states and the
+  `POST /workspaces/{ws}/tickets/{id}/convert` endpoint, so a ticket that has
+  outgrown itself is converted (carrying title, description, requester and
+  stakeholder) instead of cancelled and hand-recreated (#2205).
+- **Retired-token guidance** in the `ticket-workflow` skill: a 401 naming an
+  expired or retired token is a stop condition with a type-correct remedy —
+  rotate a bot key, re-login a mobile session — not something to retry
+  around (#2223).
+
+### Fixed
+
+- **The stop hook scopes its dirty-tree check to files this session actually
+  edited** (its own `edits.log`), ending false blocks on a concurrent
+  session's uncommitted files in a shared checkout (#2216).
+- **Skill descriptions disambiguate Juscribe from other trackers**, so
+  generic ticket language in a prompt no longer routes an agent to another
+  tool's workflow skill (#2183).
+- **Plugin-install surfaces say when `/reload-plugins` is required**, instead
+  of leaving a freshly-installed plugin silently unloaded (#2194).
+- **`hooks/tests.sh` no longer describes a manifest sync that was never
+  implemented** (#2137).
+
+## [1.2.2] — 2026-08-05
+
+### Fixed
+
+- **Request-shape gotchas for the `jus` API**, added to the `ticket-workflow`
+  skill. Each is listed by the _symptom you are looking at_ rather than the
+  cause, because every one presents as a hang, a no-op, a bare 500, or a silent
+  success rather than an error:
+  - a body-less `PATCH` hanging forever on stdin instead of defaulting to `{}`;
+  - `position` silently ignored on create, so a new ticket lands at the end;
+  - a backwards `/transition` returning a body of nulls and changing nothing;
+  - `*_ids` writes succeeding while echoing back `null`, prompting a needless retry;
+  - an enum-case mismatch (`"Release"` for `release`) surfacing as an
+    unexplained **HTTP 500** that names no field.
+    (#2121, #2129)
+
+## [1.2.1] — 2026-08-03
+
+Release-wrapper tag only — content is identical to 1.2.0. `gh skill publish`
+needed a fresh semver tag to cut the GitHub release that makes the bundle
+discoverable and installable for GitHub Copilot (`gh skill install
+juscribe/jus-skills`), and the tag-protection ruleset added during the publish
+makes the existing `v1.2.0` immutable. This entry aligns the monorepo manifests
+with the published tag; the next SOP change ships as 1.2.2. (#1868)
+
+## [1.2.0] — 2026-07-28
+
+### Added
+
+- **OpenAI Codex hooks adapter** (`hooks/codex/`): the shared enforcement
+  scripts under Codex's native hooks system — Bash and Stop hooks register
+  unchanged (the wire contracts match field-for-field); file edits run behind
+  `jus-codex-adapt.sh`, which converts raw `apply_patch` text into the Edit
+  shape the suppression blocker's delta logic expects. Ships a merge-ready
+  `hooks.json`, trust-flow docs, and a tests.sh section. (#1976)
+- **Kimi Code hooks adapter + plugin packaging**: `hooks/kimi-code/` carries
+  a `config-hooks.toml` for `~/.kimi-code/config.toml` plus a `path` →
+  `file_path` shim (Kimi's one payload divergence, pinned empirically on
+  0.29.2), and the bundle root gains **`kimi.plugin.json`** — skills, hooks,
+  and a session-start `hard-rules` load in a single Kimi plugin install.
+  Kimi's observe-only PostToolUse means the dirty-tree nudge rides a new
+  prompt-time reminder (`jus-kimi-prompt-nudge.sh`) instead. Live-verified:
+  a prompted force-push and a suppression edit were both denied in real
+  kimi-k2.7-code sessions. (#1977)
+
+### Fixed
+
+- The force-push and `--no-verify` blockers anchor to an **actual git
+  invocation**: the command splits into segments (quoted regions dropped —
+  a quoted string can only ever be an argument), and a force flag /
+  `--no-verify` blocks only as an argument word of a `git push` / git
+  segment. Previously the tokens matched anywhere in the raw command string,
+  so a grep of the hook source, docs text quoting the rule, a `jus api`
+  comment body, or a `-f` belonging to another chained command
+  (`rm -f x && git push origin main`) all blocked spuriously. Also fixes a
+  false negative: `git -C <path> push --force` was missed. (#1985)
+- The lint-suppression blocker maps each directive to the file types its
+  linter actually reads (rubocop/reek → ruby, eslint/ts directives → ts/js,
+  mypy/pyright → py, nolint/nosec → go); quoting a token in docs or shell
+  test fixtures no longer blocks an edit. A missing `file_path` stays
+  fail-closed — every pattern remains active. (#1985)
+
+## [1.1.1] — 2026-07-27
+
+First published release since 1.0.1 — this tag also carries the previously
+unpublished 1.1.0 content below.
+
+### Changed
+
+- Skill bodies no longer assume a Claude Code plugin host: enforcement is
+  framed **harness-conditionally** (deterministic where the jus hooks run —
+  Claude Code today, with Codex/Kimi Code adapters tracked under #1818 —
+  explicitly prompt-level-only everywhere else), skill cross-references use
+  plain names (the `jus:` prefix exists only under a Claude Code plugin
+  install), and the document-discoveries rule targets "your agent's context
+  file" rather than CLAUDE.md. `AGENTS.md` is retitled as shared baseline
+  context for every AGENTS.md-reading tool (Codex, Kimi Code, Antigravity, …)
+  instead of Codex-branded. (#1975)
+- One canonical non-Claude install — a shared clone at `~/.jus-skills` plus
+  per-skill symlinks producing the standard `.agents/skills/<name>/SKILL.md`
+  layout — replaces the three contradictory recipes in the README, including
+  the retired `git clone … .codex/skills/jus` nested-clone instruction that
+  only loaded on tools with recursive skill discovery. (#1972)
+
+### Docs
+
+- README support matrix gains **Kimi Code** (native Agent Skills via
+  `.agents/skills/` + `.kimi-code/skills/`; does not read `.claude/skills/`;
+  hook adapter tracked by #1977). (#1978)
+
+### Fixed
+
+- `hooks/tests.sh` no longer pins a literal plugin version (the hardcoded
+  `1.0.1` assertion broke on the 1.1.0 bump and nothing ran the harness to
+  notice): the version is asserted as strict semver, `gemini-extension.json`
+  gets shape checks plus a warn-only drift note, and new portability guards
+  assert the skill bodies stay free of plugin-namespaced references. (#1973,
+  #1975)
+- `gemini-extension.json` version synced to `plugin.json` (was stuck at
+  0.1.0 since the manifest was introduced). (#1885)
+
+## [1.1.0] — 2026-07-16
+
+### Added
+
+- `LICENSE` (MIT, © Juscribe) and a `license` field on `plugin.json` — the bundle
+  is published to a public repo, so it needs an explicit license. (#1705)
+- `ticket-workflow` Phase 0 (Prerequisites) + a `hard-rules` preflight line: the
+  plugin ships skills + hooks but **not** the `jus` CLI, so the skills now state
+  the install/auth prerequisites up front and tell the agent to surface the
+  one-line setup step (and stop, not loop) when `jus` is missing/unauthenticated.
+  (#1879)
+- `ticket-workflow` "Formatting descriptions and comments": descriptions and
+  comments render as markdown on the board, so the skill now prescribes the
+  form, not just the content — bold section labels (**Root cause:** / **Plan:**
+  / **To verify:**), bullets/numbered steps, fenced code blocks, `#N`/`pN`
+  refs — with a worked start-comment example. Previously this was an uncaptured
+  convention, so public-plugin agents produced unformatted walls of text.
+  (#1917)
+- `ticket-workflow` "Fleshing out a sparse user-created ticket" + a sharpened
+  `hard-rules` bullet: picking up a bare title / one-line ticket now carries an
+  explicit duty to add substance — root cause or approach, acceptance criteria,
+  test notes — via the append-only description protocol at pickup. The pre-start
+  gate alone could previously be satisfied with a token one-liner. (#1921)
+
+### Docs
+
+- README Option H now warns against _also_ marketplace-installing the plugin in
+  monumental — the committed copy already loads it, so doing both duplicates the
+  skills and double-fires the hooks. (#1705)
+- `ticket-workflow` test-command reference: backend coverage is gated on
+  `COVERAGE=1 bin/rspec` — a plain run leaves the lcov data stale and
+  diff-cover then reports phantom uncovered lines. (#1920)
+
+## [1.0.1] — 2026-06-06
+
+### Fixed
+
+- Pre-commit gate's state-tracked lint rule never fired. `jus-post-bash-tracker.sh`
+  read `.tool_response.exit_code` to decide a lint had succeeded, but Claude Code's
+  Bash `tool_response` carries no exit status (only `stdout`/`stderr`/`interrupted`/
+  `isImage`), so it always defaulted to "failed" and never wrote `last_linted_at`.
+  A `git commit` could then only pass by chaining a lint into the commit command,
+  and bare `git commit`s in headless dispatches were denied outright (burning
+  turns). The tracker now records a lint whenever a recognized lint command runs,
+  skipping only an `interrupted` one; lefthook stays the real backstop that re-runs
+  the linters at commit time, so a genuinely broken commit is still blocked. (#1873)
+
+## [1.0.0] — 2026-06-05
+
+First distributable release — the plugin is now installable from a standalone
+marketplace, not just committed inside the monumental repo.
+
+### Added
+
+- `.claude-plugin/marketplace.json` so the bundle installs via
+  `/plugin marketplace add juscribe/jus-skills` → `/plugin install jus@jus-skills`. (#1705)
+- `homepage` field on `plugin.json` pointing at the published repo. (#1705)
+- This changelog and the versioning strategy above. (#1705)
+- Manifest-validation tests in `hooks/tests.sh` (valid JSON, version pinned to
+  `plugin.json`, marketplace/plugin name consistency, `source: "./"`). (#1705)
+
+### Notes
+
+- The published `juscribe/jus-skills` repo's root is the contents of `jus/`, so
+  `plugin.json` and `marketplace.json` both sit at the repo root's
+  `.claude-plugin/` and the plugin `source` is `"./"`.
+- Everything that predates 1.0.0 — the two skills, the nine enforcement hooks,
+  and the cross-tool manifests — shipped while the bundle was committed-in-repo
+  (Option H, #1835); 1.0.0 marks the move to standalone distribution.

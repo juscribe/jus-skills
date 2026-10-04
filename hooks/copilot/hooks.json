@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "disableAllHooks": false,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-block-force-push",
+        "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-block-no-verify",
+        "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-pre-commit-gate",
+        "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-block-accepted-manifest-edit",
+        "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-blocker-date-nudge",
+        "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-block-lint-suppression",
+        "timeoutSec": 10
+      }
+    ],
+    "postToolUse": [
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-track-edits",
+        "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-post-bash-tracker",
+        "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-start-comment-nudge",
+        "timeoutSec": 10
+      },
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-docs-nudge",
+        "timeoutSec": 10
+      }
+    ],
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-stop-uncommitted",
+        "timeoutSec": 15
+      }
+    ],
+    "userPromptSubmitted": [
+      {
+        "type": "command",
+        "bash": "jus hook --adapt copilot jus-ticket-claim-nudge",
+        "timeoutSec": 15
+      }
+    ]
+  }
+}

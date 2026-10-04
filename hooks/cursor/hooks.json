@@ -1,0 +1,67 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "jus hook --adapt cursor jus-block-force-push"
+      },
+      {
+        "command": "jus hook --adapt cursor jus-block-no-verify"
+      },
+      {
+        "command": "jus hook --adapt cursor jus-pre-commit-gate"
+      },
+      {
+        "command": "jus hook --adapt cursor jus-block-accepted-manifest-edit"
+      },
+      {
+        "command": "jus hook --adapt cursor jus-blocker-date-nudge"
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "jus hook --adapt cursor jus-block-lint-suppression"
+      }
+    ],
+    "afterShellExecution": [
+      {
+        "command": "jus hook --adapt cursor jus-post-bash-tracker"
+      },
+      {
+        "command": "jus hook --adapt cursor jus-docs-nudge"
+      }
+    ],
+    "afterFileEdit": [
+      {
+        "command": "jus hook --adapt cursor jus-track-edits"
+      },
+      {
+        "command": "jus hook --adapt cursor jus-start-comment-nudge"
+      },
+      {
+        "command": "jus hook --adapt cursor jus-docs-nudge"
+      }
+    ],
+    "afterTabFileEdit": [
+      {
+        "command": "jus hook --adapt cursor jus-track-edits"
+      },
+      {
+        "command": "jus hook --adapt cursor jus-start-comment-nudge"
+      },
+      {
+        "command": "jus hook --adapt cursor jus-docs-nudge"
+      }
+    ],
+    "stop": [
+      {
+        "command": "jus hook --adapt cursor jus-stop-uncommitted"
+      }
+    ],
+    "beforeSubmitPrompt": [
+      {
+        "command": "jus hook --adapt cursor jus-ticket-claim-nudge"
+      }
+    ]
+  }
+}

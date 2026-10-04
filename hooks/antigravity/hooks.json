@@ -1,0 +1,83 @@
+{
+  "jus-hard-rules": {
+    "enabled": true,
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-block-force-push",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-block-no-verify",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-pre-commit-gate",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-block-accepted-manifest-edit",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-blocker-date-nudge",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "jus hook --adapt antigravity --event PreToolUse jus-block-lint-suppression",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jus hook --adapt antigravity --event PostToolUse jus-track-edits",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "jus hook --adapt antigravity --event PostToolUse jus-post-bash-tracker",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "jus hook --adapt antigravity --event PostToolUse jus-start-comment-nudge",
+            "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "jus hook --adapt antigravity --event PostToolUse jus-docs-nudge",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreInvocation": [
+      {
+        "type": "command",
+        "command": "jus hook --adapt antigravity --event PreInvocation jus-ticket-claim-nudge",
+        "timeout": 15
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "jus hook --adapt antigravity --event Stop jus-stop-uncommitted",
+        "timeout": 15
+      }
+    ]
+  }
+}

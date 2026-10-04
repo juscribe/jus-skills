@@ -1,0 +1,23 @@
+{
+  "name": "jus-skills",
+  "owner": {
+    "name": "Caleon Chun"
+  },
+  "description": "The Juscribe plugin for Claude and every coding agent: the Juscribe connector, the ticket-workflow, hard-rules and retrospective skills, and enforcement hooks where there is a shell.",
+  "plugins": [
+    {
+      "name": "jus",
+      "displayName": "Juscribe",
+      "source": "./",
+      "description": "Read and change your Juscribe board: the Juscribe connector, the ticket-workflow, hard-rules and retrospective skills, and enforcement hooks in Claude Code and Cowork.",
+      "homepage": "https://github.com/juscribe/jus-skills",
+      "keywords": [
+        "juscribe",
+        "agile",
+        "project-management",
+        "ticket-workflow",
+        "mcp"
+      ]
+    }
+  ]
+}
