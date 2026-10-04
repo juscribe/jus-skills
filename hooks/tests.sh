@@ -1619,6 +1619,20 @@ else
   printf '  \033[31m✗\033[0m %s (got: %s)\n' "$TEST_NAME" "$out_pickup"
 fi
 
+# The list's exact shape: each doc in backticks, an em dash, its hint. Built in
+# jq since #5607, where the shell used escaped backticks in a double-quoted
+# string that Claude's plugin directory read as a command substitution.
+t "pickup nudge names each doc in backticks with its hint"
+pickup_msg=$(jq -r '.systemMessage // ""' <<<"$out_pickup")
+TESTS_RUN=$((TESTS_RUN + 1))
+if [[ "$pickup_msg" == *'touches: `docs/threat.md` — what a compromised container can reach. Read them'* ]]; then
+  printf '  \033[32m✓\033[0m %s\n' "$TEST_NAME"
+else
+  TESTS_FAILED=$((TESTS_FAILED + 1))
+  FAILURES+=("$TEST_NAME")
+  printf '  \033[31m✗\033[0m %s (got: %s)\n' "$TEST_NAME" "$pickup_msg"
+fi
+
 t "pickup-nudged doc stays quiet at the first edit under its mapped path"
 printf 'app/threat/\tdocs/threat.md\twhat a compromised container can reach\n' \
   >> "$DOCS_PROJECT/.jus/docs-nudges.tsv"
