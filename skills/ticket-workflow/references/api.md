@@ -1,6 +1,6 @@
 # `jus` CLI & API Reference
 
-The `jus` CLI wraps curl with auth, the `/api/v1` prefix, and jq formatting. Flags: `--raw` (no jq), `-v` (verbose). Token comes from `JUSCRIBE_API_TOKEN` or `.jus/config/api_token.txt`. Installed via Homebrew (`brew install juscribe/tap/jus`) and symlinked at `bin/jus` in this repo. **Output:** the `HTTP <status>` line goes to **stderr**; **stdout is pure JSON** — pipe stdout straight to a parser (`jus api GET '...' | jq .`). Never `2>&1`: it merges the status line into the body and breaks the parse. **Response shape:** bodies are wrapped under a top-level key — a single resource under `.ticket` / `.project`, lists under `.tickets` (with a sibling `.pagination`), `.comments`, etc. Parse `.ticket`/`.project`/`.tickets`, not the JSON root. `include_comments=true` inlines comments on a single **ticket** (`.ticket.comments`) but **not on a project** — fetch those from `jus api GET '/workspaces/{ws}/projects/{id}/comments'` (`.comments`). **Errors:** every mutating body must be wrapped under its resource key — `{"comment":{"body":"..."}}`, not `{"comment":"..."}` and not `{"body":"..."}` for anything you build by hand. A wrong shape is a **400** whose `.error` names the key. **Check the exit code, not just the body:** `jus api` exits **non-zero on any non-2xx** (since v0.6.11), and the error body is still valid JSON on stdout — so `| jq` succeeds on a failure too. A missing record's 404 body is only `{"error":"Not found"}` and a path no route matches says `{"error":"No route: PATCH /api/v1/…"}`, neither with a status field, so there is nothing in the JSON to key on; use `if ! jus api ...` or `set -e`.
+The `jus` CLI wraps curl with auth, the `/api/v1` prefix, and jq formatting. Flags: `--raw` (no jq), `-v` (verbose).<!-- openai:omit --> Token comes from `JUSCRIBE_API_TOKEN` or `.jus/config/api_token.txt`. Installed via Homebrew (`brew install juscribe/tap/jus`) and symlinked at `bin/jus` in this repo.<!-- /openai:omit --> **Output:** the `HTTP <status>` line goes to **stderr**; **stdout is pure JSON** — pipe stdout straight to a parser (`jus api GET '...' | jq .`). Never `2>&1`: it merges the status line into the body and breaks the parse. **Response shape:** bodies are wrapped under a top-level key — a single resource under `.ticket` / `.project`, lists under `.tickets` (with a sibling `.pagination`), `.comments`, etc. Parse `.ticket`/`.project`/`.tickets`, not the JSON root. `include_comments=true` inlines comments on a single **ticket** (`.ticket.comments`) but **not on a project** — fetch those from `jus api GET '/workspaces/{ws}/projects/{id}/comments'` (`.comments`). **Errors:** every mutating body must be wrapped under its resource key — `{"comment":{"body":"..."}}`, not `{"comment":"..."}` and not `{"body":"..."}` for anything you build by hand. A wrong shape is a **400** whose `.error` names the key. **Check the exit code, not just the body:** `jus api` exits **non-zero on any non-2xx** (since v0.6.11), and the error body is still valid JSON on stdout — so `| jq` succeeds on a failure too. A missing record's 404 body is only `{"error":"Not found"}` and a path no route matches says `{"error":"No route: PATCH /api/v1/…"}`, neither with a status field, so there is nothing in the JSON to key on; use `if ! jus api ...` or `set -e`.
 
 - **Use `jus api` instead of `curl`** — manual curl loses auth and pretty-printing.
 - **Avoid a direct console or ORM script for data work** — it bypasses controllers, broadcasts and activity logging, so changes won't show live and won't generate an audit trail. Go through the API.
@@ -31,8 +31,8 @@ jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"points":2}}'
 jus api DELETE /workspaces/{ws}/dependencies/{dep_id}
 
 jus download <attachment-url-path> .jus/tmp/screenshot.png                      # attachment from a ticket
-jus init      # first-time setup (token + workspace + symlink)
-jus login     # authenticate with API token
+jus init      # first-time setup (sign-in + workspace + symlink)
+jus login     # sign in
 jus whoami    # show authenticated user
 jus cleanup   # remove all files from .jus/tmp/
 jus version   # the CLI version — what the server sees in the X-Jus-Version header
@@ -83,6 +83,7 @@ Honour `Retry-After` rather than retrying at once, and cut the calls rather than
 
 ## Attachments
 
+<!-- openai:omit -->
 Upload is `multipart/form-data` to `POST /workspaces/{ws}/tickets/{id}/attachments`, one `files[]` part per file, up to **25 MB** each, from an allowlist of document and image types. `jus` has no upload command, so this is `curl` with the token from a config file (never on the command line):
 
 ```sh
@@ -92,6 +93,8 @@ curl -sS -K .jus/tmp/auth.conf -F 'files[]=@screenshot.png' "https://app.juscrib
 **MCP:** `attach_file`.
 
 `.jus/tmp/auth.conf` holds one line, `header = "Authorization: Bearer <token>"`, written with `umask 077`. Downloading goes through `jus download`.
+<!-- /openai:omit -->
+<!-- openai:only Upload a file to a ticket with the `attach_file` MCP tool. Downloading goes through `jus download`. -->
 
 ## Writing a description without wiping it
 

@@ -6,12 +6,12 @@ Read when a `jus` command fails before it reaches the board, or the skills seem 
 
 This SOP drives the Juscribe board through the **`jus` CLI**. The bundle ships the **skills and hooks only — not the CLI binary**, so before anything in this skill will work the user needs:
 
-1. **The CLI** — `brew install juscribe/tap/jus`. No Homebrew? It installs from [brew.sh](https://brew.sh) first, on macOS, Linux, or Windows under WSL 2. Homebrew is the CLI's only channel.
+1. **The CLI** — <!-- openai:omit -->`brew install juscribe/tap/jus`. No Homebrew? It installs from [brew.sh](https://brew.sh) first, on macOS, Linux, or Windows under WSL 2. Homebrew is the CLI's only channel.<!-- /openai:omit --><!-- openai:only install the `jus` CLI from juscribe.ai. -->
 2. **Auth + workspace** — `jus login` (API token) or `jus init` (token + workspace + `bin/jus` symlink). `jus init` also sets the `{ws}` used throughout this skill.
 
 **Preflight.** If you're about to run `jus` and aren't sure it's configured, run `jus whoami` first and read the failure:
 
-- `jus: command not found` → the CLI isn't installed. Tell the user to `brew install juscribe/tap/jus` — and, if `brew` is missing too, to install Homebrew from [brew.sh](https://brew.sh) first — then stop.
+- `jus: command not found` → the CLI isn't installed. Tell the user to <!-- openai:omit -->`brew install juscribe/tap/jus` — and, if `brew` is missing too, to install Homebrew from [brew.sh](https://brew.sh) first — then stop.<!-- /openai:omit --><!-- openai:only install the `jus` CLI from juscribe.ai. -->
 - `Error: No Juscribe project found in <dir> or any directory above it` → **not** a login problem. `jus` finds its project by walking up from the current directory to a `.jus/config`, and there is none above `<dir>`: a `cd` to a temporary directory, or a git worktree outside the checkout (`.jus/config` is gitignored, so a worktree has none). Run `jus` from inside the project, or export `JUSCRIBE_API_TOKEN` for the session. ⚠️ **Never copy `.jus/config/api_token.txt` into another directory** to make the error go away: a second copy of a live secret is one more place for it to leak from.
 - `Error: No token available. Run 'jus login'…` → the project was found and holds no token: installed but unauthenticated. Tell the user to run `jus login` or `jus init`, then stop.
 - `Error: Stored token is invalid or expired.` — or any `HTTP 401` from `jus api` — → the token was real and is now **retired**. API tokens expire: agent tokens 90 days after creation or last rotation, mobile sessions 60 days after last use, and **any token never used at all 7 days after it was made**. The 401 body names the remedy. Relay it and stop.
@@ -20,12 +20,14 @@ This SOP drives the Juscribe board through the **`jus` CLI**. The bundle ships t
 - **`HTTP 503` from any `/api/v1` call** → the server is in maintenance. **Stop:** do not rotate the token and do not retry in a loop; the reply's `Retry-After` says when to look again. Tell the user and wait.
 - `Error: Could not reach the Juscribe server at <base URL>` → **nothing is known about the token.** The request never got a reply, so this is a network problem: no connectivity, a sandbox denying outbound connections, or a wrong `JUSCRIBE_BASE_URL`. Curl's own line above it names which. Inside Codex's network-off sandbox the error says so and prints the setting to add (`network_access = true` under `[sandbox_workspace_write]`); relay that, and `jus doctor` flags the same. ⚠️ **Do not rotate anything** — a fresh token fails identically. Relay the base URL it tried, and stop.
 
+<!-- openai:omit -->
 **Tokens, and what not to do with them:**
 
 - **Rotate, do not revoke and re-create.** Revoking a token and making a new one creates a new bot user, so the board's history splits between two names. Rotation keeps the user and resets the clock.
 - **Rotation is the user's job, in Settings → Security → Agent Tokens.** It returns the new secret once, in the reply, so it is not a call an agent makes through `jus api`, where the secret would land in a transcript.
 - **After a rotation, an exported `JUSCRIBE_API_TOKEN` still wins** over the refreshed token file. Unset it, or the old secret keeps failing.
 - **Never print the token file** to see whether it is set: `cat .jus/config/api_token.txt` puts a live secret in the transcript. `jus whoami` answers the same question.
+<!-- /openai:omit -->
 
 ⚠️ **`jus whoami` says nothing about whether THESE SKILLS loaded, and that is a separate failure.** A wizard can finish clean and leave the bundle absent — at which point an agent reads an SOP telling it the skills cover the workflow in more depth, goes looking, and finds nothing. `jus doctor` is the check:
 

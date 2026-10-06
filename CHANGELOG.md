@@ -22,6 +22,13 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.50] — 2026-10-05
+
+### Changed
+
+- Leave ticket-workflow's token and install text out of ChatGPT's copy (#5248)
+- Fit ChatGPT's listing subtitle and name its support page (#5248)
+
 ## [1.4.49] — 2026-10-03
 
 ### Changed

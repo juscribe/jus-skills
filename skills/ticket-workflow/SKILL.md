@@ -23,7 +23,7 @@ Every change goes through every phase, however small or ad-hoc. Transition at th
 
 ## Phase 0: Prerequisites — the `jus` CLI must be installed and authenticated
 
-This SOP drives the board through the **`jus` CLI**, which the bundle does not install: the user needs `brew install juscribe/tap/jus`, then `jus login` or `jus init` (which also sets the `{ws}` used throughout this skill). **When a `jus` command fails before it reaches the board, open [references/setup.md](references/setup.md).** A missing CLI, a missing token, a retired token and an unreachable server each have a different fix, and only one of them is a rotation. `jus doctor` checks that these skills loaded, which `jus whoami` cannot.
+This SOP drives the board through the **`jus` CLI**, which the bundle does not install: the user <!-- openai:omit -->needs `brew install juscribe/tap/jus`,<!-- /openai:omit --><!-- openai:only installs it from juscribe.ai, --> then `jus login` or `jus init` (which also sets the `{ws}` used throughout this skill). **When a `jus` command fails before it reaches the board, open [references/setup.md](references/setup.md).** A missing CLI, a missing token, a retired token and an unreachable server each have a different fix, and only one of them is a rotation. `jus doctor` checks that these skills loaded, which `jus whoami` cannot.
 
 **Do not loop `jus` commands against an unconfigured CLI, or against a 401.** Surface the one setup step the error points to, and stop.
 
