@@ -16,6 +16,9 @@
       },
       {
         "command": "jus hook --adapt cursor jus-blocker-date-nudge"
+      },
+      {
+        "command": "jus hook --adapt cursor jus-record-model"
       }
     ],
     "preToolUse": [

@@ -65,7 +65,7 @@ neutral() {
 # scripts gate on the cwd being inside a git repo holding `.jus/` — so
 # an empty one makes all twelve exit 0 without looking at anything.
 #
-# The hook process's own $PWD is no fallback either: Antigravity sets it to the
+# The hook process's own working directory is no fallback either: Antigravity sets it to the
 # directory containing hooks.json, measured `/home/caleon/.gemini/config` for a
 # global install, which is never a Juscribe project.
 #

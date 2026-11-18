@@ -76,7 +76,7 @@ A blocker can carry a date, and the date carries a **kind**, because the same ca
 
 | `due_kind` | Reads as | What it means when you are deciding whether to pick the ticket up |
 | --- | --- | --- |
-| `wait_until` | "Blocked until" | Do not start before this date. A hard stop |
+| `wait_until` | "Blocked until" | Do not start before this date. A hard stop, and the blocker resolves itself on that date in the board's timezone |
 | `review_on` | "Review on" | Revisit and decide on this date. Not a stop |
 | `expected_by` | "Expected by" | When the blocker is forecast to clear. Informational |
 

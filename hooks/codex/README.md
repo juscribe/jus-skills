@@ -1,6 +1,6 @@
 # jus enforcement hooks — OpenAI Codex adapter
 
-Runs all twelve shared hook scripts (`../scripts/`) under Codex's native
+Runs all thirteen shared hook scripts (`../scripts/`) under Codex's native
 hooks system.
 
 > ⚠️ **`jus-ticket-claim-nudge.sh` WAS omitted, on a premise that is now

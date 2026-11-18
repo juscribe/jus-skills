@@ -1,7 +1,9 @@
 # jus enforcement hooks — GitHub Copilot adapter
 
-Runs all thirteen shared hook scripts (`../scripts/`) under GitHub Copilot's
-native hooks system.
+Runs every shared hook script but one (`../scripts/`) under GitHub Copilot's native hooks system.
+
+The one exception is `jus-record-model.sh`: it needs a session id in the
+agent's shell to file the model under, and this tool was not shown to give one.
 
 > ## ✅ LIVE-VERIFIED against copilot 1.0.85, 2026-09-17
 >

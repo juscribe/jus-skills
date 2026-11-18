@@ -1,8 +1,11 @@
 # jus enforcement hooks — Qwen Code adapter
 
-Runs all twelve shared hook scripts (`../scripts/`) under Qwen Code's hooks
-system, in **thirteen registrations** — the same count and the same
-split as the Claude Code manifest.
+Runs every shared hook script but one (`../scripts/`) under Qwen Code's hooks
+system, in **thirteen registrations** — the Claude Code manifest's, less its
+two for the model.
+
+The one exception is `jus-record-model.sh`: it needs a session id in the
+agent's shell to file the model under, and this tool was not shown to give one.
 
 > ## ✅ LIVE-VERIFIED against qwen 0.24.0, 2026-09-17
 >
@@ -194,7 +197,7 @@ all four registered events. The class and the seven-shim audit:
 
 ## Event mapping
 
-Thirteen registrations, twelve scripts — the same as Claude Code's manifest.
+Thirteen registrations, twelve scripts — Claude Code's manifest without `jus-record-model.sh`.
 
 | Shared hook                           | Claude event + matcher                   | Qwen event + matcher                   |
 | ------------------------------------- | ---------------------------------------- | -------------------------------------- |

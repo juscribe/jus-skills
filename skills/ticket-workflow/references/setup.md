@@ -7,7 +7,7 @@ Read when a `jus` command fails before it reaches the board, or the skills seem 
 This SOP drives the Juscribe board through the **`jus` CLI**. The bundle ships the **skills and hooks only — not the CLI binary**, so before anything in this skill will work the user needs:
 
 1. **The CLI** — <!-- openai:omit -->`brew install juscribe/tap/jus`. No Homebrew? It installs from [brew.sh](https://brew.sh) first, on macOS, Linux, or Windows under WSL 2. Homebrew is the CLI's only channel.<!-- /openai:omit --><!-- openai:only install the `jus` CLI from juscribe.ai. -->
-2. **Auth + workspace** — `jus login` (API token) or `jus init` (token + workspace + `bin/jus` symlink). `jus init` also sets the `{ws}` used throughout this skill.
+2. **Auth + workspace** — `jus login` (signs in through the browser; `--token` to paste one made in Settings) or `jus init` (sign-in + workspace + `bin/jus` symlink). `jus init` also sets the `{ws}` used throughout this skill.
 
 **Preflight.** If you're about to run `jus` and aren't sure it's configured, run `jus whoami` first and read the failure:
 

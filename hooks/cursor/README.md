@@ -326,20 +326,21 @@ hook that genuinely needs pre-read content, and say so here when you do.
 
 ## Event mapping
 
-| Shared hook                           | Claude event       | Cursor event                                                      |
-| ------------------------------------- | ------------------ | ----------------------------------------------------------------- |
-| `jus-block-force-push.sh`             | `PreToolUse`       | `beforeShellExecution`                                            |
-| `jus-block-no-verify.sh`              | `PreToolUse`       | `beforeShellExecution`                                            |
-| `jus-pre-commit-gate.sh`              | `PreToolUse`       | `beforeShellExecution`                                            |
-| `jus-block-accepted-manifest-edit.sh` | `PreToolUse`       | `beforeShellExecution`                                            |
-| `jus-blocker-date-nudge.sh`           | `PreToolUse`       | `beforeShellExecution`                                            |
-| `jus-block-lint-suppression.sh`       | `PreToolUse`       | `preToolUse`                                                      |
-| `jus-post-bash-tracker.sh`            | `PostToolUse`      | `afterShellExecution`                                             |
-| `jus-track-edits.sh`                  | `PostToolUse`      | `afterFileEdit` **+ `afterTabFileEdit`**                          |
-| `jus-start-comment-nudge.sh`          | `PostToolUse`      | `afterFileEdit` **+ `afterTabFileEdit`**                          |
-| `jus-docs-nudge.sh`                   | `PostToolUse` ×2   | `afterShellExecution`, `afterFileEdit` **and `afterTabFileEdit`** |
-| `jus-stop-uncommitted.sh`             | `Stop`             | `stop` — **advisory, never under `-p`**                           |
-| `jus-ticket-claim-nudge.sh`           | `UserPromptSubmit` | `beforeSubmitPrompt` — **never under `-p`**                       |
+| Shared hook                           | Claude event                      | Cursor event                                                      |
+| ------------------------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| `jus-block-force-push.sh`             | `PreToolUse`                      | `beforeShellExecution`                                            |
+| `jus-block-no-verify.sh`              | `PreToolUse`                      | `beforeShellExecution`                                            |
+| `jus-pre-commit-gate.sh`              | `PreToolUse`                      | `beforeShellExecution`                                            |
+| `jus-block-accepted-manifest-edit.sh` | `PreToolUse`                      | `beforeShellExecution`                                            |
+| `jus-blocker-date-nudge.sh`           | `PreToolUse`                      | `beforeShellExecution`                                            |
+| `jus-block-lint-suppression.sh`       | `PreToolUse`                      | `preToolUse`                                                      |
+| `jus-post-bash-tracker.sh`            | `PostToolUse`                     | `afterShellExecution`                                             |
+| `jus-track-edits.sh`                  | `PostToolUse`                     | `afterFileEdit` **+ `afterTabFileEdit`**                          |
+| `jus-start-comment-nudge.sh`          | `PostToolUse`                     | `afterFileEdit` **+ `afterTabFileEdit`**                          |
+| `jus-docs-nudge.sh`                   | `PostToolUse` ×2                  | `afterShellExecution`, `afterFileEdit` **and `afterTabFileEdit`** |
+| `jus-stop-uncommitted.sh`             | `Stop`                            | `stop` — **advisory, never under `-p`**                           |
+| `jus-ticket-claim-nudge.sh`           | `UserPromptSubmit`                | `beforeSubmitPrompt` — **never under `-p`**                       |
+| `jus-record-model.sh`                 | `SessionStart`, `PostModelSwitch` | `beforeShellExecution`, keyed on `conversation_id`                |
 
 ✅ **`jus-docs-nudge.sh` is registered twice here and that is correct**, unlike on
 Copilot. Claude registers it under two matchers of one event; Cursor has two
@@ -497,7 +498,7 @@ allowing what it exists to block.**
 
 It never showed up live, because Cursor spawns hooks with the workspace root as
 their working directory even when the CLI was launched elsewhere with
-`--workspace`, and the shared scripts fall back to `$PWD`. That fallback was
+`--workspace`, and the shared scripts fall back to the working directory. That fallback was
 carrying the adapter. The shim now treats an empty `cwd` as absent, and
 `tests.sh` asserts it from a process standing **outside** a Juscribe project with
 `JUS_HOOKS_EVERYWHERE` unset — both conditions are needed, or the test passes

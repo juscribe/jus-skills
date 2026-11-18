@@ -1,7 +1,7 @@
 ---
 name: ticket-workflow
 description: The single load-bearing Juscribe SOP skill — the full ticket lifecycle from pickup to delivery, plus estimation, ticket types, labels, metadata, testing gates, and the complete `jus` CLI / API reference in bundled files this skill points at. Use when working any ticket — picking one up, transitioning state, investigating, sizing, labeling, writing tests, running pre-commit gates, calling `jus api`, committing, self-reviewing, finishing, delivering, handling rejections, processing batches, or resolving dependency blockers. Auto-invoke whenever a ticket ID (`#N`) or "work on this ticket" / "pick up backlog" / "deliver" / "rejected" appears. In a project wired to Juscribe (a `.jus/` directory or the `jus` CLI), bare ticket language — `#42`, the board, the backlog, deliver — means Juscribe tickets by default, unless the wording names another system (a PR, a GitHub issue, another tracker's key), so this skill is the one to invoke for them.
-allowed-tools: Bash(jus *), Bash(git *), Bash(make *), Bash(cd *), Read, Grep, Glob, Edit, Write
+allowed-tools: Bash(jus *), Bash(git *), Bash(make *), Bash(cd *), Read, Grep, Glob, Edit(.jus/tmp/**)
 license: MIT
 ---
 

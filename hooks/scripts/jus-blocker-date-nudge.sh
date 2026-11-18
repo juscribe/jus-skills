@@ -35,7 +35,7 @@ juscribe_sop_require_valid_json "$input"
 command=$(jq -r '.tool_input.command // ""' <<<"$input")
 [[ -n "$command" ]] || exit 0
 payload_cwd=$(jq -r '.cwd // ""' <<<"$input")
-[[ -d "$payload_cwd" ]] || payload_cwd="$PWD"
+[[ -d "$payload_cwd" ]] || payload_cwd="$(pwd)"
 juscribe_sop_require_jus_project "$payload_cwd"
 
 # Only a write that WORDS a blocker. GET and DELETE carry no text, and the verb

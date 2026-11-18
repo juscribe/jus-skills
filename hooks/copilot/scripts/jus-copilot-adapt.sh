@@ -172,7 +172,7 @@ normalized=$(jq --argjson args "$args" --arg name "$claude_name" '
   #
   # ⚠️ `cwd` KEEPS `//` DELIBERATELY: Copilot sends no second source for it, so
   # the chain has one candidate and both spellings agree. An empty `cwd` there
-  # reaches the shared scripts and lands on their own `$PWD` fallback, which
+  # reaches the shared scripts and lands on their own working-directory fallback, which
   # stays deliberately — the reasoning is on
   # `juscribe_sop_require_jus_project` in ../../scripts/lib/state.sh.
   # ⚠️ UNVERIFIED: Copilot is not installed on the machine this was written on,

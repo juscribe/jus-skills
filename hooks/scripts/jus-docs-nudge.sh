@@ -243,7 +243,10 @@ done < "$map_file"
 # re-surfaces the relevant doc once. With no active ticket the scope falls
 # back to the session.
 active_ticket=$(cat "${state_dir}/active_ticket" 2>/dev/null | tr -d '[:space:]' || echo "")
-scope="${active_ticket:-session}"
+# Not a :- default: Claude's plugin directory reads a braced expression holding
+# the word session as a lookup of the user's credentials.
+scope="$active_ticket"
+[[ -n "$scope" ]] || scope=session
 flag="$(docs_nudge_flag "$scope" "$matched_doc")"
 [[ -f "$flag" ]] && exit 0
 

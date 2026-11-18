@@ -70,7 +70,7 @@ juscribe_sop_require_valid_json "$input"
 [[ "$(jq -r '.hook_event_name // ""' <<<"$input")" == "UserPromptSubmit" ]] || exit 0
 
 cwd=$(jq -r '.cwd // ""' <<<"$input")
-[[ -d "$cwd" ]] || cwd="$PWD"
+[[ -d "$cwd" ]] || cwd="$(pwd)"
 
 emit() { # <context for the agent> <line for the user>
   jq -n --arg ctx "${1:0:7800}" --arg msg "$2" '

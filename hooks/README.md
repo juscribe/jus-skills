@@ -7,7 +7,8 @@
 >
 > The shared guards live in `scripts/`; `scripts/lib/state.sh` is sourced by all
 > of them. Each `<tool>/` directory holds that tool's manifest, its shim and its
-> README. `tests.sh` is the whole suite and takes no arguments.
+> README. `tests.sh` is the whole suite and takes no arguments. It is not
+> published: the release leaves it out of the plugin.
 
 ## Did the hooks actually RUN?
 
@@ -29,16 +30,19 @@ Read it back with `hooks/jus-liveness`, which separates the three states nothing
 can tell apart: **ran** (allowed or blocked — both are proof of life), **ran and could
 not tell where it was** (`cwd=no-cwd`, the shape Cursor's empty `cwd` left), and **never ran**.
 
-| Outcome              | Means                                                |
-| -------------------- | ---------------------------------------------------- |
-| `allowed`            | ran, looked, nothing to block                        |
-| `blocked`            | ran and refused                                      |
-| `no-jq` / `bad-json` | the fail-open paths                                  |
-| `not-a-jus-project`  | ran, knew where it was, and it was not one           |
-| `no-jus`             | ran, and the `jus` command it needs is not installed |
+| Outcome                                               | Means                                                                                           |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `allowed`                                             | ran, looked, nothing to block                                                                   |
+| `blocked`                                             | ran and refused                                                                                 |
+| `no-jq` / `bad-json`                                  | the fail-open paths                                                                             |
+| `not-a-jus-project`                                   | ran, knew where it was, and it was not one                                                      |
+| `no-jus`                                              | ran, and the `jus` command it needs is not installed                                            |
+| `recorded` / `unchanged`                              | `jus-record-model.sh` saved the model, or found it already saved                                |
+| `no-model` / `no-session` / `subagent` / `unwritable` | `jus-record-model.sh` saved nothing, for the reason named                                       |
+| `older`                                               | `jus-record-model.sh` found a transcript model older than the one saved, and kept the saved one |
 
 ⚠️ **`cwd=` is a separate field from `outcome=`, and that is the point.** A guard can
-lose its cwd _and still be rescued_ by the shared `$PWD` fallback — which is exactly
+lose its cwd _and still be rescued_ by the shared working-directory fallback — which is exactly
 what hid Cursor's empty `cwd` for weeks. `cwd=no-cwd` on a line that otherwise reads healthy is that
 bug announcing itself.
 
@@ -110,7 +114,7 @@ def pick: map(select(. != null and . != false and . != "")) | first // "";
 | ------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `cursor`      | `cwd` ← `workspace_roots[0]`                                        | **measured** — sends `""`. Fixed                                                                                                                                                                                                                                           |
 | `antigravity` | `Cwd` ← `TargetFile` dir ← `workspacePaths[0]` ← `cwd` ← remembered | **measured** — sends no `cwd` at all and `workspacePaths` is `[]`. The empty-string half, where an empty entry beat the remembered cwd, fixed in this audit                                                                                                                |
-| `windsurf`    | `cwd` ← `root_workspace_path` ← `$PWD`                              | ⚠️ **unverified** — not installed, and Cascade has no headless mode at all. Hardened anyway; the tests pin the shim's contract, not a captured payload                                                                                                                     |
+| `windsurf`    | `cwd` ← `root_workspace_path` ← `pwd`                               | ⚠️ **unverified** — not installed, and Cascade has no headless mode at all. Hardened anyway; the tests pin the shim's contract, not a captured payload                                                                                                                     |
 | `copilot`     | `sessionId` ← `session_id`, `transcriptPath` ← `transcript_path`    | ⚠️ **unverified** — not installed. Also **unreachable**: the passthrough branch returns early on `has("tool_name") or has("session_id")`, so the second candidate is provably absent by the time the program runs. `pick` keeps them right if that branch is ever narrowed |
 | `kimi-code`   | `path` → `file_path`, the inverted shape                            | **measured 2026-09-19** — always an absolute `tool_input.path`, never a `file_path` sibling. The contract is guarded anyway: an empty `path` must not overwrite a good `file_path`                                                                                         |
 | `codex`       | none                                                                | every `//` in the shim ends at a literal                                                                                                                                                                                                                                   |
@@ -129,7 +133,7 @@ test pass over the bug:
 - `tests.sh` exports `JUS_HOOKS_EVERYWHERE=1` globally (line 38), and that flag
   is the **first** thing `juscribe_sop_require_jus_project` reads — so with it
   set the cwd is never consulted at all.
-- The shared scripts fall back to `$PWD`, so from inside a wired repository a
+- The shared scripts fall back to the working directory, so from inside a wired repository a
   shim that hands over nothing is rescued and looks correct.
 
 That happened on the Cursor shim and was caught only by mutation. ⚠️ **The rule is about
@@ -138,7 +142,7 @@ deliberately, because there the project gate sits upstream of the thing under
 test and unsetting it would make both arms exit 0 before the suppression table
 is read. A control arm is what keeps that pair honest instead.
 
-## Why the `$PWD` fallback stays
+## Why the working-directory fallback stays
 
 The fallback in `juscribe_sop_require_jus_project` is what made Cursor's empty `cwd` invisible,
 so the audit above asked whether it should go. It stays; the reasoning, and the

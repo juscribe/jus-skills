@@ -1,7 +1,9 @@
 # jus enforcement hooks — Google Antigravity adapter
 
-Runs all twelve shared hook scripts (`../scripts/`) under Antigravity's hooks
-system.
+Runs every shared hook script but one (`../scripts/`) under Antigravity's hooks system.
+
+The one exception is `jus-record-model.sh`: it needs a session id in the
+agent's shell to file the model under, and this tool was not shown to give one.
 
 > ## ⚠️ THIS FILE SAID GEMINI CLI WAS SUNSET. IT IS NOT
 >
@@ -206,7 +208,7 @@ captured payload — tool events and invocation events alike. Since all twelve
 shared scripts gate on the cwd being inside a repo holding `.jus/`, a shim that
 derives nothing disarms all of them, silently, while looking installed.
 
-**`$PWD` is not a fallback either.** Antigravity runs a hook in the directory
+**The working directory is not a fallback either.** Antigravity runs a hook in the directory
 containing its `hooks.json`, measured `~/.gemini/config` — which for
 the global install this README now prescribes is never a Juscribe project.
 

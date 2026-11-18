@@ -23,10 +23,10 @@
 # only one of the five new adapters that needs no response handling whatsoever,
 # and `exec` is what carries the code through untouched.
 #
-# ⚠️ THERE IS NO cwd ON EVERY EVENT, AND $PWD IS THE DOCUMENTED ANSWER. Cascade
+# ⚠️ THERE IS NO cwd ON EVERY EVENT, AND THE WORKING DIRECTORY IS THE DOCUMENTED ANSWER. Cascade
 # runs each hook with `working_directory`, which "defaults to workspace root", so
 # a payload without `tool_info.cwd` still leaves the process in the right place.
-# Falling back to `$PWD` is therefore reading the mechanism rather than guessing
+# Falling back to the working directory is therefore reading the mechanism rather than guessing
 # — and without it `jus-stop-uncommitted.sh` would find no repository and stay
 # silent, which looks identical to a clean tree.
 #
@@ -44,12 +44,12 @@ command -v jq >/dev/null 2>&1 || exit 0
 input=$(cat)
 jq . >/dev/null 2>&1 <<<"$input" || exit 0
 
-normalized=$(jq --arg pwd "$PWD" '
+normalized=$(jq --arg here "$(pwd)" '
   # ⚠️ `//` IS NOT A FALLBACK OPERATOR FOR STRINGS. It falls back on `null` and
   # `false` only, so an empty string WINS a chain and a better later source is
   # never reached (Cursor sent an empty cwd; audited across all seven
   # shims). The cwd chain below is three deep and an empty `tool_info.cwd`
-  # would take out both of the others, `$PWD` included — which is the one
+  # would take out both of the others, the working directory included — which is the one
   # Cascade documents.
   # ⚠️ UNVERIFIED HERE: Windsurf is not installed on the machine this was
   # written on, so whether Cascade ever sends an empty string is unmeasured.
@@ -60,7 +60,7 @@ normalized=$(jq --arg pwd "$PWD" '
   | (.tool_info // {}) as $t
   | {
       session_id: ($in.trajectory_id // ""),
-      cwd: ([$t.cwd, $t.root_workspace_path, $pwd] | pick),
+      cwd: ([$t.cwd, $t.root_workspace_path, $here] | pick),
       transcript_path: ($t.transcript_path // ""),
       prompt: ($t.user_prompt // ""),
       stop_hook_active: false,

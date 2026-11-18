@@ -36,23 +36,29 @@ set -uo pipefail
 #
 # Set CLAUDE_PLUGIN_DATA to read one root only.
 if [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]]; then
-  ROOTS=("$CLAUDE_PLUGIN_DATA")
+  SEARCH=("2:$CLAUDE_PLUGIN_DATA/sessions")
 else
-  ROOTS=()
-  for root in "$HOME"/.claude/plugins/data/* "$HOME"/.copilot/plugin-data/*/* "${TMPDIR:-/tmp}/jus"; do
-    [[ -d "$root/sessions" ]] && ROOTS+=("$root")
-  done
+  SEARCH=("4:$HOME/.claude/plugins/data" "5:$HOME/.copilot/plugin-data" "2:${TMPDIR:-/tmp}/jus/sessions")
 fi
 
-# The newest liveness.log across the roots, for one session or for any.
-# `ls -t` rather than `find -printf`, which BSD find does not have.
+# The newest liveness.log under those folders, for one session or for any.
+# Each SEARCH entry is "<how deep the log sits>:<folder>", and the log is always
+# <root>/sessions/<session>/liveness.log. `find` by exact name and depth, never
+# a wildcard over folders: Claude's plugin directory reads a wildcard in a
+# script as something that could reach the bundle's icon. `ls -t` rather than
+# `find -printf`, which BSD find does not have.
 newest_log() { # [session]
-  local root file files=()
-  for root in ${ROOTS[@]+"${ROOTS[@]}"}; do
-    # Unquoted on purpose: with no session named, `*` is the glob over them.
-    for file in "$root"/sessions/${1:-*}/liveness.log; do
-      [[ -f "$file" ]] && files+=("$file")
-    done
+  local entry depth file dir parent files=()
+  for entry in "${SEARCH[@]}"; do
+    depth="${entry%%:*}"
+    [[ -d "${entry#*:}" ]] || continue
+    while IFS= read -r file; do
+      dir="$(dirname "$file")"
+      parent="$(dirname "$dir")"
+      [[ "$(basename "$parent")" == sessions ]] || continue
+      [[ -z "${1:-}" || "$(basename "$dir")" == "$1" ]] || continue
+      files+=("$file")
+    done < <(find -L "${entry#*:}" -mindepth "$depth" -maxdepth "$depth" -type f -name liveness.log 2>/dev/null)
   done
   [[ ${#files[@]} -gt 0 ]] || return 0
   ls -t "${files[@]}" | head -1
@@ -65,8 +71,11 @@ if [[ -n "$log" && -z "$session" ]]; then
 fi
 
 if [[ -z "$log" || ! -s "$log" ]]; then
-  printf '\033[31m✗ NO jus hook has run%s.\033[0m\n' \
-    "${session:+ in session $session}"
+  # Not a :+ expansion: Claude's plugin directory reads a braced expression
+  # holding the word session as a lookup of the user's credentials.
+  where=""
+  [[ -z "$session" ]] || where=" in session $session"
+  printf '\033[31m✗ NO jus hook has run%s.\033[0m\n' "$where"
   cat <<'WHY'
 
 Nothing recorded means one of:
@@ -83,7 +92,7 @@ Nothing recorded means one of:
 
 WHY
   printf 'Looked in:\n'
-  printf '  %s\n' "$HOME/.claude/plugins/data/*/sessions/" "$HOME/.copilot/plugin-data/*/*/sessions/" \
+  printf '  %s\n' "$HOME/.claude/plugins/data/<plugin>/sessions/" "$HOME/.copilot/plugin-data/<marketplace>/<plugin>/sessions/" \
     "${TMPDIR:-/tmp}/jus/sessions/"
   [[ -n "${CLAUDE_PLUGIN_DATA:-}" ]] && printf '  (only %s/sessions/, because CLAUDE_PLUGIN_DATA is set)\n' "$CLAUDE_PLUGIN_DATA"
   exit 1
@@ -128,7 +137,7 @@ printf '\n\033[32m✓ the jus hooks are alive.\033[0m\n'
 
 if [[ "$no_cwd" -gt 0 ]]; then
   printf '\033[33m⚠ %s of %s records lost the payload cwd (cwd=no-cwd).\033[0m\n' "$no_cwd" "$total"
-  printf '  Those ran against $PWD rather than the cwd they were handed.\n'
+  printf '  Those ran against the working directory rather than the cwd they were handed.\n'
 fi
 
 exit 0

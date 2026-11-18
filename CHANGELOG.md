@@ -22,6 +22,26 @@ Bump the version when the SOP changes, by impact on an adopting agent:
 Each release entry below should name the SOP change and, where relevant, the
 Juscribe ticket (`#N`) that introduced it.
 
+## [1.4.51] — 2026-11-17
+
+### Changed
+
+- Clear the text the directory's expanded rows name (#6085)
+- Name no image path in the bundle beyond its icon fields (#6085)
+- Add jus upload, so the skills attach files without the token (#6086)
+- Clear the Claude directory's scan warnings on the jus bundle (#6085)
+- Re-check every vendor capability claim, and correct what had moved (#6036)
+- Disclose the model-recording hook in the plugin README (#6024)
+- Ring the bell when a blocker clears, including a wait-until date (#6013)
+- Block the +refspec force push and skip heredoc prose (#1987)
+- Point the sibling READMEs at juscribe/jus as the repository to star (#5258)
+- Sign jus login in through the browser, no token pasted (#4576)
+- Retrospect a finished project, behind a flag (#5667)
+- Run the portability guard on every jus/ change, and drop the ticket numbers it missed (#5677)
+- Cover the transcript reader's two fallbacks, drop a dead guard (#5658)
+- Read a Claude Code session's model from its transcript (#5658)
+- Send each agent session's model, saved by a jus hook (#4910)
+
 ## [1.4.50] — 2026-10-05
 
 ### Changed

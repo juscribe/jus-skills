@@ -36,7 +36,7 @@ input=$(cat)
 juscribe_sop_require_valid_json "$input"
 cwd=$(jq -r '.cwd // ""' <<<"$input")
 juscribe_sop_require_jus_project "$cwd"
-[[ -d "$cwd" ]] || cwd="$PWD"
+[[ -d "$cwd" ]] || cwd="$(pwd)"
 tool_name=$(jq -r '.tool_name // ""' <<<"$input")
 [[ "$tool_name" != "Bash" ]] && exit 0
 

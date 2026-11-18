@@ -1,13 +1,13 @@
 ---
 name: retrospective
-description: How to run a retrospective on an iteration and hand it over as a self-contained HTML report with charts, then record it back on the board. Covers what to gather (the first-hand accounts first — the ticket comments that hold most of them — then the tickets, their activity and the board's timezone), the sections a retrospective owes and the ones it must stop writing, when in the day work actually happened, production health and standing technical debt, drawing conclusions rather than counting metrics, hand-authored inline-SVG charts that need no library and no network, verifying derived numbers before you publish, sending the report's own HTML to the board so the iteration's details pane can show it, and writing the record back as an iteration comment. Auto-invoke on "retrospective", "retro", "sprint review", "review the iteration", or any request to review or summarize what an iteration delivered.
-allowed-tools: Bash(jus *), Bash(git *), Read, Grep, Glob, Write
+description: How to run a retrospective on an iteration or a project and hand it over as a self-contained HTML report with charts, then record it back on the board. Covers what to gather (the first-hand accounts first — the ticket comments that hold most of them — then the tickets, their activity and the board's timezone), the sections a retrospective owes and the ones it must stop writing, when in the day work actually happened, production health and standing technical debt, drawing conclusions rather than counting metrics, hand-authored inline-SVG charts that need no library and no network, verifying derived numbers before you publish, sending the report's own HTML to the board so the iteration's or project's details pane can show it, and writing the record back as a comment on it. Auto-invoke on "retrospective", "retro", "sprint review", "review the iteration", "project retrospective", "how did the project go", or any request to review or summarize what an iteration or a project delivered.
+allowed-tools: Bash(jus *), Bash(git *), Read, Grep, Glob, Edit(.jus/tmp/**)
 license: MIT
 ---
 
-# Retrospective — Review an Iteration and Publish the Report
+# Retrospective — Review an Iteration or a Project and Publish the Report
 
-> Read this when asked to retrospect on an iteration, sprint or cycle. It covers gathering, analysis, charts, verification, delivery and the write-back. The companion `ticket-workflow` skill covers the ticket lifecycle and the `jus` API; this skill assumes it and does not repeat it.
+> Read this when asked to retrospect on an iteration, sprint or cycle, or on a project. It covers gathering, analysis, charts, verification, delivery and the write-back. The companion `ticket-workflow` skill covers the ticket lifecycle and the `jus` API; this skill assumes it and does not repeat it.
 
 ## What you produce: a report and a record
 
@@ -16,11 +16,21 @@ license: MIT
 |  |  |
 | --- | --- |
 | **The report** | One self-contained HTML file. Charts, tables, the full analysis. This is what a person reads, and you send it to the board, which stores and serves it. |
-| **The record** | A comment on the iteration carrying `context: "retrospective"` — a short lede, where the report is, and the follow-ups you are **suggesting**. This is what the board keeps, and what someone replies to. |
+| **The record** | A comment on the iteration or project carrying `context: "retrospective"` — a short lede, where the report is, and the follow-ups you are **suggesting**. This is what the board keeps, and what someone replies to. |
 
 **The record is short on purpose.** Its job is that the iteration carries a durable trace and something to reply to. If you find yourself restating the analysis in it, stop — you are writing the report twice, and the second copy is the one that goes stale.
 
 ⚠️ **NEVER deliver only the record.** A retrospective that fits in a comment is one you did not actually do. The board renders comments as plain markdown with no embedded HTML, so every chart you drew is lost the moment you paste it there.
+
+## Two scopes: an iteration or a project
+
+**An iteration is a time box; a project is a body of work.** The method is the same for both: testimony first, charts, verification, a report and a record, follow-ups suggested and never filed. Steps 1, 4, 5 and 8 apply to both as written. What changes is what you gather, what the report owes, and where you send it:
+
+|  | An iteration | A project |
+| --- | --- | --- |
+| Gather | steps 1 and 2 | [references/project.md](references/project.md) → _Gather the project_ |
+| What it owes | step 3, _For an iteration_ | step 3, _For a project_ |
+| Report and record | steps 6 and 7 | the same calls, addressed to `/projects/{project}` |
 
 ## Step 1 — Read the first-hand accounts FIRST, and look on the TICKETS
 
@@ -124,13 +134,17 @@ about the wrong answer looks wrong.
 
 ## Step 3 — What the retrospective owes
 
-**A headline and ten sections. Scale the depth to the iteration, not to this list** — a one-day iteration with four tickets gets a short report, and saying "there is not enough here to retrospect on" is a legitimate finding. A hundred-ticket iteration gets all ten.
+**A headline and ten sections, from the list for your scope** — _For an iteration_ or _For a project_ below. The headline rule is the same for both.
 
 ### The headline is three to five numbers, and no more
 
 Points closed, tickets closed, the rank against the whole series, and at most two others. **Every other number in the report appears inside a sentence that says what it means.** A figure standing on its own is one the reader has to interpret on your behalf, and most figures do not survive the attempt — which is how a report ends up long, dense and unread.
 
 ⚠️ **The test for a number is not "is it true", it is "would the reader act differently".** Type distribution, comment counts, per-actor event tallies and events-per-hour are all true and none of them changes a decision. Cut them unless one of them moved.
+
+### For an iteration
+
+**Scale the depth to the iteration, not to this list** — a one-day iteration with four tickets gets a short report, and saying "there is not enough here to retrospect on" is a legitimate finding. A hundred-ticket iteration gets all ten.
 
 1. **What happened** — grouped by **theme**, never by ticket. This is the section a reader most wants and the one most often replaced by a list. A ticket id belongs in it as **evidence for a claim** — "the third attempt at this (#81) is where the parser was finally replaced" — never as the subject of its own row. ⚠️ **If a table's rows are tickets, it is the wrong table**: rewrite it so the rows are the findings and the ticket ids sit in a cell.
 
@@ -231,6 +245,21 @@ Points closed, tickets closed, the rank against the whole series, and at most tw
 
 **Seven traps in the prose of those sections — a rank claim computed over the wrong set, a velocity that is a setting or a two-week window, a backward move the old feed logged as an edit, the section that gets faked, the board's timezone, naming people, and an unreachable source: [references/reporting-traps.md](references/reporting-traps.md).**
 
+### For a project
+
+**One section per question a project's reader asks.** What each is answered from, and its trap, is in [references/project.md](references/project.md) → _What each project section is answered from_.
+
+1. **What got done** — grouped by theme, never by ticket, as for an iteration.
+2. **What works differently now** — what a user, an agent or an operator can do that they could not before the project.
+3. **How long it took** — the calendar span, the hours actually worked inside it, and lead time from the first filing.
+4. **How much we waited** — review wait, blocked time, idle stretches, and the wait before work began.
+5. **What took time away** — work the same people did inside the span that was not this project's.
+6. **Which blockers hurt** — each blocker, its kind, how long it held, and what it held up.
+7. **What nobody knew at the outset** — work that appeared after the project began: late additions, bugs found on the way, assumptions that proved false.
+8. **How far the plan moved** — tickets and points at the start against the end: added, removed, cancelled, re-estimated, rejected.
+9. **Who was involved** — names and roles. Never a ratio, and never the human/agent split.
+10. **What shipped, and what has not** — as for an iteration.
+
 ## ⚠️ What NOT to report
 
 **This list exists because every item on it is true, easy to compute, and worth nothing to the reader.** That combination is what makes them come back: each one looks like diligence, each one passes every check in step 5, and a skill that only says what to *include* re-acquires the whole set one run at a time.
@@ -294,6 +323,8 @@ jq -Rs '{retrospective:{html:.}}' <report.html> | jus api PATCH '/workspaces/{ws
 
 **MCP:** no MCP tool sends the report to the board, and `attach_file` takes only .md, .txt and .csv. The report stays in the chat.
 
+**For a project, the same command addressed to `/projects/{project}/retrospective`.** See [references/project.md](references/project.md) → _Deliver the report and write the record_ for what a refusal there means.
+
 ⚠️ **Do not try to inline the document into the command.** It is an HTML file full of quotes, backticks and apostrophes — the two characters that break shell quoting — and tens of kilobytes long. `jq -Rs` reads the file as one JSON string and `jus api` takes the object on stdin, so there is nothing to escape by hand.
 
 **The body is bounded and the endpoint says so.** Over the limit is a `422` naming the size; nothing is truncated and nothing is stored. If a report is genuinely that big, the charts are carrying embedded images they should not be.
@@ -333,6 +364,8 @@ jus api POST '/workspaces/{ws}/iterations/{iteration}/comments' '{"comment":{"bo
 ```
 
 **MCP:** no MCP tool writes an iteration comment. Give the person the text to post on the iteration in the app.
+
+**For a project, post on `/projects/{project}/comments` instead.** Everything below holds, one record per project.
 
 `context` is what marks this comment as the retrospective rather than a note, and the board uses it to render the entry differently. **Set it. Nothing else will.**
 
@@ -389,6 +422,7 @@ File **exactly what the reply approves** — no more, and nothing you have thoug
 
 | If | Then |
 | --- | --- |
+| You are retrospecting a project | Read [references/project.md](references/project.md) first. The sections are step 3's project list |
 | The iteration thread is empty | Normal. Take the testimony from the ticket comments and say nothing about where it came from |
 | The ticket comments are empty too | *Now* it is a finding. Say the report is reconstruction only |
 | The comment corpus is enormous | Expected — slice it. Human-authored first, then the tickets the report discusses |

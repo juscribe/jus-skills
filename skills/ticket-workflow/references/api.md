@@ -30,7 +30,7 @@ EOF
 jus api PATCH /workspaces/{ws}/tickets/{id} '{"ticket":{"points":2}}'
 jus api DELETE /workspaces/{ws}/dependencies/{dep_id}
 
-jus download <attachment-url-path> .jus/tmp/screenshot.png                      # attachment from a ticket
+jus download <attachment-url-path> .jus/tmp/<file>                              # attachment from a ticket
 jus init      # first-time setup (sign-in + workspace + symlink)
 jus login     # sign in
 jus whoami    # show authenticated user
@@ -84,15 +84,15 @@ Honour `Retry-After` rather than retrying at once, and cut the calls rather than
 ## Attachments
 
 <!-- openai:omit -->
-Upload is `multipart/form-data` to `POST /workspaces/{ws}/tickets/{id}/attachments`, one `files[]` part per file, up to **25 MB** each, from an allowlist of document and image types. `jus` has no upload command, so this is `curl` with the token from a config file (never on the command line):
+Upload is `multipart/form-data` to `POST /workspaces/{ws}/tickets/{id}/attachments`, or `/projects/{id}/attachments`, one `files[]` part per file, up to **25 MB** each, from an allowlist of document and image types. `jus upload` sends them and keeps the token to itself:
 
 ```sh
-curl -sS -K .jus/tmp/auth.conf -F 'files[]=@screenshot.png' "https://app.juscribe.ai/api/v1/workspaces/{ws}/tickets/{id}/attachments"
+jus upload /workspaces/{ws}/tickets/{id}/attachments .jus/tmp/<file> [<file>...]
 ```
 
 **MCP:** `attach_file`.
 
-`.jus/tmp/auth.conf` holds one line, `header = "Authorization: Bearer <token>"`, written with `umask 077`. Downloading goes through `jus download`.
+It exits non-zero on a refusal, with the reason on stdout. Downloading goes through `jus download`.
 <!-- /openai:omit -->
 <!-- openai:only Upload a file to a ticket with the `attach_file` MCP tool. Downloading goes through `jus download`. -->
 

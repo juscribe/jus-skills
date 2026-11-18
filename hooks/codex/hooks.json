@@ -34,6 +34,11 @@
             "command": "jus hook jus-blocker-date-nudge",
             "timeout": 10,
             "statusMessage": "jus: blocker-date nudge"
+          },
+          {
+            "type": "command",
+            "command": "jus hook jus-record-model",
+            "timeout": 10
           }
         ]
       },

@@ -54,6 +54,14 @@ juscribe_sop_record() {
   return 0
 }
 
+# Names the outcome the EXIT trap records, for a script whose result is
+# neither `allowed` nor `blocked` (jus-record-model.sh). Set here rather
+# than in the script so shellcheck can see the trap above read it: an
+# assignment in the hook itself reads to it as unused (SC2034).
+juscribe_sop_outcome() {
+  JUSCRIBE_SOP_OUTCOME="$1"
+}
+
 # Fail-open if `jq` is missing on the host. We never want a missing dependency
 # to break the user's session — better to skip enforcement than to wedge the
 # tool call. The README lists `jq` as a prerequisite.
@@ -151,9 +159,9 @@ juscribe_sop_require_valid_json() {
 # `JUS_HOOKS_EVERYWHERE=1` restores the old machine-wide behaviour for anyone
 # who installed the bundle for the SOP and never ran `jus init`.
 #
-# ── the `$PWD` fallback STAYS, decided by an audit of every shim ─────────────
+# ── the working-directory fallback STAYS, decided by an audit of every shim ─────────────
 #
-# The open question was whether `[[ -d "$dir" ]] || dir="$PWD"` should go. It is
+# The open question was whether `[[ -d "$dir" ]] || dir="$(pwd)"` should go. It is
 # what hid a broken Cursor shim: it handed over an empty cwd for weeks and the
 # adapter looked healthy, because Cursor happens to spawn hooks with the
 # workspace root as their working directory. A fallback that rescues a broken
@@ -183,18 +191,18 @@ juscribe_sop_require_valid_json() {
 # A shim bug is now caught by the suite instead of by a live session, which is
 # what the fallback was being asked to do and was never able to.
 #
-# Argument: $1 = the payload's cwd (may be empty; falls back to $PWD).
+# Argument: $1 = the payload's cwd (may be empty; falls back to the working directory).
 juscribe_sop_require_jus_project() {
   [[ "${JUS_HOOKS_EVERYWHERE:-}" == "1" ]] && return 0
   local dir="${1:-}" toplevel prefix
   # ⚠️ RECORDED EVEN WHEN THE FALLBACK RESCUES IT. A payload with no usable
   # cwd is the broken-Cursor-shim shape — it sent `""` and every guard
   # lost its repository — and it stayed invisible for weeks precisely because
-  # `$PWD` happened to be right. `cwd=no-cwd` on a line that otherwise reads
+  # the working directory happened to be right. `cwd=no-cwd` on a line that otherwise reads
   # healthy is that bug announcing itself.
   if [[ ! -d "$dir" ]]; then
     JUSCRIBE_SOP_CWD_SOURCE=no-cwd
-    dir="$PWD"
+    dir="$(pwd)"
   fi
   toplevel=$(juscribe_sop_repo_toplevel "$dir")
   if [[ -n "$toplevel" ]]; then
@@ -235,6 +243,27 @@ juscribe_sop_state_dir() {
     echo "$base/sessions/_anonymous"
   else
     echo "$base/sessions/$session_id"
+  fi
+}
+
+# Where jus-record-model.sh keeps each session's model for `jus api` to send,
+# one file per session id. Fails when there is no $HOME to put it in.
+#
+# ⚠️ NOT juscribe_sop_state_dir, AND NOT $TMPDIR. The reader is the CLI, run
+# from the agent's own shell, and Claude Code gives a sandboxed command its own
+# $TMPDIR and no $CLAUDE_PLUGIN_DATA at all, while hooks run outside the
+# sandbox. A file under either is one the CLI cannot find. This must match
+# `jus_session_model_dir` in .jus/bin/jus; .jus/bin/test-jus-api runs this hook
+# and that reader against one $HOME to hold them together.
+juscribe_sop_model_dir() {
+  if [[ -n "${JUS_SESSION_MODEL_DIR:-}" ]]; then
+    printf '%s\n' "$JUS_SESSION_MODEL_DIR"
+  elif [[ -n "${XDG_CACHE_HOME:-}" ]]; then
+    printf '%s\n' "$XDG_CACHE_HOME/jus/session-models"
+  elif [[ -n "${HOME:-}" ]]; then
+    printf '%s\n' "$HOME/.cache/jus/session-models"
+  else
+    return 1
   fi
 }
 
@@ -735,9 +764,9 @@ juscribe_sop_commented_ticket() {
 # mutate it. An unresolvable workspace means this is not a jus project,
 # which is not an error worth saying anything about.
 #
-# Argument: $1 = the directory to start from (defaults to $PWD).
+# Argument: $1 = the directory to start from (defaults to the working directory).
 juscribe_sop_workspace_id() {
-  local dir="${1:-$PWD}"
+  local dir="${1:-$(pwd)}"
   while :; do
     if [[ -r "$dir/.jus/config/workspace_id" ]]; then
       tr -d "[:space:]" < "$dir/.jus/config/workspace_id"
@@ -753,7 +782,7 @@ juscribe_sop_workspace_id() {
 # and is what a clone sets; the fallbacks are for a repository with no remote,
 # which is the ordinary case for a project a `jus` session was started in.
 juscribe_sop_default_branch() {
-  local dir="${1:-$PWD}" head local_branch
+  local dir="${1:-$(pwd)}" head local_branch
   command -v git >/dev/null 2>&1 || return 0
 
   head=$(git -C "$dir" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
@@ -790,7 +819,7 @@ juscribe_sop_default_branch() {
 # caller uses this to RELAX a refusal, so an unanswerable case must leave the
 # guard where it stands rather than open it.
 juscribe_sop_merge_in_progress() {
-  local dir="${1:-$PWD}" merge_head
+  local dir="${1:-$(pwd)}" merge_head
   command -v git >/dev/null 2>&1 || return 1
   merge_head=$(git -C "$dir" rev-parse --git-path MERGE_HEAD 2>/dev/null) || return 1
   [[ -n "$merge_head" ]] || return 1

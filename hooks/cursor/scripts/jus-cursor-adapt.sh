@@ -76,7 +76,7 @@ event=$(jq -r '.hook_event_name // ""' <<<"$input")
 # `juscribe_sop_require_jus_project` exits 0 and the guard silently allows what
 # it exists to block. It did not show up live only because Cursor happens to
 # spawn hooks with the workspace root as their working directory, which is the
-# shared scripts' own `$PWD` fallback covering for us. Test it with a payload
+# shared scripts' own working-directory fallback covering for us. Test it with a payload
 # whose `cwd` is `""` from a process standing outside a Juscribe project.
 normalized=$(jq '
   # ⚠️ `//` IS NOT A FALLBACK OPERATOR FOR STRINGS. It falls back on `null` and
@@ -93,7 +93,10 @@ normalized=$(jq '
       session_id: ($in.conversation_id // ""),
       cwd: $cwd,
       transcript_path: ($in.transcript_path // ""),
-      prompt: ($in.prompt // "")
+      prompt: ($in.prompt // ""),
+      # jus-record-model.sh saves it for `jus api` to send. A Tab
+      # completion sends the literal "tab", which names no model.
+      model: (if ($in.model // "") == "tab" then "" else ($in.model // "") end)
     }
   | if $event == "beforeShellExecution" or $event == "afterShellExecution" then
       .tool_name = "Bash" | .tool_input = { command: ($in.command // "") }

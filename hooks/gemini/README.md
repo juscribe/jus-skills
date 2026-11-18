@@ -1,7 +1,9 @@
 # jus enforcement hooks — Gemini CLI adapter
 
-Runs all thirteen shared hook scripts (`../scripts/`) under Gemini CLI's hooks
-system.
+Runs every shared hook script but one (`../scripts/`) under Gemini CLI's hooks system.
+
+The one exception is `jus-record-model.sh`: it needs a session id in the
+agent's shell to file the model under, and this tool was not shown to give one.
 
 > ## ✅ LIVE-DRIVEN, on a stub
 >

@@ -1,7 +1,10 @@
 # jus enforcement hooks — Windsurf Cascade adapter
 
-Runs all twelve shared hook scripts (`../scripts/`) under Cascade Hooks,
+Runs every shared hook script but one (`../scripts/`) under Cascade Hooks,
 in thirteen registrations.
+
+The one exception is `jus-record-model.sh`: it needs a session id in the
+agent's shell to file the model under, and this tool was not shown to give one.
 
 > ## ⚠️ UNVERIFIED, AND UNLIKE THE OTHERS IT CANNOT BE VERIFIED AUTOMATICALLY.
 >
@@ -112,7 +115,7 @@ shape a script sees:
 | `pre_user_prompt`       | `user_prompt`                   | `prompt`                 |
 | `post_cascade_response` | `response`                      | `cwd` only — see below   |
 
-⚠️ **`$PWD` is the documented fallback for `cwd`, not a guess.** Cascade runs each
+⚠️ **The working directory is the documented fallback for `cwd`, not a guess.** Cascade runs each
 hook with `working_directory`, which "defaults to workspace root", so an event
 without `tool_info.cwd` still leaves the process in the right place. Without that
 fallback `jus-stop-uncommitted.sh` would find no repository and stay silent —
@@ -205,4 +208,4 @@ unchanged — see the bundle [README](../../README.md) → _Every install path_.
 `jus/hooks/tests.sh`, in the `windsurf adapter` section: the manifest is valid
 JSON in Cascade's shape, every script it names exists, all twelve are registered,
 and the shim maps each event — including that `post_cascade_response`, which
-carries no `cwd` at all, still finds a repository through the `$PWD` fallback.
+carries no `cwd` at all, still finds a repository through the working-directory fallback.
